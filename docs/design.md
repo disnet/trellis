@@ -262,7 +262,19 @@ So far there is exactly one graph — every thought, relation, and working set s
 
 *Exit: two graphs on distinct topics can be worked in alternation with nothing leaking between them — no search result, proposed relation, or agent rationale ever references a thought from the inactive graph; each graph restores faithfully on switch and on re-entry.*
 
-### Phase 6: dogfood + judge
+### Phase 6: pins + open neighborhood (maps of content)
+
+Dogfooding shows big graphs need landmarks: a way to mark the main thoughts you keep returning to, and a way to orient around them. Rather than a favorites list or a new MOC primitive, let the graph itself be the map:
+
+- **Pin thoughts.** A per-graph `pinned_thoughts` table — not a column on `thoughts`, for the same reason card coordinates live in `working_set_items`: salience-to-you is attention state, not knowledge. Pinning is a direct human action like working-set membership — instant, never through the proposal tray, never agent-proposed in v0.
+- Pins surface in three places: a compact pinned rail in the workspace, ranked at the top of search results, and in the re-entry summary ("your pinned thoughts: …, two have new relations since last visit"). Re-entry currently summarizes what *changed*; pins tell it what *matters*.
+- **Open neighborhood.** From any thought (pinned or not): one action that spawns a new working set seeded with that thought plus its 1-hop neighbors. Composes Phase 3's neighbor-pull with Phase 5's multiple working sets. A pinned `concept` with typed relations to its key claims thereby *is* a map of content: the hub is durable knowledge, the relations are the table of contents, the pin is just the bookmark.
+
+Deliberately not in scope: a `hub`/`moc` thought type (the existing `concept` type plus outbound relations already expresses it; if hub-concepts prove behaviorally distinct, that's a granularity finding, not a v0 assumption); agent-computed salience ("you keep returning to X — pin it?") — needs usage logging that doesn't exist yet and risks the agent curating your sense of what's central before you've formed one, so it's a v0.1 candidate alongside Synthesize; any global graph overview — pins are what let you *not* need one.
+
+*Exit: in a graph too big to hold in your head, you can re-orient from the pinned rail alone — pin a hub, open its neighborhood into a fresh working set, and reach any main line of thought in a couple of actions; pinning and unpinning never mutate durable knowledge.*
+
+### Phase 7: dogfood + judge
 
 Use it for a real thinking project (e.g. this design itself) for 1–2 weeks, logging against the measures below. A moderated multi-participant study with a chat baseline (per [the archived design-2](archive/design-2.md) Phase 3) is deferred until the loop proves out on ourselves.
 
@@ -305,6 +317,7 @@ Use it for a real thinking project (e.g. this design itself) for 1–2 weeks, lo
 - Use of `related_to` vs. specific relation types; which types never get used.
 - Median thought size; manual split/merge/rewrite corrections caused by poor granularity.
 - Working-set rebuild frequency; time to re-orient on re-entry.
+- Pin usage: how many thoughts get pinned, whether pins go stale or everything ends up pinned (both are granularity signals — thoughts too small to be landmarks), and whether re-entry starts from the pinned rail.
 - Whether the absence of chat is felt, and where.
 
 ### Success criteria (directional, not statistical)

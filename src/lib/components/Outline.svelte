@@ -27,6 +27,7 @@
 		title: string;
 		statement: string;
 		provenance: 'human' | 'agent';
+		pinned: boolean;
 		refs: RefLine[];
 		pendingRevision: boolean;
 	}
@@ -69,6 +70,7 @@
 				title: t.title,
 				statement: t.statement,
 				provenance: provenance(t.id),
+				pinned: ws.isPinned(t.id),
 				refs: [],
 				pendingRevision: pendingRevisionIds.has(t.id)
 			};
@@ -91,6 +93,7 @@
 						title: t.title,
 						statement: t.statement,
 						provenance: provenance(t.id),
+						pinned: ws.isPinned(t.id),
 						refs: [],
 						pendingRevision: false
 					};
@@ -110,6 +113,7 @@
 					title: p.thought.title,
 					statement: p.thought.statement,
 					provenance: 'agent',
+					pinned: false,
 					refs: [],
 					pendingRevision: false
 				};
@@ -252,6 +256,7 @@
 									}}
 								>
 									<div class="head">
+										{#if e.pinned}<span class="pin" title="Pinned">⚑</span>{/if}
 										<span class="title">{e.title}</span>
 										{#if e.ghost === 'proposed'}
 											<span class="badge proposed-badge">◇ proposed</span>
@@ -404,6 +409,10 @@
 	.proposed-badge { color: #8a6a1f; font-weight: 700; }
 	.surfaced-badge { color: #4a616f; font-weight: 600; }
 	.revision-badge { color: #8a6a1f; font-weight: 700; }
+	.pin {
+		font-size: 11px;
+		color: #8a6a1f;
+	}
 	.status {
 		font-size: 10px;
 		border: 1px solid #d5d0c4;

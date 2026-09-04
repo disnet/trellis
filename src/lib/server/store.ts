@@ -193,6 +193,11 @@ export function getState(): WorkspaceState {
 		x: r.x,
 		y: r.y
 	})) as WorkingSetItem[];
+	const pinnedThoughtIds = (
+		db
+			.prepare('SELECT thought_id FROM pinned_thoughts WHERE graph_id = ? ORDER BY pinned_at, rowid')
+			.all(graphId) as any[]
+	).map((r) => r.thought_id as string);
 	const scratchNotes = (
 		db.prepare('SELECT * FROM scratch_notes WHERE graph_id = ? ORDER BY created_at, rowid').all(graphId) as any[]
 	).map(rowToScratch);
@@ -229,6 +234,7 @@ export function getState(): WorkspaceState {
 		workingSets,
 		activeWorkingSetId: activeSet,
 		workingSet,
+		pinnedThoughtIds,
 		scratchNotes,
 		pendingChangeSets,
 		decidedChangeSets,
@@ -257,6 +263,23 @@ export function reentrySummary(): ReentrySummary {
 
 	const ref = (t: Thought) => ({ id: t.id, title: t.title, type: t.type, status: t.status });
 
+	// Pins are what *matters*; the rest of the summary is what changed. Each
+	// pinned thought reports the relations it gained since the last visit.
+	const pinned = state.pinnedThoughtIds
+		.map((tid) => state.thoughts[tid])
+		.filter((t): t is Thought => t !== undefined)
+		.map((t) => ({
+			...ref(t),
+			newRelations:
+				lastVisitAt === null
+					? 0
+					: state.relations.filter(
+							(r) =>
+								r.createdAt > lastVisitAt &&
+								(r.fromThoughtId === t.id || r.toThoughtId === t.id)
+						).length
+		}));
+
 	const central = inWorkingSet
 		.filter((t) => t.type === 'claim' || t.type === 'question')
 		.map((t) => ({ ...ref(t), degree: degree.get(t.id) ?? 0 }))
@@ -284,6 +307,7 @@ export function reentrySummary(): ReentrySummary {
 
 	return {
 		lastVisitAt,
+		pinned,
 		central,
 		attention,
 		newThoughts,
@@ -734,6 +758,27 @@ export function clearWorkingSet(): void {
 	db.prepare('DELETE FROM working_set_items WHERE working_set_id = ?').run(activeWorkingSetId());
 }
 
+// --- pins (Phase 6) ---
+// Per-graph attention state, not knowledge: pinning marks a thought you keep
+// returning to. Human-only and direct — never through the proposal tray, and
+// never a mutation of the durable graph.
+
+export function setPinned(thoughtId: string, pinned: boolean): string | null {
+	const graphId = activeGraphId();
+	if (!db.prepare('SELECT 1 FROM thoughts WHERE id = ? AND graph_id = ?').get(thoughtId, graphId))
+		return 'Unknown thought.';
+	if (pinned)
+		db.prepare(
+			'INSERT INTO pinned_thoughts (graph_id, thought_id, pinned_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING'
+		).run(graphId, thoughtId, Date.now());
+	else
+		db.prepare('DELETE FROM pinned_thoughts WHERE graph_id = ? AND thought_id = ?').run(
+			graphId,
+			thoughtId
+		);
+	return null;
+}
+
 // --- multiple working sets (tabs) ---
 
 const SET_NAME_LIMIT = 40;
@@ -778,6 +823,60 @@ export function renameWorkingSet(wsId: string, name: string): string | null {
 		.prepare('UPDATE working_sets SET name = ? WHERE id = ? AND graph_id = ?')
 		.run(trimmed, wsId, activeGraphId());
 	return res.changes === 0 ? 'Unknown working set.' : null;
+}
+
+/** Spawn a new working set seeded with a thought plus its 1-hop neighbors and
+ *  make it active (Phase 6): the hub centered, neighbors on a ring around it.
+ *  Membership only — the durable graph is untouched. */
+export function openNeighborhood(thoughtId: string): string | null {
+	const graphId = activeGraphId();
+	const hub = db
+		.prepare('SELECT title FROM thoughts WHERE id = ? AND graph_id = ?')
+		.get(thoughtId, graphId) as { title: string } | undefined;
+	if (!hub) return 'Unknown thought.';
+	const neighbors = (
+		db
+			.prepare(
+				`SELECT DISTINCT CASE WHEN from_thought_id = ? THEN to_thought_id ELSE from_thought_id END AS id
+				 FROM relations
+				 WHERE graph_id = ? AND (from_thought_id = ? OR to_thought_id = ?)`
+			)
+			.all(thoughtId, graphId, thoughtId, thoughtId) as { id: string }[]
+	)
+		.map((r) => r.id)
+		.filter((nid) => nid !== thoughtId);
+
+	const name =
+		hub.title.length > SET_NAME_LIMIT ? `${hub.title.slice(0, SET_NAME_LIMIT - 1)}…` : hub.title;
+	const wsId = id('ws');
+	// Ellipse sized to the neighbor count, kept inside the canvas surface.
+	const rx = Math.min(720, Math.max(340, neighbors.length * 60));
+	const ry = Math.min(500, Math.max(210, neighbors.length * 40));
+	const cx = rx + 120;
+	const cy = ry + 80;
+	db.transaction(() => {
+		db.prepare('INSERT INTO working_sets (id, name, graph_id, created_at) VALUES (?, ?, ?, ?)').run(
+			wsId,
+			name,
+			graphId,
+			Date.now()
+		);
+		const insert = db.prepare(
+			'INSERT INTO working_set_items (working_set_id, thought_id, x, y) VALUES (?, ?, ?, ?)'
+		);
+		insert.run(wsId, thoughtId, cx, cy);
+		neighbors.forEach((nid, i) => {
+			const angle = (2 * Math.PI * i) / neighbors.length - Math.PI / 2;
+			insert.run(
+				wsId,
+				nid,
+				Math.max(0, Math.round(cx + rx * Math.cos(angle))),
+				Math.max(0, Math.round(cy + ry * Math.sin(angle)))
+			);
+		});
+		setMeta(`active_working_set:${graphId}`, wsId);
+	})();
+	return null;
 }
 
 /** Delete a working set (its membership only — thoughts stay in the graph). */
@@ -889,6 +988,9 @@ export function exportState(graphId: string = activeGraphId()) {
 				'SELECT * FROM working_set_items WHERE working_set_id IN (SELECT id FROM working_sets WHERE graph_id = ?)'
 			)
 			.all(graphId),
+		pinned_thoughts: db
+			.prepare('SELECT * FROM pinned_thoughts WHERE graph_id = ? ORDER BY pinned_at, rowid')
+			.all(graphId),
 		change_sets: db
 			.prepare('SELECT * FROM change_sets WHERE graph_id = ? ORDER BY created_at, rowid')
 			.all(graphId),
@@ -916,6 +1018,14 @@ function restore(graphId: string, snapshot: ReturnType<typeof exportState>) {
 		}
 	};
 	db.transaction(() => {
+		// Pins are attention state no change set can touch, so undoing an apply
+		// keeps the *current* pins rather than reverting to the snapshot's —
+		// minus any pin whose thought does not survive the restore.
+		const restoredThoughtIds = new Set((snapshot.thoughts as any[]).map((t) => t.id));
+		const pins = (
+			db.prepare('SELECT * FROM pinned_thoughts WHERE graph_id = ?').all(graphId) as any[]
+		).filter((p) => restoredThoughtIds.has(p.thought_id));
+		db.prepare('DELETE FROM pinned_thoughts WHERE graph_id = ?').run(graphId);
 		db.prepare(
 			'DELETE FROM proposed_operations WHERE change_set_id IN (SELECT id FROM change_sets WHERE graph_id = ?)'
 		).run(graphId);
@@ -938,5 +1048,6 @@ function restore(graphId: string, snapshot: ReturnType<typeof exportState>) {
 		insert('change_sets', snapshot.change_sets as any[]);
 		insert('proposed_operations', snapshot.proposed_operations as any[]);
 		insert('scratch_notes', snapshot.scratch_notes as any[]);
+		insert('pinned_thoughts', pins);
 	})();
 }

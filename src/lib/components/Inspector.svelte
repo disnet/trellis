@@ -54,6 +54,8 @@
 	// Working-set membership actions (Phase 3): transient, never touch the graph.
 	const inSet = $derived(thought ? ws.inWorkingSet(thought.id) : false);
 	const neighborCount = $derived(thought ? ws.neighborIds([thought.id]).length : 0);
+	// Pins (Phase 6): attention state, as transient as membership.
+	const pinned = $derived(thought ? ws.isPinned(thought.id) : false);
 
 	async function run(fn: () => Promise<string | null>) {
 		const err = await fn();
@@ -105,11 +107,27 @@
 			<div class="head">
 				<span class="type">{thought.type}</span>
 				<span class="status">{thought.status}</span>
+				{#if pinned}<span class="pin-mark" title="Pinned">⚑ pinned</span>{/if}
 			</div>
 			<h3>{thought.title}</h3>
 			<p class="statement">{thought.statement}</p>
 			<div class="actions">
 				<button onclick={startEdit}>Revise…</button>
+				<button
+					class:pinned
+					title={pinned
+						? 'Unpin — pins never touch the graph itself'
+						: 'Mark as a landmark you keep returning to'}
+					onclick={() => run(() => ws.togglePin(thought.id))}
+				>
+					{pinned ? '⚑ Unpin' : '⚑ Pin'}
+				</button>
+				<button
+					title="Spawn a new working set with this thought and its 1-hop neighbors"
+					onclick={() => run(() => ws.openNeighborhood(thought.id))}
+				>
+					⌾ Open neighborhood
+				</button>
 				{#if inSet}
 					<button
 						title="1-hop neighbors outside the working set"
@@ -206,6 +224,17 @@
 	.head {
 		display: flex;
 		gap: 6px;
+		align-items: baseline;
+	}
+	.pin-mark {
+		font-size: 10px;
+		font-weight: 700;
+		color: #8a6a1f;
+	}
+	.actions button.pinned {
+		border-color: #c9a860;
+		background: #faf6ea;
+		color: #8a6a1f;
 	}
 	.type,
 	.status {

@@ -329,6 +329,7 @@
 					statement={t.statement}
 					zoom={ws.zoom}
 					selected={ws.selectedIds.includes(t.id)}
+					pinned={ws.isPinned(t.id)}
 					provenance={provenance(t.id)}
 					relationSummary={ws.zoom === 'reading' ? relationSummary(t.id) : undefined}
 					onmove={(x, y) => ws.moveCard(t.id, x, y)}

@@ -60,6 +60,23 @@
 				</p>
 			{/if}
 
+			{#if summary.pinned.length > 0}
+				<h3>Pinned</h3>
+				<ul>
+					{#each summary.pinned as t (t.id)}
+						<li>
+							<span class="chip pin">⚑ {t.type}</span>
+							<button class="link" onclick={() => open(t.id)}>{t.title}</button>
+							{#if t.newRelations > 0}
+								<span class="meta new">
+									{t.newRelations} new {t.newRelations === 1 ? 'relation' : 'relations'}
+								</span>
+							{/if}
+						</li>
+					{/each}
+				</ul>
+			{/if}
+
 			{#if summary.central.length > 0}
 				<h3>Central right now</h3>
 				<ul>
@@ -190,6 +207,15 @@
 	.chip.status {
 		background: #f5e9c9;
 		color: #8a6a1f;
+	}
+	.chip.pin {
+		background: #faf6ea;
+		border: 1px solid #dcd3bd;
+		color: #8a6a1f;
+	}
+	.meta.new {
+		color: #7a5c15;
+		font-weight: 600;
 	}
 	.link {
 		border: none;

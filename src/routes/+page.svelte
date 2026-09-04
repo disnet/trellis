@@ -297,9 +297,13 @@
 	.scratch-pane {
 		border-bottom: 1px solid #e0dbcf;
 		min-height: 0;
+		/* min-width guards against grid min-content blowout from nowrap content
+		   (e.g. long pinned-thought titles), which would widen the whole column. */
+		min-width: 0;
 	}
 	.library-pane {
 		min-height: 0;
+		min-width: 0;
 		display: flex;
 		flex-direction: column;
 	}

@@ -100,6 +100,16 @@ CREATE TABLE IF NOT EXISTS scratch_notes (
   distilled_change_set_id TEXT
 );
 
+-- Pins (Phase 6): per-graph attention state, not knowledge — which thoughts
+-- the person keeps returning to. Not a column on thoughts for the same reason
+-- card coordinates live in working_set_items.
+CREATE TABLE IF NOT EXISTS pinned_thoughts (
+  graph_id TEXT NOT NULL REFERENCES graphs(id),
+  thought_id TEXT NOT NULL REFERENCES thoughts(id),
+  pinned_at INTEGER NOT NULL,
+  PRIMARY KEY (graph_id, thought_id)
+);
+
 CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL

@@ -165,6 +165,9 @@ export interface WorkspaceState {
 	activeWorkingSetId: string;
 	/** Items of the active working set. */
 	workingSet: WorkingSetItem[];
+	/** Pinned thoughts of the active graph, oldest pin first (Phase 6).
+	 *  Attention state, not knowledge — pinning never mutates the durable graph. */
+	pinnedThoughtIds: string[];
 	scratchNotes: ScratchNote[];
 	pendingChangeSets: ChangeSet[];
 	decidedChangeSets: ChangeSet[];
@@ -182,6 +185,9 @@ export interface ReentryThoughtRef {
 /** Structural summary shown on re-entry instead of a replay of activity. */
 export interface ReentrySummary {
 	lastVisitAt: number | null;
+	/** Pinned thoughts (what *matters*, alongside what changed), each with the
+	 *  number of relations it gained since the last visit. */
+	pinned: (ReentryThoughtRef & { newRelations: number })[];
 	/** Most-connected claims and questions in the working set. */
 	central: (ReentryThoughtRef & { degree: number })[];
 	/** Contested or still-tentative thoughts in the working set. */

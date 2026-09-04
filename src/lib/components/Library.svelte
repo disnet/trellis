@@ -13,6 +13,16 @@
 	);
 	const totalThoughts = $derived(Object.keys(ws.thoughts).length);
 
+	// Pinned rail (Phase 6): the graph's landmarks, oldest pin first.
+	const pinned = $derived(
+		ws.pinnedThoughtIds.map((id) => ws.thoughts[id]).filter((t) => t !== undefined)
+	);
+
+	async function run(fn: () => Promise<string | null>) {
+		const err = await fn();
+		if (err) ws.notice = err;
+	}
+
 	async function add(thoughtId: string) {
 		const err = await ws.addToSet([thoughtId]);
 		if (err) ws.notice = err;
@@ -29,6 +39,31 @@
 		{totalThoughts} thought{totalThoughts === 1 ? '' : 's'} in the graph ·
 		{ws.workingSet.length} in this set
 	</p>
+	{#if pinned.length > 0}
+		<div class="pinned-rail" aria-label="Pinned thoughts">
+			<h3>⚑ Pinned</h3>
+			<ul class="pins">
+				{#each pinned as t (t.id)}
+					<li>
+						<button class="pin-title" title="Select “{t.title}”" onclick={() => locate(t.id)}>
+							{t.title}
+						</button>
+						<button
+							class="pin-open"
+							title="Open a new working set with this thought and its neighbors"
+							onclick={() => run(() => ws.openNeighborhood(t.id))}
+						>⌾ open</button>
+						<button
+							class="unpin"
+							title="Unpin"
+							aria-label="Unpin “{t.title}”"
+							onclick={() => run(() => ws.togglePin(t.id))}
+						>✕</button>
+					</li>
+				{/each}
+			</ul>
+		</div>
+	{/if}
 	<input
 		type="search"
 		placeholder="Search titles and statements…"
@@ -44,6 +79,7 @@
 				<li>
 					<div class="result-main">
 						<span class="type type-{t.type}">{t.type}</span>
+						{#if ws.isPinned(t.id)}<span class="pin-mark" title="Pinned">⚑</span>{/if}
 						<span class="title">{t.title}</span>
 					</div>
 					<div class="result-actions">
@@ -100,6 +136,86 @@
 	input:focus {
 		outline: 2px solid #3b5bdb33;
 		border-color: #3b5bdb;
+	}
+	.pinned-rail {
+		border: 1px solid #dcd3bd;
+		background: #faf6ea;
+		border-radius: 6px;
+		padding: 6px 8px;
+	}
+	.pinned-rail h3 {
+		margin: 0 0 4px;
+		font-size: 10px;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		color: #8a6a1f;
+	}
+	.pins {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 3px;
+		max-height: 130px;
+		overflow-y: auto;
+	}
+	.pins li {
+		display: flex;
+		align-items: baseline;
+		gap: 6px;
+	}
+	.pin-title {
+		border: none;
+		background: none;
+		padding: 0;
+		font: inherit;
+		font-size: 12px;
+		font-weight: 600;
+		color: #4d473c;
+		text-align: left;
+		cursor: pointer;
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		line-height: 1.35;
+	}
+	.pin-title:hover {
+		color: #3b5bdb;
+	}
+	.pin-open {
+		font: inherit;
+		font-size: 10px;
+		font-weight: 600;
+		border: 1px solid #c9c4b8;
+		background: #fff;
+		border-radius: 999px;
+		padding: 1px 7px;
+		cursor: pointer;
+		color: #4d473c;
+		white-space: nowrap;
+	}
+	.pin-open:hover {
+		border-color: #3b5bdb;
+		color: #3b5bdb;
+	}
+	.unpin {
+		border: none;
+		background: none;
+		padding: 0 2px;
+		font-size: 10px;
+		color: #a89f8d;
+		cursor: pointer;
+		line-height: 1;
+	}
+	.unpin:hover {
+		color: #8a3a2a;
+	}
+	.pin-mark {
+		font-size: 11px;
+		color: #8a6a1f;
 	}
 	.results {
 		list-style: none;

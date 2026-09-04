@@ -5,6 +5,7 @@ import {
 	createWorkingSet,
 	deleteWorkingSet,
 	getState,
+	openNeighborhood,
 	removeFromWorkingSet,
 	renameWorkingSet,
 	switchWorkingSet,
@@ -21,6 +22,8 @@ import type { RequestHandler } from './$types';
 //   { action: 'switch', workingSetId } → change which set is active
 //   { action: 'rename', workingSetId, name }
 //   { action: 'delete', workingSetId } → delete a set (membership only)
+//   { action: 'neighborhood', thoughtId } → new set seeded with a thought + its
+//                                           1-hop neighbors, made active
 // None of these touch the durable graph.
 export const POST: RequestHandler = async ({ request }) => {
 	const body = await request.json().catch(() => null);
@@ -52,6 +55,11 @@ export const POST: RequestHandler = async ({ request }) => {
 	}
 	if (body?.action === 'rename') {
 		const error = renameWorkingSet(body.workingSetId, body.name);
+		if (error) return json({ error }, { status: 400 });
+		return json({ state: getState() });
+	}
+	if (body?.action === 'neighborhood') {
+		const error = openNeighborhood(body.thoughtId);
 		if (error) return json({ error }, { status: 400 });
 		return json({ state: getState() });
 	}

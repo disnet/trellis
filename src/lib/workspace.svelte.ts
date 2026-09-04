@@ -40,6 +40,7 @@ class Workspace {
 	workingSets = $state<WorkingSetInfo[]>([]);
 	activeWorkingSetId = $state('');
 	workingSet = $state<WorkingSetItem[]>([]);
+	pinnedThoughtIds = $state<string[]>([]);
 	scratchNotes = $state<ScratchNote[]>([]);
 	scratchDraft = $state('');
 	pendingChangeSets = $state<ChangeSet[]>([]);
@@ -87,6 +88,7 @@ class Workspace {
 		this.workingSets = s.workingSets;
 		this.activeWorkingSetId = s.activeWorkingSetId;
 		this.workingSet = s.workingSet;
+		this.pinnedThoughtIds = s.pinnedThoughtIds;
 		this.scratchNotes = s.scratchNotes;
 		this.pendingChangeSets = s.pendingChangeSets;
 		this.decidedChangeSets = s.decidedChangeSets;
@@ -318,6 +320,31 @@ class Workspace {
 		}
 	}
 
+	// --- pins (Phase 6) ---
+	// Per-graph attention state: landmarks you keep returning to. Direct and
+	// human-only — pinning never touches the durable graph.
+
+	isPinned(thoughtId: string): boolean {
+		return this.pinnedThoughtIds.includes(thoughtId);
+	}
+
+	async togglePin(thoughtId: string): Promise<string | null> {
+		const action = this.isPinned(thoughtId) ? 'unpin' : 'pin';
+		return this.post('/api/pins', { action, thoughtId });
+	}
+
+	/** Spawn a new working set around a thought and its 1-hop neighbors. */
+	async openNeighborhood(thoughtId: string): Promise<string | null> {
+		const title = this.thoughts[thoughtId]?.title ?? thoughtId;
+		const err = await this.post('/api/workingset', { action: 'neighborhood', thoughtId });
+		if (!err) {
+			this.selectedIds = [thoughtId];
+			const n = this.workingSet.length - 1;
+			this.notice = `Opened “${title}” and ${n} neighbor${n === 1 ? '' : 's'} in a new working set.`;
+		}
+		return err;
+	}
+
 	/** 1-hop neighbors of the given thoughts that are not in the working set. */
 	neighborIds(thoughtIds: string[]): string[] {
 		const of = new Set(thoughtIds);
@@ -341,7 +368,8 @@ class Workspace {
 		return err;
 	}
 
-	/** Search the full graph by title + statement; title matches rank first. */
+	/** Search the full graph by title + statement; pinned thoughts rank first,
+	 *  then title matches. */
 	searchGraph(query: string): Thought[] {
 		const q = query.trim().toLowerCase();
 		if (!q) return [];
@@ -350,9 +378,11 @@ class Workspace {
 				(t) => t.title.toLowerCase().includes(q) || t.statement.toLowerCase().includes(q)
 			)
 			.sort((a, b) => {
+				const aPin = this.isPinned(a.id) ? 0 : 1;
+				const bPin = this.isPinned(b.id) ? 0 : 1;
 				const aTitle = a.title.toLowerCase().includes(q) ? 0 : 1;
 				const bTitle = b.title.toLowerCase().includes(q) ? 0 : 1;
-				return aTitle - bTitle || b.updatedAt - a.updatedAt;
+				return aPin - bPin || aTitle - bTitle || b.updatedAt - a.updatedAt;
 			});
 	}
 

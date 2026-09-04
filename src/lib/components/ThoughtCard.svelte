@@ -11,6 +11,8 @@
 		statement: string;
 		zoom: 'overview' | 'reading';
 		selected?: boolean;
+		/** Marked as a per-graph landmark (Phase 6). */
+		pinned?: boolean;
 		/** 'proposed' = new content awaiting ratification; 'surfaced' = existing thought previewed on canvas by a pending relation. */
 		ghost?: 'proposed' | 'surfaced' | null;
 		provenance: ActorType;
@@ -33,6 +35,7 @@
 		statement,
 		zoom,
 		selected = false,
+		pinned = false,
 		ghost = null,
 		provenance,
 		relationSummary,
@@ -94,6 +97,7 @@
 >
 	<div class="head">
 		<span class="type type-{type}">{type}</span>
+		{#if pinned}<span class="pin" title="Pinned">⚑</span>{/if}
 		{#if ghost === 'proposed'}
 			<span class="badge proposed-badge">◇ proposed</span>
 		{:else if ghost === 'surfaced'}
@@ -101,7 +105,7 @@
 		{:else}
 			<span class="badge actor">{provenance === 'agent' ? '✳ agent' : '✎ you'}</span>
 		{/if}
-		{#if selected && onremove}
+		{#if onremove}
 			<button
 				class="remove"
 				title="Remove from working set (the thought stays in the graph)"
@@ -190,6 +194,10 @@
 		white-space: nowrap;
 		color: #6d675c;
 	}
+	.pin {
+		font-size: 11px;
+		color: #8a6a1f;
+	}
 	.proposed-badge { color: #8a6a1f; font-weight: 700; }
 	.surfaced-badge { color: #4a616f; font-weight: 600; }
 	.title {
@@ -225,6 +233,11 @@
 		color: #8a8375;
 		cursor: pointer;
 		line-height: 1;
+		/* Present but invisible until selected, so the head row never reflows. */
+		visibility: hidden;
+	}
+	.card.selected .remove {
+		visibility: visible;
 	}
 	.remove:hover {
 		color: #8a3a2a;
