@@ -239,7 +239,18 @@ Until now the working set is whatever was seeded or last persisted. Make it dire
 
 *Exit: a working set can be assembled from the full graph without reseeding; adding and removing thoughts never mutates durable state; the persisted set survives manipulation and restores faithfully on re-entry.*
 
-### Phase 4: dogfood + judge
+### Phase 4: outline projection (non-canvas view)
+
+The "views are projections" principle so far exists only as a claim; the canvas is the sole surface. Add the one non-canvas view promised for v0 — a read-only outline over the same working set — to prove layout and presentation really are separate from the knowledge model:
+
+- An outline projection of the current working set: thoughts grouped (e.g. by type or status), each showing title, status, and provenance marker, with relations rendered inline as typed references.
+- A view toggle that switches canvas ↔ outline without changing working-set membership, selection, or any durable state.
+- Selecting a thought in the outline drives the same inspector; pending change-set content remains visibly provisional in both views.
+- Read-only: no editing, reordering-as-meaning, or capture in the outline (editing-in-outline stays out of scope for v0).
+
+*Exit: the same working set is legible in both projections; switching views mutates nothing; a thought and its pending/accepted status can be located and distinguished in either view.*
+
+### Phase 5: dogfood + judge
 
 Use it for a real thinking project (e.g. this design itself) for 1–2 weeks, logging against the measures below. A moderated multi-participant study with a chat baseline (per [the archived design-2](archive/design-2.md) Phase 3) is deferred until the loop proves out on ourselves.
 

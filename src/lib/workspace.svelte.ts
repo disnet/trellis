@@ -45,6 +45,8 @@ class Workspace {
 
 	selectedIds = $state<string[]>([]);
 	zoom = $state<'overview' | 'reading'>('overview');
+	/** Which projection of the working set is shown. View-only, never persisted. */
+	view = $state<'canvas' | 'outline'>('canvas');
 	/** Preview positions for proposed cards, keyed `${changeSetId}:${ref}`. View-only, not persisted. */
 	ghostPositions = $state<Record<string, GhostPosition>>({});
 	notice = $state<string | null>(null);

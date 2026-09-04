@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Canvas from '$lib/components/Canvas.svelte';
 	import Inspector from '$lib/components/Inspector.svelte';
+	import Outline from '$lib/components/Outline.svelte';
 	import Library from '$lib/components/Library.svelte';
 	import ProposalTray from '$lib/components/ProposalTray.svelte';
 	import ReentryPanel from '$lib/components/ReentryPanel.svelte';
@@ -77,6 +78,13 @@
 		</span>
 		<div class="right">
 			<button
+				title="Switch projection — same working set, same selection, nothing changes"
+				aria-pressed={ws.view === 'outline'}
+				onclick={() => (ws.view = ws.view === 'canvas' ? 'outline' : 'canvas')}
+			>
+				{ws.view === 'canvas' ? '☰ Outline' : '▦ Canvas'}
+			</button>
+			<button
 				class="zoom"
 				onclick={() => (ws.zoom = ws.zoom === 'overview' ? 'reading' : 'overview')}
 			>
@@ -84,7 +92,7 @@
 			</button>
 			<button
 				title="Re-lay out the canvas; related cards end up together"
-				disabled={ws.workingSet.length === 0}
+				disabled={ws.workingSet.length === 0 || ws.view === 'outline'}
 				onclick={() => ws.arrange()}
 			>
 				⌗ Arrange
@@ -119,7 +127,13 @@
 			</div>
 		{:else}
 			<WorkingSetTabs />
-			<div class="canvas-pane"><Canvas /></div>
+			<div class="canvas-pane">
+				{#if ws.view === 'canvas'}
+					<Canvas />
+				{:else}
+					<Outline />
+				{/if}
+			</div>
 		{/if}
 	</main>
 	<aside class="right-panel">
