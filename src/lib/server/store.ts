@@ -4,7 +4,7 @@
 // is a separate, explicitly-invoked transaction.
 
 import crypto from 'node:crypto';
-import { activeWorkingSetId, db } from './db';
+import { activeGraphId, activeWorkingSetId, db } from './db';
 import { generateProposal, linkCallToChangeSet } from './agent';
 import {
 	RELATION_TYPES,
@@ -135,7 +135,10 @@ function rowToScratch(r: any): ScratchNote {
 // --- reads ---
 
 function loadChangeSet(csId: string): ChangeSet | null {
-	const row = db.prepare('SELECT * FROM change_sets WHERE id = ?').get(csId);
+	// Scoped to the active graph so review actions cannot cross a boundary.
+	const row = db
+		.prepare('SELECT * FROM change_sets WHERE id = ? AND graph_id = ?')
+		.get(csId, activeGraphId());
 	if (!row) return null;
 	const ops = (
 		db
@@ -146,10 +149,18 @@ function loadChangeSet(csId: string): ChangeSet | null {
 }
 
 export function getState(): WorkspaceState {
-	const thoughtRows = db.prepare('SELECT * FROM thoughts').all() as any[];
+	const graphId = activeGraphId();
+	const graphs = (
+		db.prepare('SELECT * FROM graphs ORDER BY created_at, rowid').all() as any[]
+	).map((r) => ({ id: r.id, name: r.name, createdAt: r.created_at }));
+	const thoughtRows = db.prepare('SELECT * FROM thoughts WHERE graph_id = ?').all(graphId) as any[];
 	const revisionRows = db
-		.prepare('SELECT * FROM thought_revisions ORDER BY created_at, rowid')
-		.all() as any[];
+		.prepare(
+			`SELECT * FROM thought_revisions
+			 WHERE thought_id IN (SELECT id FROM thoughts WHERE graph_id = ?)
+			 ORDER BY created_at, rowid`
+		)
+		.all(graphId) as any[];
 	const revsByThought = new Map<string, ThoughtRevision[]>();
 	for (const r of revisionRows) {
 		const list = revsByThought.get(r.thought_id) ?? [];
@@ -160,19 +171,20 @@ export function getState(): WorkspaceState {
 	const thoughts: Record<string, Thought> = {};
 	for (const r of thoughtRows) thoughts[r.id] = rowToThought(r, revsByThought.get(r.id) ?? []);
 
-	const relations = (db.prepare('SELECT * FROM relations ORDER BY created_at, rowid').all() as any[]).map(
-		rowToRelation
-	);
-	const activeSet = activeWorkingSetId();
+	const relations = (
+		db.prepare('SELECT * FROM relations WHERE graph_id = ? ORDER BY created_at, rowid').all(graphId) as any[]
+	).map(rowToRelation);
+	const activeSet = activeWorkingSetId(graphId);
 	const workingSets = (
 		db
 			.prepare(
 				`SELECT ws.id, ws.name, ws.created_at, COUNT(i.thought_id) AS size
 				 FROM working_sets ws
 				 LEFT JOIN working_set_items i ON i.working_set_id = ws.id
+				 WHERE ws.graph_id = ?
 				 GROUP BY ws.id ORDER BY ws.created_at, ws.rowid`
 			)
-			.all() as any[]
+			.all(graphId) as any[]
 	).map((r) => ({ id: r.id, name: r.name, createdAt: r.created_at, size: r.size }));
 	const workingSet = (
 		db.prepare('SELECT * FROM working_set_items WHERE working_set_id = ?').all(activeSet) as any[]
@@ -182,13 +194,19 @@ export function getState(): WorkspaceState {
 		y: r.y
 	})) as WorkingSetItem[];
 	const scratchNotes = (
-		db.prepare('SELECT * FROM scratch_notes ORDER BY created_at, rowid').all() as any[]
+		db.prepare('SELECT * FROM scratch_notes WHERE graph_id = ? ORDER BY created_at, rowid').all(graphId) as any[]
 	).map(rowToScratch);
 
-	const csRows = db.prepare('SELECT * FROM change_sets ORDER BY created_at, rowid').all() as any[];
+	const csRows = db
+		.prepare('SELECT * FROM change_sets WHERE graph_id = ? ORDER BY created_at, rowid')
+		.all(graphId) as any[];
 	const opRows = db
-		.prepare('SELECT * FROM proposed_operations ORDER BY sequence')
-		.all() as any[];
+		.prepare(
+			`SELECT * FROM proposed_operations
+			 WHERE change_set_id IN (SELECT id FROM change_sets WHERE graph_id = ?)
+			 ORDER BY sequence`
+		)
+		.all(graphId) as any[];
 	const opsByCs = new Map<string, ProposedOperation[]>();
 	for (const r of opRows) {
 		const list = opsByCs.get(r.change_set_id) ?? [];
@@ -204,6 +222,8 @@ export function getState(): WorkspaceState {
 	}
 
 	return {
+		graphs,
+		activeGraphId: graphId,
 		thoughts,
 		relations,
 		workingSets,
@@ -212,13 +232,16 @@ export function getState(): WorkspaceState {
 		scratchNotes,
 		pendingChangeSets,
 		decidedChangeSets,
-		undoLabel: getMeta('undo_label')
+		undoLabel: getMeta(`undo_label:${graphId}`)
 	};
 }
 
-/** Compute the structural re-entry summary against the previous visit, then record this one. */
+/** Compute the active graph's structural re-entry summary against the previous
+ *  visit to that graph, then record this one. Per-graph: switching graphs swaps
+ *  the summary along with the rest of the workspace. */
 export function reentrySummary(): ReentrySummary {
-	const lastVisitRaw = getMeta('last_visit_at');
+	const graphId = activeGraphId();
+	const lastVisitRaw = getMeta(`last_visit_at:${graphId}`);
 	const lastVisitAt = lastVisitRaw ? Number(lastVisitRaw) : null;
 	const state = getState();
 
@@ -257,7 +280,7 @@ export function reentrySummary(): ReentrySummary {
 		newRelations = state.relations.filter((r) => r.createdAt > lastVisitAt).length;
 	}
 
-	setMeta('last_visit_at', String(Date.now()));
+	setMeta(`last_visit_at:${graphId}`, String(Date.now()));
 
 	return {
 		lastVisitAt,
@@ -293,9 +316,10 @@ export async function invoke(
 					: `Select at least one thought to ${action}.`
 		};
 	}
-	const exists = db.prepare('SELECT 1 FROM thoughts WHERE id = ?');
+	const graphId = activeGraphId();
+	const exists = db.prepare('SELECT 1 FROM thoughts WHERE id = ? AND graph_id = ?');
 	for (const tid of selectedIds) {
-		if (!exists.get(tid)) return { error: `Unknown thought in selection: ${tid}` };
+		if (!exists.get(tid, graphId)) return { error: `Unknown thought in selection: ${tid}` };
 	}
 
 	// Persist the scratch note before generation so capture survives a failed
@@ -305,16 +329,17 @@ export async function invoke(
 		const body = scratchBody!;
 		const existing = db
 			.prepare(
-				'SELECT id FROM scratch_notes WHERE body = ? AND distilled_change_set_id IS NULL ORDER BY created_at DESC LIMIT 1'
+				'SELECT id FROM scratch_notes WHERE body = ? AND graph_id = ? AND distilled_change_set_id IS NULL ORDER BY created_at DESC LIMIT 1'
 			)
-			.get(body) as { id: string } | undefined;
+			.get(body, graphId) as { id: string } | undefined;
 		if (existing) {
 			scratch = { id: existing.id, body };
 		} else {
 			scratch = { id: id('scratch'), body };
-			db.prepare('INSERT INTO scratch_notes (id, body, created_at) VALUES (?, ?, ?)').run(
+			db.prepare('INSERT INTO scratch_notes (id, body, graph_id, created_at) VALUES (?, ?, ?, ?)').run(
 				scratch.id,
 				body,
+				graphId,
 				Date.now()
 			);
 		}
@@ -327,14 +352,15 @@ export async function invoke(
 	const csId = db.transaction(() => {
 		const changeSetId = id('cs');
 		db.prepare(
-			`INSERT INTO change_sets (id, action, status, summary, invoked_on, scratch_id, created_at)
-			 VALUES (?, ?, 'pending', ?, ?, ?, ?)`
+			`INSERT INTO change_sets (id, action, status, summary, invoked_on, scratch_id, graph_id, created_at)
+			 VALUES (?, ?, 'pending', ?, ?, ?, ?, ?)`
 		).run(
 			changeSetId,
 			action,
 			outcome.proposal.summary,
 			JSON.stringify(selectedIds),
 			scratch?.id ?? null,
+			graphId,
 			now
 		);
 
@@ -491,12 +517,14 @@ export function applyChangeSet(
 		}
 	}
 
-	// Snapshot for change-set-granularity undo (survives restarts).
-	const snapshot = JSON.stringify(exportState());
+	// Snapshot for change-set-granularity undo (survives restarts). Per-graph,
+	// so undoing here can never touch another graph.
+	const graphId = activeGraphId();
+	const snapshot = JSON.stringify(exportState(graphId));
 
 	const now = Date.now();
-	const activeSet = activeWorkingSetId();
-	const thoughtExists = db.prepare('SELECT 1 FROM thoughts WHERE id = ?');
+	const activeSet = activeWorkingSetId(graphId);
+	const thoughtExists = db.prepare('SELECT 1 FROM thoughts WHERE id = ? AND graph_id = ?');
 	const onCanvas = db.prepare(
 		'SELECT 1 FROM working_set_items WHERE working_set_id = ? AND thought_id = ?'
 	);
@@ -530,9 +558,9 @@ export function applyChangeSet(
 					const tid = id('t');
 					refToId[op.clientRef] = tid;
 					db.prepare(
-						`INSERT INTO thoughts (id, type, status, title, statement, created_at, updated_at)
-						 VALUES (?, ?, ?, ?, ?, ?, ?)`
-					).run(tid, p.thought.type, p.thought.status, p.thought.title, p.thought.statement, now, now);
+						`INSERT INTO thoughts (id, type, status, title, statement, graph_id, created_at, updated_at)
+						 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+					).run(tid, p.thought.type, p.thought.status, p.thought.title, p.thought.statement, graphId, now, now);
 					insertRevision.run(
 						id('rev'),
 						tid,
@@ -547,7 +575,9 @@ export function applyChangeSet(
 					const pos = place(op.clientRef, 80);
 					insertItem.run(activeSet, tid, pos.x, pos.y);
 				} else if (p.op === 'revise_thought') {
-					const row = db.prepare('SELECT * FROM thoughts WHERE id = ?').get(p.thoughtId) as any;
+					const row = db
+						.prepare('SELECT * FROM thoughts WHERE id = ? AND graph_id = ?')
+						.get(p.thoughtId, graphId) as any;
 					if (!row) throw new Error(`Cannot apply: unknown thought ${p.thoughtId}.`);
 					const fields = {
 						title: p.thought.title ?? row.title,
@@ -571,13 +601,13 @@ export function applyChangeSet(
 				} else {
 					const from = refToId[p.from] ?? p.from;
 					const to = refToId[p.to] ?? p.to;
-					if (!thoughtExists.get(from) || !thoughtExists.get(to)) {
+					if (!thoughtExists.get(from, graphId) || !thoughtExists.get(to, graphId)) {
 						throw new Error('Cannot apply: relation endpoint does not exist.');
 					}
 					db.prepare(
-						`INSERT INTO relations (id, from_thought_id, to_thought_id, type, created_by, source_change_set_id, created_at)
-						 VALUES (?, ?, ?, ?, 'agent', ?, ?)`
-					).run(id('r'), from, to, p.relationType, cs.id, now);
+						`INSERT INTO relations (id, from_thought_id, to_thought_id, type, created_by, source_change_set_id, graph_id, created_at)
+						 VALUES (?, ?, ?, ?, 'agent', ?, ?, ?)`
+					).run(id('r'), from, to, p.relationType, cs.id, graphId, now);
 					// Surfaced existing thoughts join the working set so the relation is visible.
 					for (const end of [from, to]) {
 						if (!onCanvas.get(activeSet, end)) {
@@ -602,8 +632,8 @@ export function applyChangeSet(
 		return { error: e instanceof Error ? e.message : 'Applying the change set failed.' };
 	}
 
-	setMeta('undo_snapshot', snapshot);
-	setMeta('undo_label', cs.summary);
+	setMeta(`undo_snapshot:${graphId}`, snapshot);
+	setMeta(`undo_label:${graphId}`, cs.summary);
 
 	const status = accepted.length === 0 ? 'rejected' : accepted.length === cs.operations.length ? 'applied' : 'partially_applied';
 	return { applied: accepted.length, total: cs.operations.length, status };
@@ -612,15 +642,16 @@ export function applyChangeSet(
 // --- undo (last applied change set) ---
 
 export function undoLastApply(): string | null {
-	const snapshot = getMeta('undo_snapshot');
+	const graphId = activeGraphId();
+	const snapshot = getMeta(`undo_snapshot:${graphId}`);
 	if (!snapshot) return 'Nothing to undo.';
 	try {
-		restore(JSON.parse(snapshot));
+		restore(graphId, JSON.parse(snapshot));
 	} catch (e) {
 		return e instanceof Error ? e.message : 'Undo failed.';
 	}
-	setMeta('undo_snapshot', null);
-	setMeta('undo_label', null);
+	setMeta(`undo_snapshot:${graphId}`, null);
+	setMeta(`undo_label:${graphId}`, null);
 	return null;
 }
 
@@ -630,7 +661,9 @@ export function reviseThought(
 	thoughtId: string,
 	fields: { title: string; statement: string; status: ThoughtStatus }
 ): string | null {
-	const row = db.prepare('SELECT * FROM thoughts WHERE id = ?').get(thoughtId) as any;
+	const row = db
+		.prepare('SELECT * FROM thoughts WHERE id = ? AND graph_id = ?')
+		.get(thoughtId, activeGraphId()) as any;
 	if (!row) return 'Unknown thought.';
 	if (typeof fields.title !== 'string' || !fields.title.trim()) return 'Title is required.';
 	if (typeof fields.statement !== 'string' || !fields.statement.trim())
@@ -664,8 +697,9 @@ export function reviseThought(
 export function addToWorkingSet(
 	items: { thoughtId: string; x?: number; y?: number }[]
 ): string | null {
-	const activeSet = activeWorkingSetId();
-	const exists = db.prepare('SELECT 1 FROM thoughts WHERE id = ?');
+	const graphId = activeGraphId();
+	const activeSet = activeWorkingSetId(graphId);
+	const exists = db.prepare('SELECT 1 FROM thoughts WHERE id = ? AND graph_id = ?');
 	const onCanvas = db.prepare(
 		'SELECT 1 FROM working_set_items WHERE working_set_id = ? AND thought_id = ?'
 	);
@@ -673,7 +707,7 @@ export function addToWorkingSet(
 		'INSERT INTO working_set_items (working_set_id, thought_id, x, y) VALUES (?, ?, ?, ?)'
 	);
 	for (const item of items) {
-		if (typeof item?.thoughtId !== 'string' || !exists.get(item.thoughtId)) {
+		if (typeof item?.thoughtId !== 'string' || !exists.get(item.thoughtId, graphId)) {
 			return `Unknown thought: ${item?.thoughtId}`;
 		}
 	}
@@ -705,27 +739,34 @@ export function clearWorkingSet(): void {
 const SET_NAME_LIMIT = 40;
 
 export function createWorkingSet(name?: string): string | null {
-	const count = (db.prepare('SELECT COUNT(*) AS n FROM working_sets').get() as { n: number }).n;
+	const graphId = activeGraphId();
+	const count = (
+		db.prepare('SELECT COUNT(*) AS n FROM working_sets WHERE graph_id = ?').get(graphId) as {
+			n: number;
+		}
+	).n;
 	const trimmed = typeof name === 'string' ? name.trim() : '';
 	const finalName = trimmed || `Set ${count + 1}`;
 	if (finalName.length > SET_NAME_LIMIT)
 		return `Name is longer than ${SET_NAME_LIMIT} characters.`;
 	const wsId = id('ws');
 	db.transaction(() => {
-		db.prepare('INSERT INTO working_sets (id, name, created_at) VALUES (?, ?, ?)').run(
+		db.prepare('INSERT INTO working_sets (id, name, graph_id, created_at) VALUES (?, ?, ?, ?)').run(
 			wsId,
 			finalName,
+			graphId,
 			Date.now()
 		);
-		setMeta('active_working_set', wsId);
+		setMeta(`active_working_set:${graphId}`, wsId);
 	})();
 	return null;
 }
 
 export function switchWorkingSet(wsId: string): string | null {
-	if (!db.prepare('SELECT 1 FROM working_sets WHERE id = ?').get(wsId))
+	const graphId = activeGraphId();
+	if (!db.prepare('SELECT 1 FROM working_sets WHERE id = ? AND graph_id = ?').get(wsId, graphId))
 		return 'Unknown working set.';
-	setMeta('active_working_set', wsId);
+	setMeta(`active_working_set:${graphId}`, wsId);
 	return null;
 }
 
@@ -733,24 +774,76 @@ export function renameWorkingSet(wsId: string, name: string): string | null {
 	const trimmed = typeof name === 'string' ? name.trim() : '';
 	if (!trimmed) return 'A working set needs a name.';
 	if (trimmed.length > SET_NAME_LIMIT) return `Name is longer than ${SET_NAME_LIMIT} characters.`;
-	const res = db.prepare('UPDATE working_sets SET name = ? WHERE id = ?').run(trimmed, wsId);
+	const res = db
+		.prepare('UPDATE working_sets SET name = ? WHERE id = ? AND graph_id = ?')
+		.run(trimmed, wsId, activeGraphId());
 	return res.changes === 0 ? 'Unknown working set.' : null;
 }
 
 /** Delete a working set (its membership only — thoughts stay in the graph). */
 export function deleteWorkingSet(wsId: string): string | null {
-	if (!db.prepare('SELECT 1 FROM working_sets WHERE id = ?').get(wsId))
+	const graphId = activeGraphId();
+	if (!db.prepare('SELECT 1 FROM working_sets WHERE id = ? AND graph_id = ?').get(wsId, graphId))
 		return 'Unknown working set.';
-	const count = (db.prepare('SELECT COUNT(*) AS n FROM working_sets').get() as { n: number }).n;
+	const count = (
+		db.prepare('SELECT COUNT(*) AS n FROM working_sets WHERE graph_id = ?').get(graphId) as {
+			n: number;
+		}
+	).n;
 	if (count <= 1) return 'Cannot delete the only working set.';
 	db.transaction(() => {
 		db.prepare('DELETE FROM working_set_items WHERE working_set_id = ?').run(wsId);
 		db.prepare('DELETE FROM working_sets WHERE id = ?').run(wsId);
-		if (getMeta('active_working_set') === wsId) setMeta('active_working_set', null);
+		if (getMeta(`active_working_set:${graphId}`) === wsId)
+			setMeta(`active_working_set:${graphId}`, null);
 	})();
 	// Re-resolve the pointer so the oldest remaining set becomes active.
-	activeWorkingSetId();
+	activeWorkingSetId(graphId);
 	return null;
+}
+
+// --- multiple graphs (Phase 5) ---
+// Each graph is a fully isolated knowledge base: thoughts, relations, working
+// sets, scratch notes, and change sets never cross the boundary, and the agent
+// only ever sees the active graph.
+
+const GRAPH_NAME_LIMIT = 40;
+
+/** Create a new, empty graph and make it active. */
+export function createGraph(name?: string): string | null {
+	const count = (db.prepare('SELECT COUNT(*) AS n FROM graphs').get() as { n: number }).n;
+	const trimmed = typeof name === 'string' ? name.trim() : '';
+	const finalName = trimmed || `Graph ${count + 1}`;
+	if (finalName.length > GRAPH_NAME_LIMIT)
+		return `Name is longer than ${GRAPH_NAME_LIMIT} characters.`;
+	const graphId = id('g');
+	db.transaction(() => {
+		db.prepare('INSERT INTO graphs (id, name, created_at) VALUES (?, ?, ?)').run(
+			graphId,
+			finalName,
+			Date.now()
+		);
+		setMeta('active_graph', graphId);
+	})();
+	// Give the new graph its first working set so the canvas has somewhere to be.
+	activeWorkingSetId(graphId);
+	return null;
+}
+
+/** Swap the entire workspace to another graph. */
+export function switchGraph(graphId: string): string | null {
+	if (!db.prepare('SELECT 1 FROM graphs WHERE id = ?').get(graphId)) return 'Unknown graph.';
+	setMeta('active_graph', graphId);
+	return null;
+}
+
+export function renameGraph(graphId: string, name: string): string | null {
+	const trimmed = typeof name === 'string' ? name.trim() : '';
+	if (!trimmed) return 'A graph needs a name.';
+	if (trimmed.length > GRAPH_NAME_LIMIT)
+		return `Name is longer than ${GRAPH_NAME_LIMIT} characters.`;
+	const res = db.prepare('UPDATE graphs SET name = ? WHERE id = ?').run(trimmed, graphId);
+	return res.changes === 0 ? 'Unknown graph.' : null;
 }
 
 // --- working-set layout persistence ---
@@ -770,22 +863,50 @@ export function updatePositions(items: { thoughtId: string; x: number; y: number
 
 // --- export / snapshot ---
 
-/** Full JSON dump of persisted state, for recovery, debugging, and undo snapshots. */
-export function exportState() {
+/** JSON dump of one graph's persisted state (default: the active graph), for
+ *  recovery, debugging, and undo snapshots. Per-graph, per docs/design.md Phase 5. */
+export function exportState(graphId: string = activeGraphId()) {
+	const graph = db.prepare('SELECT * FROM graphs WHERE id = ?').get(graphId) as any;
 	return {
 		exportedAt: Date.now(),
-		thoughts: db.prepare('SELECT * FROM thoughts').all(),
-		thought_revisions: db.prepare('SELECT * FROM thought_revisions ORDER BY created_at, rowid').all(),
-		relations: db.prepare('SELECT * FROM relations ORDER BY created_at, rowid').all(),
-		working_sets: db.prepare('SELECT * FROM working_sets ORDER BY created_at, rowid').all(),
-		working_set_items: db.prepare('SELECT * FROM working_set_items').all(),
-		change_sets: db.prepare('SELECT * FROM change_sets ORDER BY created_at, rowid').all(),
-		proposed_operations: db.prepare('SELECT * FROM proposed_operations ORDER BY sequence').all(),
-		scratch_notes: db.prepare('SELECT * FROM scratch_notes ORDER BY created_at, rowid').all()
+		graph: { id: graph.id, name: graph.name },
+		thoughts: db.prepare('SELECT * FROM thoughts WHERE graph_id = ?').all(graphId),
+		thought_revisions: db
+			.prepare(
+				`SELECT * FROM thought_revisions
+				 WHERE thought_id IN (SELECT id FROM thoughts WHERE graph_id = ?)
+				 ORDER BY created_at, rowid`
+			)
+			.all(graphId),
+		relations: db
+			.prepare('SELECT * FROM relations WHERE graph_id = ? ORDER BY created_at, rowid')
+			.all(graphId),
+		working_sets: db
+			.prepare('SELECT * FROM working_sets WHERE graph_id = ? ORDER BY created_at, rowid')
+			.all(graphId),
+		working_set_items: db
+			.prepare(
+				'SELECT * FROM working_set_items WHERE working_set_id IN (SELECT id FROM working_sets WHERE graph_id = ?)'
+			)
+			.all(graphId),
+		change_sets: db
+			.prepare('SELECT * FROM change_sets WHERE graph_id = ? ORDER BY created_at, rowid')
+			.all(graphId),
+		proposed_operations: db
+			.prepare(
+				`SELECT * FROM proposed_operations
+				 WHERE change_set_id IN (SELECT id FROM change_sets WHERE graph_id = ?)
+				 ORDER BY sequence`
+			)
+			.all(graphId),
+		scratch_notes: db
+			.prepare('SELECT * FROM scratch_notes WHERE graph_id = ? ORDER BY created_at, rowid')
+			.all(graphId)
 	};
 }
 
-function restore(snapshot: ReturnType<typeof exportState>) {
+/** Replace one graph's rows with a snapshot of that graph. Other graphs untouched. */
+function restore(graphId: string, snapshot: ReturnType<typeof exportState>) {
 	const insert = (table: string, rows: any[]) => {
 		for (const row of rows) {
 			const cols = Object.keys(row);
@@ -795,18 +916,20 @@ function restore(snapshot: ReturnType<typeof exportState>) {
 		}
 	};
 	db.transaction(() => {
-		for (const table of [
-			'proposed_operations',
-			'change_sets',
-			'thought_revisions',
-			'relations',
-			'working_set_items',
-			'working_sets',
-			'scratch_notes',
-			'thoughts'
-		]) {
-			db.prepare(`DELETE FROM ${table}`).run();
-		}
+		db.prepare(
+			'DELETE FROM proposed_operations WHERE change_set_id IN (SELECT id FROM change_sets WHERE graph_id = ?)'
+		).run(graphId);
+		db.prepare('DELETE FROM change_sets WHERE graph_id = ?').run(graphId);
+		db.prepare(
+			'DELETE FROM thought_revisions WHERE thought_id IN (SELECT id FROM thoughts WHERE graph_id = ?)'
+		).run(graphId);
+		db.prepare('DELETE FROM relations WHERE graph_id = ?').run(graphId);
+		db.prepare(
+			'DELETE FROM working_set_items WHERE working_set_id IN (SELECT id FROM working_sets WHERE graph_id = ?)'
+		).run(graphId);
+		db.prepare('DELETE FROM working_sets WHERE graph_id = ?').run(graphId);
+		db.prepare('DELETE FROM scratch_notes WHERE graph_id = ?').run(graphId);
+		db.prepare('DELETE FROM thoughts WHERE graph_id = ?').run(graphId);
 		insert('thoughts', snapshot.thoughts as any[]);
 		insert('thought_revisions', snapshot.thought_revisions as any[]);
 		insert('relations', snapshot.relations as any[]);

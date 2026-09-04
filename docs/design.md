@@ -250,7 +250,19 @@ The "views are projections" principle so far exists only as a claim; the canvas 
 
 *Exit: the same working set is legible in both projections; switching views mutates nothing; a thought and its pending/accepted status can be located and distinguished in either view.*
 
-### Phase 5: dogfood + judge
+### Phase 5: multiple graphs
+
+So far there is exactly one graph — every thought, relation, and working set shares one namespace. That's wrong for dogfooding: a design project and an unrelated research thread shouldn't pollute each other's Connect results or search space. Add multiple graphs as fully isolated knowledge bases:
+
+- Create, rename, and switch between graphs; each graph scopes its own thoughts, relations, working sets, scratch notes, and change sets.
+- Isolation is total: search, Connect, and 1-hop retrieval never cross a graph boundary; agent context is assembled from the active graph only. No cross-graph relations in v0.
+- Persistence via a `graph_id` scoping column (one SQLite file, simplest migration) rather than a database file per graph.
+- Re-entry is per-graph: reopening restores the last active graph and its working set; switching graphs swaps the entire workspace, including the re-entry summary.
+- JSON export operates per graph.
+
+*Exit: two graphs on distinct topics can be worked in alternation with nothing leaking between them — no search result, proposed relation, or agent rationale ever references a thought from the inactive graph; each graph restores faithfully on switch and on re-entry.*
+
+### Phase 6: dogfood + judge
 
 Use it for a real thinking project (e.g. this design itself) for 1–2 weeks, logging against the measures below. A moderated multi-participant study with a chat baseline (per [the archived design-2](archive/design-2.md) Phase 3) is deferred until the loop proves out on ourselves.
 

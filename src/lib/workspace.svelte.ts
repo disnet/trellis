@@ -7,6 +7,7 @@ import {
 	effectivePayload,
 	type AgentAction,
 	type ChangeSet,
+	type GraphInfo,
 	type OperationDecision,
 	type OperationPayload,
 	type ProposedOperation,
@@ -32,6 +33,8 @@ class Workspace {
 	loading = $state(true);
 	loadError = $state<string | null>(null);
 
+	graphs = $state<GraphInfo[]>([]);
+	activeGraphId = $state('');
 	thoughts = $state<Record<string, Thought>>({});
 	relations = $state<Relation[]>([]);
 	workingSets = $state<WorkingSetInfo[]>([]);
@@ -77,6 +80,8 @@ class Workspace {
 	}
 
 	private applyState(s: WorkspaceState) {
+		this.graphs = s.graphs;
+		this.activeGraphId = s.activeGraphId;
 		this.thoughts = s.thoughts;
 		this.relations = s.relations;
 		this.workingSets = s.workingSets;
@@ -271,6 +276,46 @@ class Workspace {
 			this.notice = 'Working set emptied. The graph is untouched — search to rebuild.';
 		}
 		return err;
+	}
+
+	// --- multiple graphs (Phase 5) ---
+	// A graph is a fully isolated knowledge base. Entering one (create or
+	// switch) swaps the entire workspace — thoughts, working sets, scratch,
+	// tray, and the re-entry summary all come from the target graph.
+
+	/** Create a new, empty, isolated graph and switch into it. */
+	async createGraph(name?: string): Promise<string | null> {
+		return this.enterGraph({ action: 'create', name });
+	}
+
+	async switchGraph(graphId: string): Promise<string | null> {
+		if (graphId === this.activeGraphId) return null;
+		return this.enterGraph({ action: 'switch', graphId });
+	}
+
+	async renameGraph(graphId: string, name: string): Promise<string | null> {
+		return this.post('/api/graphs', { action: 'rename', graphId, name });
+	}
+
+	private async enterGraph(body: unknown): Promise<string | null> {
+		// Flush pending drags first so they land in the graph they belong to.
+		await this.flushMoves();
+		try {
+			const res = await fetch('/api/graphs', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(body)
+			});
+			const data = await res.json().catch(() => ({}));
+			if (!res.ok) return data.error ?? `Request failed (${res.status}).`;
+			this.selectedIds = [];
+			if (data.state) this.applyState(data.state);
+			this.reentry = data.reentry ?? null;
+			this.showReentry = data.reentry?.lastVisitAt != null;
+			return null;
+		} catch {
+			return 'Could not reach the Trellis server.';
+		}
 	}
 
 	/** 1-hop neighbors of the given thoughts that are not in the working set. */

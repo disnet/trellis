@@ -6,7 +6,7 @@
 // human-initiated transaction.
 
 import crypto from 'node:crypto';
-import { db } from '../db';
+import { activeGraphId, db } from '../db';
 import type { AgentAction } from '$lib/types';
 import { buildContext } from './context';
 import {
@@ -71,13 +71,16 @@ export async function generateProposal(
 	selectedIds: string[],
 	scratch?: { id: string; body: string }
 ): Promise<GenerateOutcome> {
-	const thoughtExists = db.prepare('SELECT 1 FROM thoughts WHERE id = ?');
+	// Validation predicates are graph-scoped: an id from another graph is
+	// "unknown" here, so a proposal can never link across the boundary.
+	const graphId = activeGraphId();
+	const thoughtExists = db.prepare('SELECT 1 FROM thoughts WHERE id = ? AND graph_id = ?');
 	const relationExists = db.prepare(
-		'SELECT 1 FROM relations WHERE from_thought_id = ? AND to_thought_id = ? AND type = ?'
+		'SELECT 1 FROM relations WHERE from_thought_id = ? AND to_thought_id = ? AND type = ? AND graph_id = ?'
 	);
 	const validationDeps: ValidationDeps = {
-		thoughtExists: (id) => !!thoughtExists.get(id),
-		relationExists: (from, to, type) => !!relationExists.get(from, to, type),
+		thoughtExists: (id) => !!thoughtExists.get(id, graphId),
+		relationExists: (from, to, type) => !!relationExists.get(from, to, type, graphId),
 		scratchId: scratch?.id
 	};
 

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Canvas from '$lib/components/Canvas.svelte';
+	import GraphSwitcher from '$lib/components/GraphSwitcher.svelte';
 	import Inspector from '$lib/components/Inspector.svelte';
 	import Outline from '$lib/components/Outline.svelte';
 	import Library from '$lib/components/Library.svelte';
@@ -51,6 +52,9 @@
 <div class="app">
 	<header class="toolbar">
 		<span class="logo">Trellis</span>
+		{#if !ws.loading && !ws.loadError}
+			<GraphSwitcher />
+		{/if}
 		<div class="ops" role="group" aria-label="Agent operations">
 			{#each operations as { action, label, hint } (action)}
 				<button
@@ -107,7 +111,7 @@
 			<button class="undo" disabled={ws.undoLabel === null} title={ws.undoLabel ?? ''} onclick={undo}>
 				↩ Undo last apply
 			</button>
-			<a class="export" href="/api/export" download title="Download the full graph as JSON">
+			<a class="export" href="/api/export" download title="Download the active graph as JSON">
 				⇩ Export
 			</a>
 		</div>
@@ -224,6 +228,10 @@
 		font-size: 11.5px;
 		color: #8a8375;
 		flex: 1;
+		min-width: 0;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 	.right {
 		display: flex;

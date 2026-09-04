@@ -4,7 +4,7 @@
 // relations are those among that pool. Ordering is stable (created_at, id) so
 // identical graph state always produces an identical request.
 
-import { activeWorkingSetId, db } from '../db';
+import { activeGraphId, activeWorkingSetId, db } from '../db';
 import type { RelationType, ThoughtStatus, ThoughtType } from '$lib/types';
 
 export interface ContextThought {
@@ -36,18 +36,23 @@ export function buildContext(
 	selectedIds: string[],
 	scratch?: { id: string; body: string }
 ): AgentContext {
+	// Everything below is scoped to the active graph — isolation is total, so a
+	// proposal can never draw on or reference another graph's thoughts.
+	const graphId = activeGraphId();
 	const workingIds = new Set<string>(
 		(
 			db
 				.prepare('SELECT thought_id FROM working_set_items WHERE working_set_id = ?')
-				.all(activeWorkingSetId()) as any[]
+				.all(activeWorkingSetId(graphId)) as any[]
 		).map((r) => r.thought_id)
 	);
 	for (const id of selectedIds) workingIds.add(id);
 
 	const relations = db
-		.prepare('SELECT from_thought_id, to_thought_id, type FROM relations ORDER BY created_at, rowid')
-		.all() as any[];
+		.prepare(
+			'SELECT from_thought_id, to_thought_id, type FROM relations WHERE graph_id = ? ORDER BY created_at, rowid'
+		)
+		.all(graphId) as any[];
 
 	// 1-hop neighborhood of the working set (plus the selection).
 	const pool = new Set(workingIds);
@@ -58,7 +63,7 @@ export function buildContext(
 
 	const selected = new Set(selectedIds);
 	const thoughts = (
-		db.prepare('SELECT * FROM thoughts ORDER BY created_at, id').all() as any[]
+		db.prepare('SELECT * FROM thoughts WHERE graph_id = ? ORDER BY created_at, id').all(graphId) as any[]
 	)
 		.filter((r) => pool.has(r.id))
 		.map((r) => ({

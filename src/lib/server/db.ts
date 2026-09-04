@@ -2,17 +2,25 @@
 // data/trellis.db (gitignored); override with TRELLIS_DB for scratch runs.
 
 import Database from 'better-sqlite3';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { seedRelations, seedThoughts, seedWorkingSet } from '$lib/seed';
 
 const SCHEMA = `
+CREATE TABLE IF NOT EXISTS graphs (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS thoughts (
   id TEXT PRIMARY KEY,
   type TEXT NOT NULL,
   status TEXT NOT NULL,
   title TEXT NOT NULL,
   statement TEXT NOT NULL,
+  graph_id TEXT NOT NULL REFERENCES graphs(id),
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -37,12 +45,14 @@ CREATE TABLE IF NOT EXISTS relations (
   type TEXT NOT NULL,
   created_by TEXT NOT NULL,
   source_change_set_id TEXT,
+  graph_id TEXT NOT NULL REFERENCES graphs(id),
   created_at INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS working_sets (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
+  graph_id TEXT NOT NULL REFERENCES graphs(id),
   created_at INTEGER NOT NULL
 );
 
@@ -61,6 +71,7 @@ CREATE TABLE IF NOT EXISTS change_sets (
   summary TEXT NOT NULL,
   invoked_on TEXT NOT NULL,
   scratch_id TEXT,
+  graph_id TEXT NOT NULL REFERENCES graphs(id),
   created_at INTEGER NOT NULL,
   applied_by TEXT,
   applied_at INTEGER
@@ -84,6 +95,7 @@ CREATE INDEX IF NOT EXISTS idx_ops_change_set ON proposed_operations(change_set_
 CREATE TABLE IF NOT EXISTS scratch_notes (
   id TEXT PRIMARY KEY,
   body TEXT NOT NULL,
+  graph_id TEXT NOT NULL REFERENCES graphs(id),
   created_at INTEGER NOT NULL,
   distilled_change_set_id TEXT
 );
@@ -120,6 +132,7 @@ function open(): Database.Database {
 	db.pragma('foreign_keys = ON');
 	db.exec(SCHEMA);
 	migrateToMultipleWorkingSets(db);
+	migrateToMultipleGraphs(db);
 	seedIfEmpty(db);
 	return db;
 }
@@ -133,9 +146,11 @@ function migrateToMultipleWorkingSets(db: Database.Database) {
 	if (cols.some((c) => c.name === 'working_set_id')) return;
 	db.pragma('foreign_keys = OFF');
 	db.transaction(() => {
-		db.prepare("INSERT INTO working_sets (id, name, created_at) VALUES ('ws-main', 'Main', ?)").run(
-			Date.now()
-		);
+		// On very old databases SCHEMA just created working_sets fresh, with a
+		// graph_id column; migrateToMultipleGraphs adds the 'g-main' row after us.
+		db.prepare(
+			"INSERT INTO working_sets (id, name, graph_id, created_at) VALUES ('ws-main', 'Main', 'g-main', ?)"
+		).run(Date.now());
 		db.exec(`
 			ALTER TABLE working_set_items RENAME TO working_set_items_old;
 			CREATE TABLE working_set_items (
@@ -157,28 +172,89 @@ function migrateToMultipleWorkingSets(db: Database.Database) {
 	db.pragma('foreign_keys = ON');
 }
 
-/** The current working set's id, self-healing if the meta pointer is stale. */
-export function activeWorkingSetId(): string {
-	const row = db.prepare("SELECT value FROM meta WHERE key = 'active_working_set'").get() as
+// Databases created before multiple graphs keep everything in one namespace.
+// Move it all under a default "Main" graph via added graph_id columns, and
+// replace the global meta pointers with per-graph keys. Pre-migration undo
+// snapshots lack graph_id columns, so drop them rather than restore garbage.
+function migrateToMultipleGraphs(db: Database.Database) {
+	const cols = db.pragma('table_info(thoughts)') as { name: string }[];
+	if (cols.some((c) => c.name === 'graph_id')) return;
+	const hasGraphId = (table: string) =>
+		(db.pragma(`table_info(${table})`) as { name: string }[]).some((c) => c.name === 'graph_id');
+	db.pragma('foreign_keys = OFF');
+	db.transaction(() => {
+		db.prepare(
+			"INSERT INTO graphs (id, name, created_at) VALUES ('g-main', 'Main', ?) ON CONFLICT(id) DO NOTHING"
+		).run(Date.now());
+		for (const table of ['thoughts', 'relations', 'working_sets', 'change_sets', 'scratch_notes']) {
+			// ALTER TABLE cannot add a REFERENCES clause; the tiny local dataset
+			// doesn't miss the constraint on migrated tables.
+			if (!hasGraphId(table))
+				db.exec(`ALTER TABLE ${table} ADD COLUMN graph_id TEXT NOT NULL DEFAULT 'g-main'`);
+		}
+		db.prepare(
+			"UPDATE meta SET key = 'active_working_set:g-main' WHERE key = 'active_working_set'"
+		).run();
+		db.prepare("UPDATE meta SET key = 'last_visit_at:g-main' WHERE key = 'last_visit_at'").run();
+		db.prepare(
+			"INSERT INTO meta (key, value) VALUES ('active_graph', 'g-main') ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+		).run();
+		db.prepare("DELETE FROM meta WHERE key IN ('undo_snapshot', 'undo_label')").run();
+	})();
+	db.pragma('foreign_keys = ON');
+}
+
+/** The current graph's id, self-healing if the meta pointer is stale. */
+export function activeGraphId(): string {
+	const row = db.prepare("SELECT value FROM meta WHERE key = 'active_graph'").get() as
 		| { value: string }
 		| undefined;
-	if (row && db.prepare('SELECT 1 FROM working_sets WHERE id = ?').get(row.value)) return row.value;
-	const first = db
-		.prepare('SELECT id FROM working_sets ORDER BY created_at, rowid LIMIT 1')
-		.get() as { id: string };
+	if (row && db.prepare('SELECT 1 FROM graphs WHERE id = ?').get(row.value)) return row.value;
+	const first = db.prepare('SELECT id FROM graphs ORDER BY created_at, rowid LIMIT 1').get() as {
+		id: string;
+	};
 	db.prepare(
-		"INSERT INTO meta (key, value) VALUES ('active_working_set', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+		"INSERT INTO meta (key, value) VALUES ('active_graph', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
 	).run(first.id);
 	return first.id;
 }
 
+/** A graph's active working set, self-healing if the meta pointer is stale;
+ *  a graph with no sets at all gets a fresh "Main". Defaults to the active graph. */
+export function activeWorkingSetId(graphId: string = activeGraphId()): string {
+	const key = `active_working_set:${graphId}`;
+	const row = db.prepare('SELECT value FROM meta WHERE key = ?').get(key) as
+		| { value: string }
+		| undefined;
+	if (row && db.prepare('SELECT 1 FROM working_sets WHERE id = ? AND graph_id = ?').get(row.value, graphId))
+		return row.value;
+	let first = db
+		.prepare('SELECT id FROM working_sets WHERE graph_id = ? ORDER BY created_at, rowid LIMIT 1')
+		.get(graphId) as { id: string } | undefined;
+	if (!first) {
+		first = { id: `ws-${crypto.randomUUID().slice(0, 8)}` };
+		db.prepare('INSERT INTO working_sets (id, name, graph_id, created_at) VALUES (?, ?, ?, ?)').run(
+			first.id,
+			'Main',
+			graphId,
+			Date.now()
+		);
+	}
+	db.prepare(
+		'INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
+	).run(key, first.id);
+	return first.id;
+}
+
 function seedIfEmpty(db: Database.Database) {
-	const count = db.prepare('SELECT COUNT(*) AS n FROM thoughts').get() as { n: number };
+	// A migrated database already has its 'g-main' graph; only a brand-new one
+	// (no graphs at all) gets the seed graph.
+	const count = db.prepare('SELECT COUNT(*) AS n FROM graphs').get() as { n: number };
 	if (count.n > 0) return;
 
 	const insertThought = db.prepare(
-		`INSERT INTO thoughts (id, type, status, title, statement, created_at, updated_at)
-		 VALUES (@id, @type, @status, @title, @statement, @createdAt, @updatedAt)`
+		`INSERT INTO thoughts (id, type, status, title, statement, graph_id, created_at, updated_at)
+		 VALUES (@id, @type, @status, @title, @statement, 'g-main', @createdAt, @updatedAt)`
 	);
 	const insertRevision = db.prepare(
 		`INSERT INTO thought_revisions
@@ -186,24 +262,30 @@ function seedIfEmpty(db: Database.Database) {
 		 VALUES (@id, @thoughtId, @title, @statement, @status, @actorType, NULL, 0, @createdAt)`
 	);
 	const insertRelation = db.prepare(
-		`INSERT INTO relations (id, from_thought_id, to_thought_id, type, created_by, source_change_set_id, created_at)
-		 VALUES (@id, @fromThoughtId, @toThoughtId, @type, @createdBy, NULL, @createdAt)`
+		`INSERT INTO relations (id, from_thought_id, to_thought_id, type, created_by, source_change_set_id, graph_id, created_at)
+		 VALUES (@id, @fromThoughtId, @toThoughtId, @type, @createdBy, NULL, 'g-main', @createdAt)`
 	);
 	const insertItem = db.prepare(
 		"INSERT INTO working_set_items (working_set_id, thought_id, x, y) VALUES ('ws-main', @thoughtId, @x, @y)"
 	);
 
 	db.transaction(() => {
+		db.prepare("INSERT INTO graphs (id, name, created_at) VALUES ('g-main', 'Main', ?)").run(
+			Date.now()
+		);
 		for (const t of seedThoughts) {
 			insertThought.run(t);
 			for (const rev of t.revisions) insertRevision.run({ ...rev, thoughtId: t.id });
 		}
 		for (const r of seedRelations) insertRelation.run(r);
 		db.prepare(
-			"INSERT INTO working_sets (id, name, created_at) VALUES ('ws-main', 'Main', ?) ON CONFLICT(id) DO NOTHING"
+			"INSERT INTO working_sets (id, name, graph_id, created_at) VALUES ('ws-main', 'Main', 'g-main', ?) ON CONFLICT(id) DO NOTHING"
 		).run(Date.now());
 		db.prepare(
-			"INSERT INTO meta (key, value) VALUES ('active_working_set', 'ws-main') ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+			"INSERT INTO meta (key, value) VALUES ('active_graph', 'g-main') ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+		).run();
+		db.prepare(
+			"INSERT INTO meta (key, value) VALUES ('active_working_set:g-main', 'ws-main') ON CONFLICT(key) DO UPDATE SET value = excluded.value"
 		).run();
 		for (const item of seedWorkingSet) insertItem.run(item);
 	})();

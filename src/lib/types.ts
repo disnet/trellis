@@ -57,6 +57,14 @@ export interface WorkingSetItem {
 	y: number;
 }
 
+/** A named, fully isolated knowledge base (Phase 5). Thoughts, relations,
+ *  working sets, scratch, and change sets never cross a graph boundary. */
+export interface GraphInfo {
+	id: string;
+	name: string;
+	createdAt: number;
+}
+
 /** A named working set (tab). Only membership + layout — never knowledge. */
 export interface WorkingSetInfo {
 	id: string;
@@ -143,8 +151,13 @@ export interface ChangeSet {
 
 // --- Server payloads (Phase 1) ---
 
-/** The canonical persisted state, as served by GET /api/state and returned by mutations. */
+/** The canonical persisted state of the *active graph*, as served by
+ *  GET /api/state and returned by mutations. Only the graph list itself spans
+ *  graphs; everything else is scoped to activeGraphId. */
 export interface WorkspaceState {
+	/** All graphs, oldest first. */
+	graphs: GraphInfo[];
+	activeGraphId: string;
 	thoughts: Record<string, Thought>;
 	relations: Relation[];
 	/** All working sets, oldest first. */
