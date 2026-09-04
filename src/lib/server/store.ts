@@ -636,6 +636,43 @@ export function reviseThought(
 	return null;
 }
 
+// --- working-set membership (Phase 3) ---
+// Membership is transient and binary: these functions only touch
+// working_set_items, never the durable graph, and apply immediately without
+// going through the proposal tray.
+
+export function addToWorkingSet(
+	items: { thoughtId: string; x?: number; y?: number }[]
+): string | null {
+	const exists = db.prepare('SELECT 1 FROM thoughts WHERE id = ?');
+	const onCanvas = db.prepare('SELECT 1 FROM working_set_items WHERE thought_id = ?');
+	const insert = db.prepare('INSERT INTO working_set_items (thought_id, x, y) VALUES (?, ?, ?)');
+	for (const item of items) {
+		if (typeof item?.thoughtId !== 'string' || !exists.get(item.thoughtId)) {
+			return `Unknown thought: ${item?.thoughtId}`;
+		}
+	}
+	let fallbackY = 80;
+	db.transaction(() => {
+		for (const item of items) {
+			if (onCanvas.get(item.thoughtId)) continue;
+			const x = Number.isFinite(item.x) ? item.x! : 80;
+			const y = Number.isFinite(item.y) ? item.y! : ((fallbackY += 140), fallbackY);
+			insert.run(item.thoughtId, x, y);
+		}
+	})();
+	return null;
+}
+
+export function removeFromWorkingSet(thoughtId: string): string | null {
+	const res = db.prepare('DELETE FROM working_set_items WHERE thought_id = ?').run(thoughtId);
+	return res.changes === 0 ? 'That thought is not in the working set.' : null;
+}
+
+export function clearWorkingSet(): void {
+	db.prepare('DELETE FROM working_set_items').run();
+}
+
 // --- working-set layout persistence ---
 
 export function updatePositions(items: { thoughtId: string; x: number; y: number }[]): void {

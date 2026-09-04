@@ -17,6 +17,10 @@
 		relationSummary?: string;
 		onmove?: (x: number, y: number) => void;
 		onselect?: (additive: boolean) => void;
+		/** Remove from the working set (shown on selected cards; the graph is untouched). */
+		onremove?: () => void;
+		/** Add a surfaced existing thought to the working set — a direct action, no ratification. */
+		onadd?: () => void;
 	}
 
 	let {
@@ -33,7 +37,9 @@
 		provenance,
 		relationSummary,
 		onmove,
-		onselect
+		onselect,
+		onremove,
+		onadd
 	}: Props = $props();
 
 	let dragging = $state(false);
@@ -95,6 +101,15 @@
 		{:else}
 			<span class="badge actor">{provenance === 'agent' ? '✳ agent' : '✎ you'}</span>
 		{/if}
+		{#if selected && onremove}
+			<button
+				class="remove"
+				title="Remove from working set (the thought stays in the graph)"
+				aria-label="Remove from working set"
+				onpointerdown={(e) => e.stopPropagation()}
+				onclick={onremove}
+			>✕</button>
+		{/if}
 	</div>
 	<div class="title">{title}</div>
 	{#if zoom === 'reading'}
@@ -103,7 +118,17 @@
 			<div class="relsum">{relationSummary}</div>
 		{/if}
 	{/if}
-	<div class="foot"><span class="status">{status}</span></div>
+	<div class="foot">
+		<span class="status">{status}</span>
+		{#if ghost === 'surfaced' && onadd}
+			<button
+				class="add-to-set"
+				title="Keep this thought on the canvas after review"
+				onpointerdown={(e) => e.stopPropagation()}
+				onclick={onadd}
+			>+ add to working set</button>
+		{/if}
+	</div>
 </div>
 
 <style>
@@ -187,6 +212,38 @@
 	}
 	.foot {
 		margin-top: 6px;
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 6px;
+	}
+	.remove {
+		border: none;
+		background: none;
+		padding: 0 2px;
+		font-size: 11px;
+		color: #8a8375;
+		cursor: pointer;
+		line-height: 1;
+	}
+	.remove:hover {
+		color: #8a3a2a;
+	}
+	.add-to-set {
+		font: inherit;
+		font-size: 10px;
+		font-weight: 600;
+		border: 1px solid #6b7f8a;
+		background: #fff;
+		color: #35586b;
+		border-radius: 999px;
+		padding: 2px 8px;
+		cursor: pointer;
+		white-space: nowrap;
+	}
+	.add-to-set:hover {
+		border-color: #3b5bdb;
+		color: #3b5bdb;
 	}
 	.status {
 		font-size: 10px;

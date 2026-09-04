@@ -227,7 +227,19 @@ Make the complete scenario clickable before integrating anything.
 
 *Exit: live outputs complete the scenario repeatedly; invalid output cannot mutate canonical state; every proposed operation is understandable without opening raw model text.*
 
-### Phase 3: dogfood + judge
+### Phase 3: working set manipulation
+
+Until now the working set is whatever was seeded or last persisted. Make it directly editable, so "selection is context" is something the person actually steers:
+
+- Search the full graph (title + statement) and add results to the working set.
+- Remove a thought from the working set without touching the durable graph; an explicit empty-set / start-fresh action.
+- Pull in a selected thought's 1-hop neighbors on demand.
+- A reset/arrange action for canvas layout (per the spatial-clutter risk).
+- Agent operations that surface thoughts from outside the set (Connect) offer "add to working set" as a lightweight direct action — membership is transient and binary, so it applies immediately rather than through the proposal tray.
+
+*Exit: a working set can be assembled from the full graph without reseeding; adding and removing thoughts never mutates durable state; the persisted set survives manipulation and restores faithfully on re-entry.*
+
+### Phase 4: dogfood + judge
 
 Use it for a real thinking project (e.g. this design itself) for 1–2 weeks, logging against the measures below. A moderated multi-participant study with a chat baseline (per [the archived design-2](archive/design-2.md) Phase 3) is deferred until the loop proves out on ourselves.
 

@@ -51,6 +51,15 @@
 
 	const statuses: ThoughtStatus[] = ['tentative', 'developing', 'believed', 'contested', 'retired'];
 
+	// Working-set membership actions (Phase 3): transient, never touch the graph.
+	const inSet = $derived(thought ? ws.inWorkingSet(thought.id) : false);
+	const neighborCount = $derived(thought ? ws.neighborIds([thought.id]).length : 0);
+
+	async function run(fn: () => Promise<string | null>) {
+		const err = await fn();
+		if (err) ws.notice = err;
+	}
+
 	function fmt(ts: number): string {
 		return new Date(ts).toLocaleDateString(undefined, {
 			year: 'numeric',
@@ -99,7 +108,27 @@
 			</div>
 			<h3>{thought.title}</h3>
 			<p class="statement">{thought.statement}</p>
-			<button onclick={startEdit}>Revise…</button>
+			<div class="actions">
+				<button onclick={startEdit}>Revise…</button>
+				{#if inSet}
+					<button
+						title="1-hop neighbors outside the working set"
+						disabled={neighborCount === 0}
+						onclick={() => run(() => ws.pullNeighbors(thought.id))}
+					>
+						Pull in neighbors{neighborCount > 0 ? ` (${neighborCount})` : ''}
+					</button>
+					<button
+						title="The thought stays in the graph"
+						onclick={() => run(() => ws.removeFromSet(thought.id))}
+					>
+						Remove from set
+					</button>
+				{:else}
+					<span class="off-canvas">Not in the working set.</span>
+					<button onclick={() => run(() => ws.addToSet([thought.id]))}>Add to working set</button>
+				{/if}
+			</div>
 		{/if}
 
 		<h4>Relations</h4>
@@ -281,5 +310,19 @@
 	.row {
 		display: flex;
 		gap: 8px;
+	}
+	.actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		align-items: center;
+	}
+	.actions button:disabled {
+		opacity: 0.45;
+		cursor: not-allowed;
+	}
+	.off-canvas {
+		font-size: 11px;
+		color: #8a8375;
 	}
 </style>

@@ -333,6 +333,10 @@
 					relationSummary={ws.zoom === 'reading' ? relationSummary(t.id) : undefined}
 					onmove={(x, y) => ws.moveCard(t.id, x, y)}
 					onselect={(additive) => ws.select(t.id, additive)}
+					onremove={async () => {
+						const err = await ws.removeFromSet(t.id);
+						if (err) ws.notice = err;
+					}}
 				/>
 			{/if}
 		{/each}
@@ -350,6 +354,13 @@
 				ghost={g.kind}
 				provenance="agent"
 				onmove={(x, y) => ws.moveGhost(g.key, x, y)}
+				onadd={g.kind === 'surfaced'
+					? async () => {
+							const id = g.key.slice(g.key.indexOf(':') + 1);
+							const err = await ws.addToSetAt(id, g.pos);
+							if (err) ws.notice = err;
+						}
+					: undefined}
 			/>
 		{/each}
 	</div>

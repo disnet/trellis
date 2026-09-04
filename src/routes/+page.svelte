@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Canvas from '$lib/components/Canvas.svelte';
 	import Inspector from '$lib/components/Inspector.svelte';
+	import Library from '$lib/components/Library.svelte';
 	import ProposalTray from '$lib/components/ProposalTray.svelte';
 	import ReentryPanel from '$lib/components/ReentryPanel.svelte';
 	import Scratch from '$lib/components/Scratch.svelte';
@@ -23,6 +24,12 @@
 
 	async function undo() {
 		const err = await ws.undoLastApply();
+		if (err) ws.notice = err;
+	}
+
+	async function startFresh() {
+		if (!confirm('Empty the working set? Thoughts and relations stay in the graph.')) return;
+		const err = await ws.startFresh();
 		if (err) ws.notice = err;
 	}
 
@@ -74,6 +81,20 @@
 			>
 				{ws.zoom === 'overview' ? '⊕ Reading view' : '⊖ Overview'}
 			</button>
+			<button
+				title="Re-lay out the canvas; related cards end up together"
+				disabled={ws.workingSet.length === 0}
+				onclick={() => ws.arrange()}
+			>
+				⌗ Arrange
+			</button>
+			<button
+				title="Empty the working set — the durable graph is untouched"
+				disabled={ws.workingSet.length === 0}
+				onclick={startFresh}
+			>
+				⌀ Start fresh
+			</button>
 			<button class="undo" disabled={ws.undoLabel === null} title={ws.undoLabel ?? ''} onclick={undo}>
 				↩ Undo last apply
 			</button>
@@ -83,7 +104,10 @@
 		</div>
 	</header>
 
-	<aside class="left"><Scratch /></aside>
+	<aside class="left">
+		<div class="scratch-pane"><Scratch /></div>
+		<div class="library-pane"><Library /></div>
+	</aside>
 	<main class="center">
 		{#if ws.loading}
 			<div class="load-state">Loading the graph…</div>
@@ -243,6 +267,17 @@
 		background: #fbf9f3;
 		border-right: 1px solid #e0dbcf;
 		min-height: 0;
+		display: grid;
+		grid-template-rows: minmax(0, 55%) minmax(0, 45%);
+	}
+	.scratch-pane {
+		border-bottom: 1px solid #e0dbcf;
+		min-height: 0;
+	}
+	.library-pane {
+		min-height: 0;
+		display: flex;
+		flex-direction: column;
 	}
 	.center {
 		grid-area: center;

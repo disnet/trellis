@@ -157,6 +157,164 @@ class Workspace {
 		}
 	}
 
+	// --- working-set membership (Phase 3) ---
+	// Membership is transient and binary: adding or removing never mutates the
+	// durable graph, so it applies immediately, not through the proposal tray.
+
+	inWorkingSet(thoughtId: string): boolean {
+		return this.workingSet.some((w) => w.thoughtId === thoughtId);
+	}
+
+	/** First position not overlapping `taken`, scanning near `near` first, else a grid. */
+	private freePosition(taken: GhostPosition[], near?: GhostPosition): GhostPosition {
+		const stepX = CARD_W + 80;
+		const stepY = CARD_H + 56;
+		const collides = (x: number, y: number) =>
+			taken.some((p) => Math.abs(p.x - x) < CARD_W + 24 && Math.abs(p.y - y) < CARD_H + 24);
+		if (near) {
+			const candidates = [
+				[near.x + stepX, near.y],
+				[near.x, near.y + stepY],
+				[near.x + stepX, near.y + stepY],
+				[near.x - stepX, near.y],
+				[near.x, near.y - stepY],
+				[near.x + stepX, near.y - stepY],
+				[near.x - stepX, near.y + stepY],
+				[near.x + 2 * stepX, near.y]
+			];
+			for (const [x, y] of candidates) {
+				if (x >= 0 && y >= 0 && !collides(x, y)) return { x, y };
+			}
+		}
+		for (let row = 0; row < 12; row++) {
+			for (let col = 0; col < 7; col++) {
+				const x = 80 + col * stepX;
+				const y = 60 + row * stepY;
+				if (!collides(x, y)) return { x, y };
+			}
+		}
+		return { x: 80, y: 60 };
+	}
+
+	/** Add existing thoughts to the working set, placed near `near` when given. */
+	async addToSet(thoughtIds: string[], near?: GhostPosition): Promise<string | null> {
+		const ids = thoughtIds.filter((id) => id in this.thoughts && !this.inWorkingSet(id));
+		if (ids.length === 0) return null;
+		const taken: GhostPosition[] = [
+			...this.workingSet.map((w) => ({ x: w.x, y: w.y })),
+			...Object.values(this.ghostPositions)
+		];
+		const items = ids.map((thoughtId) => {
+			const pos = this.freePosition(taken, near);
+			taken.push(pos);
+			return { thoughtId, ...pos };
+		});
+		return this.post('/api/workingset', { action: 'add', items });
+	}
+
+	/** Add one thought at an exact position (e.g. where its surfaced ghost sits). */
+	async addToSetAt(thoughtId: string, pos: GhostPosition): Promise<string | null> {
+		if (!(thoughtId in this.thoughts) || this.inWorkingSet(thoughtId)) return null;
+		return this.post('/api/workingset', {
+			action: 'add',
+			items: [{ thoughtId, x: pos.x, y: pos.y }]
+		});
+	}
+
+	/** Drop a thought from the working set; the durable graph is untouched. */
+	async removeFromSet(thoughtId: string): Promise<string | null> {
+		const err = await this.post('/api/workingset', { action: 'remove', thoughtId });
+		if (!err) this.selectedIds = this.selectedIds.filter((id) => id !== thoughtId);
+		return err;
+	}
+
+	/** Empty the working set entirely — an explicit start-fresh action. */
+	async startFresh(): Promise<string | null> {
+		const err = await this.post('/api/workingset', { action: 'clear' });
+		if (!err) {
+			this.selectedIds = [];
+			this.notice = 'Working set emptied. The graph is untouched — search to rebuild.';
+		}
+		return err;
+	}
+
+	/** 1-hop neighbors of the given thoughts that are not in the working set. */
+	neighborIds(thoughtIds: string[]): string[] {
+		const of = new Set(thoughtIds);
+		const out = new Set<string>();
+		for (const r of this.relations) {
+			if (of.has(r.fromThoughtId) && !this.inWorkingSet(r.toThoughtId)) out.add(r.toThoughtId);
+			if (of.has(r.toThoughtId) && !this.inWorkingSet(r.fromThoughtId)) out.add(r.fromThoughtId);
+		}
+		return [...out];
+	}
+
+	/** Pull a thought's 1-hop neighbors onto the canvas, near its card. */
+	async pullNeighbors(thoughtId: string): Promise<string | null> {
+		const ids = this.neighborIds([thoughtId]);
+		if (ids.length === 0) {
+			return 'No neighbors outside the working set.';
+		}
+		const err = await this.addToSet(ids, this.position(thoughtId));
+		if (!err)
+			this.notice = `Added ${ids.length} neighbor${ids.length === 1 ? '' : 's'} to the working set.`;
+		return err;
+	}
+
+	/** Search the full graph by title + statement; title matches rank first. */
+	searchGraph(query: string): Thought[] {
+		const q = query.trim().toLowerCase();
+		if (!q) return [];
+		return Object.values(this.thoughts)
+			.filter(
+				(t) => t.title.toLowerCase().includes(q) || t.statement.toLowerCase().includes(q)
+			)
+			.sort((a, b) => {
+				const aTitle = a.title.toLowerCase().includes(q) ? 0 : 1;
+				const bTitle = b.title.toLowerCase().includes(q) ? 0 : 1;
+				return aTitle - bTitle || b.updatedAt - a.updatedAt;
+			});
+	}
+
+	/** Re-lay out the canvas as a grid, BFS-ordered so related cards sit together. */
+	arrange() {
+		const ids = this.workingSet.map((w) => w.thoughtId);
+		if (ids.length === 0) return;
+		const inSet = new Set(ids);
+		const adj = new Map<string, string[]>();
+		const degree = new Map<string, number>();
+		for (const r of this.relations) {
+			if (!inSet.has(r.fromThoughtId) || !inSet.has(r.toThoughtId)) continue;
+			adj.set(r.fromThoughtId, [...(adj.get(r.fromThoughtId) ?? []), r.toThoughtId]);
+			adj.set(r.toThoughtId, [...(adj.get(r.toThoughtId) ?? []), r.fromThoughtId]);
+			degree.set(r.fromThoughtId, (degree.get(r.fromThoughtId) ?? 0) + 1);
+			degree.set(r.toThoughtId, (degree.get(r.toThoughtId) ?? 0) + 1);
+		}
+		const order: string[] = [];
+		const seen = new Set<string>();
+		const byDegree = [...ids].sort((a, b) => (degree.get(b) ?? 0) - (degree.get(a) ?? 0));
+		for (const start of byDegree) {
+			if (seen.has(start)) continue;
+			seen.add(start);
+			const queue = [start];
+			while (queue.length > 0) {
+				const id = queue.shift()!;
+				order.push(id);
+				for (const n of adj.get(id) ?? []) {
+					if (!seen.has(n)) {
+						seen.add(n);
+						queue.push(n);
+					}
+				}
+			}
+		}
+		const cols = Math.max(2, Math.ceil(Math.sqrt(order.length)));
+		order.forEach((id, i) => {
+			this.moveCard(id, 80 + (i % cols) * (CARD_W + 80), 60 + Math.floor(i / cols) * (CARD_H + 72));
+		});
+		this.notice = 'Arranged the working set.';
+	}
+
 	moveGhost(key: string, x: number, y: number) {
 		if (this.ghostPositions[key]) this.ghostPositions[key] = { x, y };
 	}
