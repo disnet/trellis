@@ -2,9 +2,9 @@
 
 ## Status
 
-Canonical design for the first Trellis prototype.
+Archived. Superseded by the canonical [Trellis design](../design.md).
 
-Synthesized from [the framing prompt](brainstorm-prompt.md), [the concise brainstorm](fable-brainstorm.md), [the extended brainstorm](gpt-brainstorm.md), and the earlier design synthesis.
+Synthesized from [the framing prompt](../brainstorm-prompt.md), [the concise brainstorm](../fable-brainstorm.md), [the extended brainstorm](../gpt-brainstorm.md), and the earlier design synthesis.
 
 ## Product thesis
 
