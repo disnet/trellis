@@ -5,6 +5,7 @@
 	import ProposalTray from '$lib/components/ProposalTray.svelte';
 	import ReentryPanel from '$lib/components/ReentryPanel.svelte';
 	import Scratch from '$lib/components/Scratch.svelte';
+	import WorkingSetTabs from '$lib/components/WorkingSetTabs.svelte';
 	import { workspace } from '$lib/workspace.svelte';
 	import type { AgentAction } from '$lib/types';
 
@@ -28,7 +29,7 @@
 	}
 
 	async function startFresh() {
-		if (!confirm('Empty the working set? Thoughts and relations stay in the graph.')) return;
+		if (!confirm('Empty this working set? Thoughts and relations stay in the graph.')) return;
 		const err = await ws.startFresh();
 		if (err) ws.notice = err;
 	}
@@ -117,7 +118,8 @@
 				<button onclick={() => ws.load()}>Retry</button>
 			</div>
 		{:else}
-			<Canvas />
+			<WorkingSetTabs />
+			<div class="canvas-pane"><Canvas /></div>
 		{/if}
 	</main>
 	<aside class="right-panel">
@@ -283,6 +285,12 @@
 		grid-area: center;
 		min-height: 0;
 		min-width: 0;
+		display: flex;
+		flex-direction: column;
+	}
+	.canvas-pane {
+		flex: 1;
+		min-height: 0;
 	}
 	.right-panel {
 		grid-area: right;

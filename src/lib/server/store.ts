@@ -4,7 +4,7 @@
 // is a separate, explicitly-invoked transaction.
 
 import crypto from 'node:crypto';
-import { db } from './db';
+import { activeWorkingSetId, db } from './db';
 import { generateProposal, linkCallToChangeSet } from './agent';
 import {
 	RELATION_TYPES,
@@ -163,7 +163,20 @@ export function getState(): WorkspaceState {
 	const relations = (db.prepare('SELECT * FROM relations ORDER BY created_at, rowid').all() as any[]).map(
 		rowToRelation
 	);
-	const workingSet = (db.prepare('SELECT * FROM working_set_items').all() as any[]).map((r) => ({
+	const activeSet = activeWorkingSetId();
+	const workingSets = (
+		db
+			.prepare(
+				`SELECT ws.id, ws.name, ws.created_at, COUNT(i.thought_id) AS size
+				 FROM working_sets ws
+				 LEFT JOIN working_set_items i ON i.working_set_id = ws.id
+				 GROUP BY ws.id ORDER BY ws.created_at, ws.rowid`
+			)
+			.all() as any[]
+	).map((r) => ({ id: r.id, name: r.name, createdAt: r.created_at, size: r.size }));
+	const workingSet = (
+		db.prepare('SELECT * FROM working_set_items WHERE working_set_id = ?').all(activeSet) as any[]
+	).map((r) => ({
 		thoughtId: r.thought_id,
 		x: r.x,
 		y: r.y
@@ -193,6 +206,8 @@ export function getState(): WorkspaceState {
 	return {
 		thoughts,
 		relations,
+		workingSets,
+		activeWorkingSetId: activeSet,
 		workingSet,
 		scratchNotes,
 		pendingChangeSets,
@@ -480,9 +495,14 @@ export function applyChangeSet(
 	const snapshot = JSON.stringify(exportState());
 
 	const now = Date.now();
+	const activeSet = activeWorkingSetId();
 	const thoughtExists = db.prepare('SELECT 1 FROM thoughts WHERE id = ?');
-	const onCanvas = db.prepare('SELECT 1 FROM working_set_items WHERE thought_id = ?');
-	const insertItem = db.prepare('INSERT INTO working_set_items (thought_id, x, y) VALUES (?, ?, ?)');
+	const onCanvas = db.prepare(
+		'SELECT 1 FROM working_set_items WHERE working_set_id = ? AND thought_id = ?'
+	);
+	const insertItem = db.prepare(
+		'INSERT INTO working_set_items (working_set_id, thought_id, x, y) VALUES (?, ?, ?, ?)'
+	);
 	const insertRevision = db.prepare(
 		`INSERT INTO thought_revisions
 		   (id, thought_id, title, statement, status, actor_type, source_change_set_id, edited_from_proposal, created_at)
@@ -525,7 +545,7 @@ export function applyChangeSet(
 						now
 					);
 					const pos = place(op.clientRef, 80);
-					insertItem.run(tid, pos.x, pos.y);
+					insertItem.run(activeSet, tid, pos.x, pos.y);
 				} else if (p.op === 'revise_thought') {
 					const row = db.prepare('SELECT * FROM thoughts WHERE id = ?').get(p.thoughtId) as any;
 					if (!row) throw new Error(`Cannot apply: unknown thought ${p.thoughtId}.`);
@@ -560,9 +580,9 @@ export function applyChangeSet(
 					).run(id('r'), from, to, p.relationType, cs.id, now);
 					// Surfaced existing thoughts join the working set so the relation is visible.
 					for (const end of [from, to]) {
-						if (!onCanvas.get(end)) {
+						if (!onCanvas.get(activeSet, end)) {
 							const pos = place(end, 80);
-							insertItem.run(end, pos.x, pos.y);
+							insertItem.run(activeSet, end, pos.x, pos.y);
 						}
 					}
 				}
@@ -644,9 +664,14 @@ export function reviseThought(
 export function addToWorkingSet(
 	items: { thoughtId: string; x?: number; y?: number }[]
 ): string | null {
+	const activeSet = activeWorkingSetId();
 	const exists = db.prepare('SELECT 1 FROM thoughts WHERE id = ?');
-	const onCanvas = db.prepare('SELECT 1 FROM working_set_items WHERE thought_id = ?');
-	const insert = db.prepare('INSERT INTO working_set_items (thought_id, x, y) VALUES (?, ?, ?)');
+	const onCanvas = db.prepare(
+		'SELECT 1 FROM working_set_items WHERE working_set_id = ? AND thought_id = ?'
+	);
+	const insert = db.prepare(
+		'INSERT INTO working_set_items (working_set_id, thought_id, x, y) VALUES (?, ?, ?, ?)'
+	);
 	for (const item of items) {
 		if (typeof item?.thoughtId !== 'string' || !exists.get(item.thoughtId)) {
 			return `Unknown thought: ${item?.thoughtId}`;
@@ -655,31 +680,90 @@ export function addToWorkingSet(
 	let fallbackY = 80;
 	db.transaction(() => {
 		for (const item of items) {
-			if (onCanvas.get(item.thoughtId)) continue;
+			if (onCanvas.get(activeSet, item.thoughtId)) continue;
 			const x = Number.isFinite(item.x) ? item.x! : 80;
 			const y = Number.isFinite(item.y) ? item.y! : ((fallbackY += 140), fallbackY);
-			insert.run(item.thoughtId, x, y);
+			insert.run(activeSet, item.thoughtId, x, y);
 		}
 	})();
 	return null;
 }
 
 export function removeFromWorkingSet(thoughtId: string): string | null {
-	const res = db.prepare('DELETE FROM working_set_items WHERE thought_id = ?').run(thoughtId);
+	const res = db
+		.prepare('DELETE FROM working_set_items WHERE working_set_id = ? AND thought_id = ?')
+		.run(activeWorkingSetId(), thoughtId);
 	return res.changes === 0 ? 'That thought is not in the working set.' : null;
 }
 
 export function clearWorkingSet(): void {
-	db.prepare('DELETE FROM working_set_items').run();
+	db.prepare('DELETE FROM working_set_items WHERE working_set_id = ?').run(activeWorkingSetId());
+}
+
+// --- multiple working sets (tabs) ---
+
+const SET_NAME_LIMIT = 40;
+
+export function createWorkingSet(name?: string): string | null {
+	const count = (db.prepare('SELECT COUNT(*) AS n FROM working_sets').get() as { n: number }).n;
+	const trimmed = typeof name === 'string' ? name.trim() : '';
+	const finalName = trimmed || `Set ${count + 1}`;
+	if (finalName.length > SET_NAME_LIMIT)
+		return `Name is longer than ${SET_NAME_LIMIT} characters.`;
+	const wsId = id('ws');
+	db.transaction(() => {
+		db.prepare('INSERT INTO working_sets (id, name, created_at) VALUES (?, ?, ?)').run(
+			wsId,
+			finalName,
+			Date.now()
+		);
+		setMeta('active_working_set', wsId);
+	})();
+	return null;
+}
+
+export function switchWorkingSet(wsId: string): string | null {
+	if (!db.prepare('SELECT 1 FROM working_sets WHERE id = ?').get(wsId))
+		return 'Unknown working set.';
+	setMeta('active_working_set', wsId);
+	return null;
+}
+
+export function renameWorkingSet(wsId: string, name: string): string | null {
+	const trimmed = typeof name === 'string' ? name.trim() : '';
+	if (!trimmed) return 'A working set needs a name.';
+	if (trimmed.length > SET_NAME_LIMIT) return `Name is longer than ${SET_NAME_LIMIT} characters.`;
+	const res = db.prepare('UPDATE working_sets SET name = ? WHERE id = ?').run(trimmed, wsId);
+	return res.changes === 0 ? 'Unknown working set.' : null;
+}
+
+/** Delete a working set (its membership only — thoughts stay in the graph). */
+export function deleteWorkingSet(wsId: string): string | null {
+	if (!db.prepare('SELECT 1 FROM working_sets WHERE id = ?').get(wsId))
+		return 'Unknown working set.';
+	const count = (db.prepare('SELECT COUNT(*) AS n FROM working_sets').get() as { n: number }).n;
+	if (count <= 1) return 'Cannot delete the only working set.';
+	db.transaction(() => {
+		db.prepare('DELETE FROM working_set_items WHERE working_set_id = ?').run(wsId);
+		db.prepare('DELETE FROM working_sets WHERE id = ?').run(wsId);
+		if (getMeta('active_working_set') === wsId) setMeta('active_working_set', null);
+	})();
+	// Re-resolve the pointer so the oldest remaining set becomes active.
+	activeWorkingSetId();
+	return null;
 }
 
 // --- working-set layout persistence ---
 
 export function updatePositions(items: { thoughtId: string; x: number; y: number }[]): void {
-	const update = db.prepare('UPDATE working_set_items SET x = ?, y = ? WHERE thought_id = ?');
+	const activeSet = activeWorkingSetId();
+	const update = db.prepare(
+		'UPDATE working_set_items SET x = ?, y = ? WHERE working_set_id = ? AND thought_id = ?'
+	);
 	db.transaction(() => {
 		for (const item of items) {
-			if (Number.isFinite(item.x) && Number.isFinite(item.y)) update.run(item.x, item.y, item.thoughtId);
+			if (Number.isFinite(item.x) && Number.isFinite(item.y))
+				update.run(item.x, item.y, activeSet, item.thoughtId);
 		}
 	})();
 }
@@ -693,6 +777,7 @@ export function exportState() {
 		thoughts: db.prepare('SELECT * FROM thoughts').all(),
 		thought_revisions: db.prepare('SELECT * FROM thought_revisions ORDER BY created_at, rowid').all(),
 		relations: db.prepare('SELECT * FROM relations ORDER BY created_at, rowid').all(),
+		working_sets: db.prepare('SELECT * FROM working_sets ORDER BY created_at, rowid').all(),
 		working_set_items: db.prepare('SELECT * FROM working_set_items').all(),
 		change_sets: db.prepare('SELECT * FROM change_sets ORDER BY created_at, rowid').all(),
 		proposed_operations: db.prepare('SELECT * FROM proposed_operations ORDER BY sequence').all(),
@@ -716,6 +801,7 @@ function restore(snapshot: ReturnType<typeof exportState>) {
 			'thought_revisions',
 			'relations',
 			'working_set_items',
+			'working_sets',
 			'scratch_notes',
 			'thoughts'
 		]) {
@@ -724,6 +810,7 @@ function restore(snapshot: ReturnType<typeof exportState>) {
 		insert('thoughts', snapshot.thoughts as any[]);
 		insert('thought_revisions', snapshot.thought_revisions as any[]);
 		insert('relations', snapshot.relations as any[]);
+		insert('working_sets', snapshot.working_sets as any[]);
 		insert('working_set_items', snapshot.working_set_items as any[]);
 		insert('change_sets', snapshot.change_sets as any[]);
 		insert('proposed_operations', snapshot.proposed_operations as any[]);

@@ -15,6 +15,7 @@ import {
 	type ScratchNote,
 	type Thought,
 	type ThoughtStatus,
+	type WorkingSetInfo,
 	type WorkingSetItem,
 	type WorkspaceState
 } from './types';
@@ -33,6 +34,8 @@ class Workspace {
 
 	thoughts = $state<Record<string, Thought>>({});
 	relations = $state<Relation[]>([]);
+	workingSets = $state<WorkingSetInfo[]>([]);
+	activeWorkingSetId = $state('');
 	workingSet = $state<WorkingSetItem[]>([]);
 	scratchNotes = $state<ScratchNote[]>([]);
 	scratchDraft = $state('');
@@ -74,6 +77,8 @@ class Workspace {
 	private applyState(s: WorkspaceState) {
 		this.thoughts = s.thoughts;
 		this.relations = s.relations;
+		this.workingSets = s.workingSets;
+		this.activeWorkingSetId = s.activeWorkingSetId;
 		this.workingSet = s.workingSet;
 		this.scratchNotes = s.scratchNotes;
 		this.pendingChangeSets = s.pendingChangeSets;
@@ -225,6 +230,34 @@ class Workspace {
 	async removeFromSet(thoughtId: string): Promise<string | null> {
 		const err = await this.post('/api/workingset', { action: 'remove', thoughtId });
 		if (!err) this.selectedIds = this.selectedIds.filter((id) => id !== thoughtId);
+		return err;
+	}
+
+	// --- multiple working sets (tabs) ---
+
+	/** Create a new (empty) working set and make it active. */
+	async createSet(name?: string): Promise<string | null> {
+		const err = await this.post('/api/workingset', { action: 'create', name });
+		if (!err) this.selectedIds = [];
+		return err;
+	}
+
+	async switchSet(workingSetId: string): Promise<string | null> {
+		if (workingSetId === this.activeWorkingSetId) return null;
+		const err = await this.post('/api/workingset', { action: 'switch', workingSetId });
+		if (!err) this.selectedIds = [];
+		return err;
+	}
+
+	async renameSet(workingSetId: string, name: string): Promise<string | null> {
+		return this.post('/api/workingset', { action: 'rename', workingSetId, name });
+	}
+
+	/** Delete a working set — membership only, the graph is untouched. */
+	async deleteSet(workingSetId: string): Promise<string | null> {
+		const wasActive = workingSetId === this.activeWorkingSetId;
+		const err = await this.post('/api/workingset', { action: 'delete', workingSetId });
+		if (!err && wasActive) this.selectedIds = [];
 		return err;
 	}
 

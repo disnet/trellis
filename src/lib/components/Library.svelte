@@ -27,7 +27,7 @@
 	<h2>Library</h2>
 	<p class="hint">
 		{totalThoughts} thought{totalThoughts === 1 ? '' : 's'} in the graph ·
-		{ws.workingSet.length} in the working set
+		{ws.workingSet.length} in this set
 	</p>
 	<input
 		type="search"

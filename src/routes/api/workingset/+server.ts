@@ -2,18 +2,26 @@ import { json } from '@sveltejs/kit';
 import {
 	addToWorkingSet,
 	clearWorkingSet,
+	createWorkingSet,
+	deleteWorkingSet,
 	getState,
 	removeFromWorkingSet,
+	renameWorkingSet,
+	switchWorkingSet,
 	updatePositions
 } from '$lib/server/store';
 import type { RequestHandler } from './$types';
 
 // POST /api/workingset mutates the transient working-set projection only:
-//   { items }                      → persist card positions (best-effort)
-//   { action: 'add', items }       → add thoughts to the set
-//   { action: 'remove', thoughtId }→ drop one thought from the set
-//   { action: 'clear' }            → start fresh with an empty set
-// Membership changes never touch the durable graph.
+//   { items }                          → persist card positions (best-effort)
+//   { action: 'add', items }           → add thoughts to the active set
+//   { action: 'remove', thoughtId }    → drop one thought from the active set
+//   { action: 'clear' }                → start fresh with an empty active set
+//   { action: 'create', name? }        → new working set, made active
+//   { action: 'switch', workingSetId } → change which set is active
+//   { action: 'rename', workingSetId, name }
+//   { action: 'delete', workingSetId } → delete a set (membership only)
+// None of these touch the durable graph.
 export const POST: RequestHandler = async ({ request }) => {
 	const body = await request.json().catch(() => null);
 
@@ -30,6 +38,26 @@ export const POST: RequestHandler = async ({ request }) => {
 	}
 	if (body?.action === 'clear') {
 		clearWorkingSet();
+		return json({ state: getState() });
+	}
+	if (body?.action === 'create') {
+		const error = createWorkingSet(body.name);
+		if (error) return json({ error }, { status: 400 });
+		return json({ state: getState() });
+	}
+	if (body?.action === 'switch') {
+		const error = switchWorkingSet(body.workingSetId);
+		if (error) return json({ error }, { status: 400 });
+		return json({ state: getState() });
+	}
+	if (body?.action === 'rename') {
+		const error = renameWorkingSet(body.workingSetId, body.name);
+		if (error) return json({ error }, { status: 400 });
+		return json({ state: getState() });
+	}
+	if (body?.action === 'delete') {
+		const error = deleteWorkingSet(body.workingSetId);
+		if (error) return json({ error }, { status: 400 });
 		return json({ state: getState() });
 	}
 

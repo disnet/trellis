@@ -4,7 +4,7 @@
 // relations are those among that pool. Ordering is stable (created_at, id) so
 // identical graph state always produces an identical request.
 
-import { db } from '../db';
+import { activeWorkingSetId, db } from '../db';
 import type { RelationType, ThoughtStatus, ThoughtType } from '$lib/types';
 
 export interface ContextThought {
@@ -37,9 +37,11 @@ export function buildContext(
 	scratch?: { id: string; body: string }
 ): AgentContext {
 	const workingIds = new Set<string>(
-		(db.prepare('SELECT thought_id FROM working_set_items').all() as any[]).map(
-			(r) => r.thought_id
-		)
+		(
+			db
+				.prepare('SELECT thought_id FROM working_set_items WHERE working_set_id = ?')
+				.all(activeWorkingSetId()) as any[]
+		).map((r) => r.thought_id)
 	);
 	for (const id of selectedIds) workingIds.add(id);
 

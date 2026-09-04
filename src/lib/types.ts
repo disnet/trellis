@@ -57,6 +57,15 @@ export interface WorkingSetItem {
 	y: number;
 }
 
+/** A named working set (tab). Only membership + layout — never knowledge. */
+export interface WorkingSetInfo {
+	id: string;
+	name: string;
+	createdAt: number;
+	/** Number of thoughts in the set, for tab display. */
+	size: number;
+}
+
 export interface ScratchNote {
 	id: string;
 	body: string;
@@ -138,6 +147,10 @@ export interface ChangeSet {
 export interface WorkspaceState {
 	thoughts: Record<string, Thought>;
 	relations: Relation[];
+	/** All working sets, oldest first. */
+	workingSets: WorkingSetInfo[];
+	activeWorkingSetId: string;
+	/** Items of the active working set. */
 	workingSet: WorkingSetItem[];
 	scratchNotes: ScratchNote[];
 	pendingChangeSets: ChangeSet[];

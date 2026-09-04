@@ -40,10 +40,18 @@ CREATE TABLE IF NOT EXISTS relations (
   created_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS working_sets (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS working_set_items (
-  thought_id TEXT PRIMARY KEY REFERENCES thoughts(id),
+  working_set_id TEXT NOT NULL REFERENCES working_sets(id),
+  thought_id TEXT NOT NULL REFERENCES thoughts(id),
   x REAL NOT NULL,
-  y REAL NOT NULL
+  y REAL NOT NULL,
+  PRIMARY KEY (working_set_id, thought_id)
 );
 
 CREATE TABLE IF NOT EXISTS change_sets (
@@ -111,8 +119,57 @@ function open(): Database.Database {
 	db.pragma('journal_mode = WAL');
 	db.pragma('foreign_keys = ON');
 	db.exec(SCHEMA);
+	migrateToMultipleWorkingSets(db);
 	seedIfEmpty(db);
 	return db;
+}
+
+// Databases created before working sets were plural have a single-set
+// working_set_items table (thought_id primary key, no working_set_id). Rebuild
+// it under a default "Main" set. Pre-migration undo snapshots are in the old
+// shape too, so drop them rather than restore garbage.
+function migrateToMultipleWorkingSets(db: Database.Database) {
+	const cols = db.pragma('table_info(working_set_items)') as { name: string }[];
+	if (cols.some((c) => c.name === 'working_set_id')) return;
+	db.pragma('foreign_keys = OFF');
+	db.transaction(() => {
+		db.prepare("INSERT INTO working_sets (id, name, created_at) VALUES ('ws-main', 'Main', ?)").run(
+			Date.now()
+		);
+		db.exec(`
+			ALTER TABLE working_set_items RENAME TO working_set_items_old;
+			CREATE TABLE working_set_items (
+			  working_set_id TEXT NOT NULL REFERENCES working_sets(id),
+			  thought_id TEXT NOT NULL REFERENCES thoughts(id),
+			  x REAL NOT NULL,
+			  y REAL NOT NULL,
+			  PRIMARY KEY (working_set_id, thought_id)
+			);
+			INSERT INTO working_set_items (working_set_id, thought_id, x, y)
+			  SELECT 'ws-main', thought_id, x, y FROM working_set_items_old;
+			DROP TABLE working_set_items_old;
+		`);
+		db.prepare(
+			"INSERT INTO meta (key, value) VALUES ('active_working_set', 'ws-main') ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+		).run();
+		db.prepare("DELETE FROM meta WHERE key IN ('undo_snapshot', 'undo_label')").run();
+	})();
+	db.pragma('foreign_keys = ON');
+}
+
+/** The current working set's id, self-healing if the meta pointer is stale. */
+export function activeWorkingSetId(): string {
+	const row = db.prepare("SELECT value FROM meta WHERE key = 'active_working_set'").get() as
+		| { value: string }
+		| undefined;
+	if (row && db.prepare('SELECT 1 FROM working_sets WHERE id = ?').get(row.value)) return row.value;
+	const first = db
+		.prepare('SELECT id FROM working_sets ORDER BY created_at, rowid LIMIT 1')
+		.get() as { id: string };
+	db.prepare(
+		"INSERT INTO meta (key, value) VALUES ('active_working_set', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+	).run(first.id);
+	return first.id;
 }
 
 function seedIfEmpty(db: Database.Database) {
@@ -133,7 +190,7 @@ function seedIfEmpty(db: Database.Database) {
 		 VALUES (@id, @fromThoughtId, @toThoughtId, @type, @createdBy, NULL, @createdAt)`
 	);
 	const insertItem = db.prepare(
-		'INSERT INTO working_set_items (thought_id, x, y) VALUES (@thoughtId, @x, @y)'
+		"INSERT INTO working_set_items (working_set_id, thought_id, x, y) VALUES ('ws-main', @thoughtId, @x, @y)"
 	);
 
 	db.transaction(() => {
@@ -142,6 +199,12 @@ function seedIfEmpty(db: Database.Database) {
 			for (const rev of t.revisions) insertRevision.run({ ...rev, thoughtId: t.id });
 		}
 		for (const r of seedRelations) insertRelation.run(r);
+		db.prepare(
+			"INSERT INTO working_sets (id, name, created_at) VALUES ('ws-main', 'Main', ?) ON CONFLICT(id) DO NOTHING"
+		).run(Date.now());
+		db.prepare(
+			"INSERT INTO meta (key, value) VALUES ('active_working_set', 'ws-main') ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+		).run();
 		for (const item of seedWorkingSet) insertItem.run(item);
 	})();
 }
