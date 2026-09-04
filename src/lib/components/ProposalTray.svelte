@@ -46,7 +46,7 @@
 		editingOpId = op.id;
 	}
 
-	function saveEdit(cs: ChangeSet, op: ProposedOperation) {
+	async function saveEdit(cs: ChangeSet, op: ProposedOperation) {
 		const p = effectivePayload(op);
 		let edited: OperationPayload;
 		if (p.op === 'create_thought') {
@@ -56,19 +56,23 @@
 		} else {
 			edited = p;
 		}
-		ws.saveEdit(op, edited);
-		const err = ws.setDecision(cs, op, 'accepted');
-		if (err) ws.notice = err;
+		const err = await ws.saveEdit(cs, op, edited);
+		if (err) {
+			ws.notice = err;
+			return;
+		}
+		const acceptErr = await ws.setDecision(cs, op, 'accepted');
+		if (acceptErr) ws.notice = acceptErr;
 		editingOpId = null;
 	}
 
-	function decide(cs: ChangeSet, op: ProposedOperation, decision: 'accepted' | 'rejected' | 'pending') {
-		const err = ws.setDecision(cs, op, decision);
+	async function decide(cs: ChangeSet, op: ProposedOperation, decision: 'accepted' | 'rejected' | 'pending') {
+		const err = await ws.setDecision(cs, op, decision);
 		if (err) ws.notice = err;
 	}
 
-	function apply(cs: ChangeSet) {
-		const err = ws.applyChangeSet(cs);
+	async function apply(cs: ChangeSet) {
+		const err = await ws.applyChangeSet(cs);
 		if (err) ws.notice = err;
 	}
 

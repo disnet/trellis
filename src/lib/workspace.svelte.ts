@@ -1,9 +1,8 @@
-// In-memory workspace state for Phase 0. No persistence, no network —
-// the fixture engine plays the model's role and everything else behaves
-// as the real loop will: propose → review → ratify → graph.
+// Client workspace store. The server (SQLite behind /api/*) owns canonical
+// state; this store mirrors it, keeps view-only state (selection, zoom, ghost
+// positions), and refreshes from the state payload every mutation returns.
 
-import { runFixture } from './fixtures';
-import { seedRelations, seedThoughts, seedWorkingSet } from './seed';
+import { browser } from '$app/environment';
 import {
 	effectivePayload,
 	type AgentAction,
@@ -11,11 +10,13 @@ import {
 	type OperationDecision,
 	type OperationPayload,
 	type ProposedOperation,
+	type ReentrySummary,
 	type Relation,
 	type ScratchNote,
 	type Thought,
 	type ThoughtStatus,
-	type WorkingSetItem
+	type WorkingSetItem,
+	type WorkspaceState
 } from './types';
 
 export interface GhostPosition {
@@ -23,20 +24,13 @@ export interface GhostPosition {
 	y: number;
 }
 
-interface Snapshot {
-	thoughts: Record<string, Thought>;
-	relations: Relation[];
-	workingSet: WorkingSetItem[];
-	pendingChangeSets: ChangeSet[];
-	decidedChangeSets: ChangeSet[];
-	ghostPositions: Record<string, GhostPosition>;
-	appliedChangeSetLabel: string;
-}
-
 export const CARD_W = 240;
 export const CARD_H = 92;
 
 class Workspace {
+	loading = $state(true);
+	loadError = $state<string | null>(null);
+
 	thoughts = $state<Record<string, Thought>>({});
 	relations = $state<Relation[]>([]);
 	workingSet = $state<WorkingSetItem[]>([]);
@@ -44,23 +38,71 @@ class Workspace {
 	scratchDraft = $state('');
 	pendingChangeSets = $state<ChangeSet[]>([]);
 	decidedChangeSets = $state<ChangeSet[]>([]);
+	undoLabel = $state<string | null>(null);
+
 	selectedIds = $state<string[]>([]);
 	zoom = $state<'overview' | 'reading'>('overview');
-	/** Preview positions for proposed cards, keyed `${changeSetId}:${ref}`. */
+	/** Preview positions for proposed cards, keyed `${changeSetId}:${ref}`. View-only, not persisted. */
 	ghostPositions = $state<Record<string, GhostPosition>>({});
 	notice = $state<string | null>(null);
 
-	private undoSnapshot: Snapshot | null = null;
-	undoLabel = $state<string | null>(null);
-	private counter = 0;
+	reentry = $state<ReentrySummary | null>(null);
+	showReentry = $state(false);
 
 	constructor() {
-		for (const t of seedThoughts) this.thoughts[t.id] = t;
-		this.relations = [...seedRelations];
-		this.workingSet = [...seedWorkingSet];
+		if (browser) void this.load();
 	}
 
-	nextId = (prefix: string) => `${prefix}-${++this.counter}`;
+	async load() {
+		this.loading = true;
+		this.loadError = null;
+		try {
+			const res = await fetch('/api/state');
+			if (!res.ok) throw new Error(`Server responded ${res.status}`);
+			const data = await res.json();
+			this.applyState(data.state);
+			this.reentry = data.reentry;
+			// Structural summary instead of a replay — but only on an actual return visit.
+			this.showReentry = data.reentry?.lastVisitAt != null;
+		} catch (e) {
+			this.loadError = e instanceof Error ? e.message : 'Could not reach the Trellis server.';
+		} finally {
+			this.loading = false;
+		}
+	}
+
+	private applyState(s: WorkspaceState) {
+		this.thoughts = s.thoughts;
+		this.relations = s.relations;
+		this.workingSet = s.workingSet;
+		this.scratchNotes = s.scratchNotes;
+		this.pendingChangeSets = s.pendingChangeSets;
+		this.decidedChangeSets = s.decidedChangeSets;
+		this.undoLabel = s.undoLabel;
+		this.selectedIds = this.selectedIds.filter((id) => id in s.thoughts);
+		for (const cs of s.pendingChangeSets) this.ensureGhosts(cs);
+		for (const key of Object.keys(this.ghostPositions)) {
+			const csId = key.slice(0, key.indexOf(':'));
+			if (!s.pendingChangeSets.some((cs) => cs.id === csId)) delete this.ghostPositions[key];
+		}
+	}
+
+	private async post(url: string, body?: unknown): Promise<string | null> {
+		await this.flushMoves();
+		try {
+			const res = await fetch(url, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(body ?? {})
+			});
+			const data = await res.json().catch(() => ({}));
+			if (!res.ok) return data.error ?? `Request failed (${res.status}).`;
+			if (data.state) this.applyState(data.state);
+			return null;
+		} catch {
+			return 'Could not reach the Trellis server.';
+		}
+	}
 
 	// --- selection ---
 
@@ -78,13 +120,40 @@ class Workspace {
 		this.selectedIds = [];
 	}
 
-	// --- canvas ---
+	// --- canvas (positions update locally, persisted with a debounce) ---
+
+	private pendingMoves = new Map<string, GhostPosition>();
+	private moveTimer: ReturnType<typeof setTimeout> | null = null;
 
 	moveCard(thoughtId: string, x: number, y: number) {
 		const item = this.workingSet.find((w) => w.thoughtId === thoughtId);
-		if (item) {
-			item.x = x;
-			item.y = y;
+		if (!item) return;
+		item.x = x;
+		item.y = y;
+		this.pendingMoves.set(thoughtId, { x, y });
+		if (this.moveTimer) clearTimeout(this.moveTimer);
+		this.moveTimer = setTimeout(() => void this.flushMoves(), 400);
+	}
+
+	private async flushMoves() {
+		if (this.moveTimer) {
+			clearTimeout(this.moveTimer);
+			this.moveTimer = null;
+		}
+		if (this.pendingMoves.size === 0) return;
+		const items = [...this.pendingMoves.entries()].map(([thoughtId, p]) => ({
+			thoughtId,
+			...p
+		}));
+		this.pendingMoves.clear();
+		try {
+			await fetch('/api/workingset', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ items })
+			});
+		} catch {
+			// Position persistence is best-effort; the next successful save wins.
 		}
 	}
 
@@ -96,40 +165,25 @@ class Workspace {
 		return this.workingSet.find((w) => w.thoughtId === thoughtId);
 	}
 
-	// --- invoking agent operations (fixtures) ---
+	// --- invoking agent operations ---
 
-	invoke(action: AgentAction): string | null {
-		const fromScratch = action === 'decompose' && this.scratchDraft.trim().length > 0;
-		if (!fromScratch && this.selectedIds.length === 0) {
+	async invoke(action: AgentAction): Promise<string | null> {
+		const scratchBody =
+			action === 'decompose' && this.scratchDraft.trim().length > 0
+				? this.scratchDraft
+				: undefined;
+		if (!scratchBody && this.selectedIds.length === 0) {
 			return action === 'decompose'
 				? 'Decompose needs scratch text or a selected thought.'
 				: `Select at least one thought to ${action}.`;
 		}
-
-		let scratchId: string | undefined;
-		if (fromScratch) {
-			scratchId = this.nextId('scratch');
-			this.scratchNotes.push({ id: scratchId, body: this.scratchDraft, createdAt: Date.now() });
-		}
-
-		const cs = runFixture(action, {
+		const err = await this.post('/api/invoke', {
+			action,
 			selectedIds: [...this.selectedIds],
-			scratchId,
-			nextId: this.nextId,
-			now: Date.now(),
-			thoughtTitle: (id) => this.thoughts[id]?.title ?? id,
-			thoughtExists: (id) => id in this.thoughts
+			scratchBody
 		});
-
-		if (scratchId) {
-			const note = this.scratchNotes.find((n) => n.id === scratchId);
-			if (note) note.distilledChangeSetId = cs.id;
-			this.scratchDraft = '';
-		}
-
-		this.placeGhosts(cs);
-		this.pendingChangeSets.push(cs);
-		return null;
+		if (!err && scratchBody) this.scratchDraft = '';
+		return err;
 	}
 
 	/** Cards a pending change set will add to the canvas: new thoughts plus
@@ -159,11 +213,22 @@ class Workspace {
 		return out;
 	}
 
-	private placeGhosts(cs: ChangeSet) {
+	private ensureGhosts(cs: ChangeSet) {
+		const missing = this.previewRefs(cs).filter(
+			({ ref }) => !this.ghostPositions[`${cs.id}:${ref}`]
+		);
+		if (missing.length === 0) return;
 		const maxX = Math.max(0, ...this.workingSet.map((w) => w.x));
 		const baseX = maxX + CARD_W + 80;
 		let y = 60;
-		for (const { ref } of this.previewRefs(cs)) {
+		const taken = new Set(
+			Object.entries(this.ghostPositions)
+				.filter(([key]) => key.startsWith(`${cs.id}:`))
+				.map(([, p]) => p.y)
+		);
+		for (const { ref } of missing) {
+			while (taken.has(y)) y += CARD_H + 48;
+			taken.add(y);
 			this.ghostPositions[`${cs.id}:${ref}`] = { x: baseX, y };
 			y += CARD_H + 48;
 		}
@@ -186,27 +251,20 @@ class Workspace {
 		return null;
 	}
 
-	setDecision(cs: ChangeSet, op: ProposedOperation, decision: OperationDecision): string | null {
+	async setDecision(
+		cs: ChangeSet,
+		op: ProposedOperation,
+		decision: OperationDecision
+	): Promise<string | null> {
 		if (decision === 'accepted') {
 			const blocked = this.acceptBlockReason(cs, op);
 			if (blocked) return blocked;
 		}
-		op.decision = decision;
-		op.decidedAt = Date.now();
-		if (decision === 'rejected') {
-			// Cascade: anything depending on this operation cannot stand.
-			for (const other of cs.operations) {
-				if (other.dependsOn.includes(op.clientRef) && other.decision !== 'rejected') {
-					other.decision = 'rejected';
-					other.decidedAt = Date.now();
-				}
-			}
-		}
-		return null;
+		return this.post(`/api/changesets/${cs.id}/decide`, { opId: op.id, decision });
 	}
 
-	saveEdit(op: ProposedOperation, edited: OperationPayload) {
-		op.editedPayload = edited;
+	async saveEdit(cs: ChangeSet, op: ProposedOperation, edited: OperationPayload): Promise<string | null> {
+		return this.post(`/api/changesets/${cs.id}/edit`, { opId: op.id, editedPayload: edited });
 	}
 
 	opLabel(op: ProposedOperation): string {
@@ -221,7 +279,7 @@ class Workspace {
 	private refTitle(op: ProposedOperation, ref: string): string | null {
 		// Look up a clientRef inside the same pending change set.
 		for (const cs of this.pendingChangeSets) {
-			if (!cs.operations.includes(op)) continue;
+			if (!cs.operations.some((o) => o.id === op.id)) continue;
 			const target = this.opByRef(cs, ref);
 			if (target) {
 				const p = effectivePayload(target);
@@ -237,160 +295,46 @@ class Workspace {
 
 	// --- applying ---
 
-	applyChangeSet(cs: ChangeSet): string | null {
+	async applyChangeSet(cs: ChangeSet): Promise<string | null> {
 		if (!this.allDecided(cs)) return 'Decide every operation before applying.';
-		const accepted = cs.operations.filter((o) => o.decision === 'accepted');
-
-		// Server-side style re-validation of the chosen subset.
-		for (const op of accepted) {
-			for (const ref of op.dependsOn) {
-				const dep = this.opByRef(cs, ref);
-				if (dep && dep.decision !== 'accepted') {
-					return `Cannot apply: “${this.opLabel(op)}” depends on an operation that was not accepted.`;
-				}
-			}
+		// Ghost preview positions become the real card positions.
+		const positions: Record<string, GhostPosition> = {};
+		for (const [key, pos] of Object.entries(this.ghostPositions)) {
+			if (key.startsWith(`${cs.id}:`)) positions[key.slice(cs.id.length + 1)] = pos;
 		}
-
-		this.undoSnapshot = this.takeSnapshot(cs.summary);
-		this.undoLabel = cs.summary;
-
-		const now = Date.now();
-		const refToId: Record<string, string> = {};
-
-		for (const op of accepted.sort((a, b) => a.sequence - b.sequence)) {
-			const p = effectivePayload(op);
-			const edited = op.editedPayload !== undefined;
-			if (p.op === 'create_thought') {
-				const id = this.nextId('t');
-				refToId[op.clientRef] = id;
-				this.thoughts[id] = {
-					id,
-					...p.thought,
-					createdAt: now,
-					updatedAt: now,
-					revisions: [
-						{
-							id: this.nextId('rev'),
-							title: p.thought.title,
-							statement: p.thought.statement,
-							status: p.thought.status,
-							actorType: edited ? 'human' : 'agent',
-							editedFromProposal: edited,
-							sourceChangeSetId: cs.id,
-							createdAt: now
-						}
-					]
-				};
-				const ghost = this.ghostPositions[`${cs.id}:${op.clientRef}`];
-				this.workingSet.push({ thoughtId: id, x: ghost?.x ?? 80, y: ghost?.y ?? 80 });
-			} else if (p.op === 'revise_thought') {
-				const t = this.thoughts[p.thoughtId];
-				if (!t) return `Cannot apply: unknown thought ${p.thoughtId}.`;
-				const fields = { ...t, ...p.thought };
-				t.title = fields.title;
-				t.statement = fields.statement;
-				t.status = fields.status;
-				t.updatedAt = now;
-				t.revisions.push({
-					id: this.nextId('rev'),
-					title: t.title,
-					statement: t.statement,
-					status: t.status,
-					actorType: edited ? 'human' : 'agent',
-					editedFromProposal: edited,
-					sourceChangeSetId: cs.id,
-					createdAt: now
-				});
-			} else {
-				const from = refToId[p.from] ?? p.from;
-				const to = refToId[p.to] ?? p.to;
-				if (!this.thoughts[from] || !this.thoughts[to]) {
-					return 'Cannot apply: relation endpoint does not exist.';
-				}
-				this.relations.push({
-					id: this.nextId('r'),
-					fromThoughtId: from,
-					toThoughtId: to,
-					type: p.relationType,
-					createdBy: 'agent',
-					sourceChangeSetId: cs.id,
-					createdAt: now
-				});
-				// Surfaced existing thoughts join the working set so the relation is visible.
-				for (const end of [from, to]) {
-					if (!this.workingSet.some((w) => w.thoughtId === end)) {
-						const ghost = this.ghostPositions[`${cs.id}:${end}`];
-						this.workingSet.push({ thoughtId: end, x: ghost?.x ?? 80, y: ghost?.y ?? 400 });
-					}
-				}
-			}
-		}
-
-		cs.status =
-			accepted.length === 0
-				? 'rejected'
-				: accepted.length === cs.operations.length
-					? 'applied'
-					: 'partially_applied';
-		cs.appliedAt = now;
-		this.pendingChangeSets = this.pendingChangeSets.filter((c) => c.id !== cs.id);
-		this.decidedChangeSets.push(cs);
-		for (const key of Object.keys(this.ghostPositions)) {
-			if (key.startsWith(`${cs.id}:`)) delete this.ghostPositions[key];
-		}
+		const accepted = cs.operations.filter((o) => o.decision === 'accepted').length;
+		const err = await this.post(`/api/changesets/${cs.id}/apply`, { positions });
+		if (err) return err;
 		this.notice =
-			cs.status === 'rejected'
+			accepted === 0
 				? 'Change set rejected — nothing entered the graph.'
-				: `Applied ${accepted.length} of ${cs.operations.length} operations.`;
+				: `Applied ${accepted} of ${cs.operations.length} operations.`;
 		return null;
 	}
 
 	// --- human revision (from the inspector) ---
 
-	reviseThought(id: string, fields: { title: string; statement: string; status: ThoughtStatus }) {
+	async reviseThought(
+		id: string,
+		fields: { title: string; statement: string; status: ThoughtStatus }
+	): Promise<string | null> {
 		const t = this.thoughts[id];
-		if (!t) return;
+		if (!t) return null;
 		if (t.title === fields.title && t.statement === fields.statement && t.status === fields.status)
-			return;
-		t.title = fields.title;
-		t.statement = fields.statement;
-		t.status = fields.status;
-		t.updatedAt = Date.now();
-		t.revisions.push({
-			id: this.nextId('rev'),
-			...fields,
-			actorType: 'human',
-			createdAt: Date.now()
-		});
+			return null;
+		return this.post(`/api/thoughts/${id}/revise`, fields);
 	}
 
 	// --- undo ---
 
-	private takeSnapshot(label: string): Snapshot {
-		return structuredClone({
-			thoughts: $state.snapshot(this.thoughts),
-			relations: $state.snapshot(this.relations),
-			workingSet: $state.snapshot(this.workingSet),
-			pendingChangeSets: $state.snapshot(this.pendingChangeSets),
-			decidedChangeSets: $state.snapshot(this.decidedChangeSets),
-			ghostPositions: $state.snapshot(this.ghostPositions),
-			appliedChangeSetLabel: label
-		}) as Snapshot;
+	async undoLastApply(): Promise<string | null> {
+		const err = await this.post('/api/undo');
+		if (!err) this.notice = 'Reverted the last applied change set; it is back in the tray.';
+		return err;
 	}
 
-	undoLastApply() {
-		if (!this.undoSnapshot) return;
-		const s = this.undoSnapshot;
-		this.thoughts = s.thoughts;
-		this.relations = s.relations;
-		this.workingSet = s.workingSet;
-		this.pendingChangeSets = s.pendingChangeSets;
-		this.decidedChangeSets = s.decidedChangeSets;
-		this.ghostPositions = s.ghostPositions;
-		this.undoSnapshot = null;
-		this.undoLabel = null;
-		this.notice = 'Reverted the last applied change set; it is back in the tray.';
-		this.selectedIds = this.selectedIds.filter((id) => id in this.thoughts);
+	dismissReentry() {
+		this.showReentry = false;
 	}
 }
 

@@ -27,9 +27,17 @@
 		editing = true;
 	}
 
-	function saveEdit() {
+	async function saveEdit() {
 		if (!thought) return;
-		ws.reviseThought(thought.id, { title: editTitle, statement: editStatement, status: editStatus });
+		const err = await ws.reviseThought(thought.id, {
+			title: editTitle,
+			statement: editStatement,
+			status: editStatus
+		});
+		if (err) {
+			ws.notice = err;
+			return;
+		}
 		editing = false;
 	}
 

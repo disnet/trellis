@@ -2,6 +2,7 @@
 	import Canvas from '$lib/components/Canvas.svelte';
 	import Inspector from '$lib/components/Inspector.svelte';
 	import ProposalTray from '$lib/components/ProposalTray.svelte';
+	import ReentryPanel from '$lib/components/ReentryPanel.svelte';
 	import Scratch from '$lib/components/Scratch.svelte';
 	import { workspace } from '$lib/workspace.svelte';
 	import type { AgentAction } from '$lib/types';
@@ -15,8 +16,13 @@
 		{ action: 'connect', label: 'Connect', hint: 'Find and link related thoughts' }
 	];
 
-	function invoke(action: AgentAction) {
-		const err = ws.invoke(action);
+	async function invoke(action: AgentAction) {
+		const err = await ws.invoke(action);
+		if (err) ws.notice = err;
+	}
+
+	async function undo() {
+		const err = await ws.undoLastApply();
 		if (err) ws.notice = err;
 	}
 
@@ -62,18 +68,34 @@
 			>
 				{ws.zoom === 'overview' ? '⊕ Reading view' : '⊖ Overview'}
 			</button>
-			<button class="undo" disabled={ws.undoLabel === null} title={ws.undoLabel ?? ''} onclick={() => ws.undoLastApply()}>
+			<button class="undo" disabled={ws.undoLabel === null} title={ws.undoLabel ?? ''} onclick={undo}>
 				↩ Undo last apply
 			</button>
+			<a class="export" href="/api/export" download title="Download the full graph as JSON">
+				⇩ Export
+			</a>
 		</div>
 	</header>
 
 	<aside class="left"><Scratch /></aside>
-	<main class="center"><Canvas /></main>
+	<main class="center">
+		{#if ws.loading}
+			<div class="load-state">Loading the graph…</div>
+		{:else if ws.loadError}
+			<div class="load-state error">
+				<p>Could not load the graph: {ws.loadError}</p>
+				<button onclick={() => ws.load()}>Retry</button>
+			</div>
+		{:else}
+			<Canvas />
+		{/if}
+	</main>
 	<aside class="right-panel">
 		<div class="tray-pane"><ProposalTray /></div>
 		<div class="inspector-pane"><Inspector /></div>
 	</aside>
+
+	<ReentryPanel />
 
 	{#if ws.notice}
 		<div class="toast" role="status">
@@ -162,6 +184,41 @@
 	.right button:disabled {
 		opacity: 0.45;
 		cursor: not-allowed;
+	}
+	.export {
+		font-size: 12px;
+		border: 1px solid #d5d0c4;
+		background: #fff;
+		border-radius: 6px;
+		padding: 5px 10px;
+		color: #4d473c;
+		text-decoration: none;
+	}
+	.export:hover {
+		border-color: #3b5bdb;
+		color: #3b5bdb;
+	}
+	.load-state {
+		height: 100%;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 8px;
+		color: #8a8375;
+		font-size: 13px;
+	}
+	.load-state.error {
+		color: #8a3a2a;
+	}
+	.load-state button {
+		font: inherit;
+		font-size: 12px;
+		border: 1px solid #d5d0c4;
+		background: #fff;
+		border-radius: 6px;
+		padding: 5px 12px;
+		cursor: pointer;
 	}
 	.left {
 		grid-area: left;

@@ -1,5 +1,6 @@
-// Core domain types for the Trellis Phase 0 skeleton.
-// Mirrors docs/design.md "Data model" and "Agent contract", kept in-memory for now.
+// Core domain types for Trellis. Mirrors docs/design.md "Data model" and
+// "Agent contract". Shared between the client store and the server, which
+// persists everything in SQLite (Phase 1).
 
 export type ThoughtType = 'claim' | 'question' | 'concept' | 'example';
 
@@ -126,7 +127,43 @@ export interface ChangeSet {
 	scratchId?: string;
 	operations: ProposedOperation[];
 	createdAt: number;
+	/** Who ratified the change set — distinct from who authored the operations. */
+	appliedBy?: ActorType;
 	appliedAt?: number;
+}
+
+// --- Server payloads (Phase 1) ---
+
+/** The canonical persisted state, as served by GET /api/state and returned by mutations. */
+export interface WorkspaceState {
+	thoughts: Record<string, Thought>;
+	relations: Relation[];
+	workingSet: WorkingSetItem[];
+	scratchNotes: ScratchNote[];
+	pendingChangeSets: ChangeSet[];
+	decidedChangeSets: ChangeSet[];
+	/** Summary of the last applied change set, when it can still be undone. */
+	undoLabel: string | null;
+}
+
+export interface ReentryThoughtRef {
+	id: string;
+	title: string;
+	type: ThoughtType;
+	status: ThoughtStatus;
+}
+
+/** Structural summary shown on re-entry instead of a replay of activity. */
+export interface ReentrySummary {
+	lastVisitAt: number | null;
+	/** Most-connected claims and questions in the working set. */
+	central: (ReentryThoughtRef & { degree: number })[];
+	/** Contested or still-tentative thoughts in the working set. */
+	attention: ReentryThoughtRef[];
+	newThoughts: ReentryThoughtRef[];
+	revisedThoughts: ReentryThoughtRef[];
+	newRelations: number;
+	pendingChangeSets: number;
 }
 
 /** What the effective payload of an operation is (human edit wins, original preserved). */

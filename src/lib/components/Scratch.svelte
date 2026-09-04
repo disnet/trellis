@@ -3,8 +3,8 @@
 
 	const ws = workspace;
 
-	function decompose() {
-		const err = ws.invoke('decompose');
+	async function decompose() {
+		const err = await ws.invoke('decompose');
 		if (err) ws.notice = err;
 	}
 </script>
