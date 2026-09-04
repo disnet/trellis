@@ -46,16 +46,22 @@
 			{#each operations as { action, label, hint } (action)}
 				<button
 					title={hint}
-					disabled={ws.selectedIds.length === 0 &&
-						!(action === 'decompose' && ws.scratchDraft.trim().length > 0)}
+					class:busy={ws.invoking === action}
+					disabled={ws.invoking !== null ||
+						(ws.selectedIds.length === 0 &&
+							!(action === 'decompose' && ws.scratchDraft.trim().length > 0))}
 					onclick={() => invoke(action)}
 				>
-					{label}
+					{ws.invoking === action ? `${label}…` : label}
 				</button>
 			{/each}
 		</div>
-		<span class="selection-hint">
-			{#if ws.selectedIds.length > 0}
+		<span class="selection-hint" aria-live="polite">
+			{#if ws.invoking}
+				{ws.invoking === 'decompose' && ws.scratchDraft.trim().length > 0
+					? 'Proposing from scratch and the working set…'
+					: `Proposing from ${ws.selectedIds.length} selected thought${ws.selectedIds.length === 1 ? '' : 's'} and the working set…`}
+			{:else if ws.selectedIds.length > 0}
 				{ws.selectedIds.length} selected — operations use the selection plus the working set
 			{:else}
 				Click a card to select · shift-click for multiple
@@ -161,6 +167,18 @@
 	.ops button:disabled {
 		opacity: 0.45;
 		cursor: not-allowed;
+	}
+	.ops button.busy {
+		opacity: 1;
+		border-color: #3b5bdb;
+		color: #3b5bdb;
+		cursor: progress;
+		animation: busy-pulse 1.2s ease-in-out infinite;
+	}
+	@keyframes busy-pulse {
+		50% {
+			opacity: 0.55;
+		}
 	}
 	.selection-hint {
 		font-size: 11.5px;

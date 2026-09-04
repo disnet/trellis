@@ -167,7 +167,11 @@ class Workspace {
 
 	// --- invoking agent operations ---
 
+	/** The action currently generating a proposal, if any (live calls take seconds). */
+	invoking = $state<AgentAction | null>(null);
+
 	async invoke(action: AgentAction): Promise<string | null> {
+		if (this.invoking) return null;
 		const scratchBody =
 			action === 'decompose' && this.scratchDraft.trim().length > 0
 				? this.scratchDraft
@@ -177,13 +181,18 @@ class Workspace {
 				? 'Decompose needs scratch text or a selected thought.'
 				: `Select at least one thought to ${action}.`;
 		}
-		const err = await this.post('/api/invoke', {
-			action,
-			selectedIds: [...this.selectedIds],
-			scratchBody
-		});
-		if (!err && scratchBody) this.scratchDraft = '';
-		return err;
+		this.invoking = action;
+		try {
+			const err = await this.post('/api/invoke', {
+				action,
+				selectedIds: [...this.selectedIds],
+				scratchBody
+			});
+			if (!err && scratchBody) this.scratchDraft = '';
+			return err;
+		} finally {
+			this.invoking = null;
+		}
 	}
 
 	/** Cards a pending change set will add to the canvas: new thoughts plus

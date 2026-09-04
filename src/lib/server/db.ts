@@ -84,6 +84,24 @@ CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+
+-- One row per model/fixture attempt: inputs, raw output, validation errors and
+-- latency, for evaluation. Review decisions live on proposed_operations; join
+-- through change_set_id.
+CREATE TABLE IF NOT EXISTS agent_calls (
+  id TEXT PRIMARY KEY,
+  action TEXT NOT NULL,
+  adapter TEXT NOT NULL,
+  model TEXT NOT NULL,
+  attempt INTEGER NOT NULL,
+  request TEXT NOT NULL,
+  raw_output TEXT,
+  validation_errors TEXT,
+  error TEXT,
+  latency_ms INTEGER NOT NULL,
+  change_set_id TEXT,
+  created_at INTEGER NOT NULL
+);
 `;
 
 function open(): Database.Database {

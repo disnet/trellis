@@ -13,7 +13,10 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	if (!ACTIONS.includes(action)) return json({ error: 'Unknown operation.' }, { status: 400 });
 
-	const result = invoke(action, selectedIds, scratchBody);
-	if ('error' in result) return json({ error: result.error }, { status: 400 });
+	const result = await invoke(action, selectedIds, scratchBody);
+	// Generation failures are recoverable: nothing was staged, the scratch note
+	// (if any) is preserved, and the client may simply invoke again.
+	if ('error' in result)
+		return json({ error: result.error }, { status: result.generationFailed ? 502 : 400 });
 	return json({ state: getState(), changeSetId: result.changeSetId });
 };

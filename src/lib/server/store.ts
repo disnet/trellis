@@ -1,10 +1,19 @@
 // Canonical graph operations over SQLite. All mutations happen here, inside
-// transactions; model (fixture) output never writes directly to accepted graph
-// tables — applying a change set is a separate, explicitly-invoked transaction.
+// transactions; model output never writes directly to accepted graph tables —
+// a validated proposal is persisted as a *pending* change set, and applying it
+// is a separate, explicitly-invoked transaction.
 
 import crypto from 'node:crypto';
 import { db } from './db';
-import { runFixture } from '$lib/fixtures';
+import { generateProposal, linkCallToChangeSet } from './agent';
+import {
+	RELATION_TYPES,
+	STATEMENT_LIMIT,
+	THOUGHT_STATUSES,
+	THOUGHT_TYPES,
+	TITLE_LIMIT,
+	type WireOperation
+} from './agent/wire';
 import {
 	effectivePayload,
 	type ActorType,
@@ -24,20 +33,6 @@ import {
 } from '$lib/types';
 
 const id = (prefix: string) => `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
-
-const TITLE_LIMIT = 300;
-const STATEMENT_LIMIT = 4000;
-
-const THOUGHT_TYPES = ['claim', 'question', 'concept', 'example'];
-const THOUGHT_STATUSES = ['tentative', 'developing', 'believed', 'contested', 'retired'];
-const RELATION_TYPES = [
-	'supports',
-	'contradicts',
-	'depends_on',
-	'example_of',
-	'supersedes',
-	'related_to'
-];
 
 // --- meta helpers ---
 
@@ -260,13 +255,20 @@ export function reentrySummary(): ReentrySummary {
 	};
 }
 
-// --- invoking agent operations (fixtures stand in for the model until Phase 2) ---
+// --- invoking agent operations ---
 
-export function invoke(
+function wireToPayload(op: WireOperation): OperationPayload {
+	if (op.op === 'create_thought') return { op: 'create_thought', thought: op.thought };
+	if (op.op === 'revise_thought')
+		return { op: 'revise_thought', thoughtId: op.thought_id, thought: op.thought };
+	return { op: 'add_relation', from: op.from, to: op.to, relationType: op.relation_type };
+}
+
+export async function invoke(
 	action: AgentAction,
 	selectedIds: string[],
 	scratchBody?: string
-): { error: string } | { changeSetId: string } {
+): Promise<{ error: string; generationFailed?: boolean } | { changeSetId: string }> {
 	const fromScratch = action === 'decompose' && !!scratchBody?.trim();
 	if (!fromScratch && selectedIds.length === 0) {
 		return {
@@ -281,62 +283,75 @@ export function invoke(
 		if (!exists.get(tid)) return { error: `Unknown thought in selection: ${tid}` };
 	}
 
-	const now = Date.now();
-	const titleOf = db.prepare('SELECT title FROM thoughts WHERE id = ?');
-
-	const changeSetId = db.transaction(() => {
-		let scratchId: string | undefined;
-		if (fromScratch) {
-			scratchId = id('scratch');
+	// Persist the scratch note before generation so capture survives a failed
+	// model call. A retry with identical text reuses the undistilled note.
+	let scratch: { id: string; body: string } | undefined;
+	if (fromScratch) {
+		const body = scratchBody!;
+		const existing = db
+			.prepare(
+				'SELECT id FROM scratch_notes WHERE body = ? AND distilled_change_set_id IS NULL ORDER BY created_at DESC LIMIT 1'
+			)
+			.get(body) as { id: string } | undefined;
+		if (existing) {
+			scratch = { id: existing.id, body };
+		} else {
+			scratch = { id: id('scratch'), body };
 			db.prepare('INSERT INTO scratch_notes (id, body, created_at) VALUES (?, ?, ?)').run(
-				scratchId,
-				scratchBody!,
-				now
+				scratch.id,
+				body,
+				Date.now()
 			);
 		}
+	}
 
-		const cs = runFixture(action, {
-			selectedIds,
-			scratchId,
-			nextId: id,
-			now,
-			thoughtTitle: (tid) => (titleOf.get(tid) as { title: string } | undefined)?.title ?? tid,
-			thoughtExists: (tid) => !!exists.get(tid)
-		});
+	const outcome = await generateProposal(action, selectedIds, scratch);
+	if (!outcome.ok) return { error: outcome.error, generationFailed: true };
 
+	const now = Date.now();
+	const csId = db.transaction(() => {
+		const changeSetId = id('cs');
 		db.prepare(
 			`INSERT INTO change_sets (id, action, status, summary, invoked_on, scratch_id, created_at)
 			 VALUES (?, ?, 'pending', ?, ?, ?, ?)`
-		).run(cs.id, cs.action, cs.summary, JSON.stringify(cs.invokedOn), scratchId ?? null, now);
+		).run(
+			changeSetId,
+			action,
+			outcome.proposal.summary,
+			JSON.stringify(selectedIds),
+			scratch?.id ?? null,
+			now
+		);
 
 		const insertOp = db.prepare(
 			`INSERT INTO proposed_operations
 			   (id, change_set_id, client_ref, sequence, depends_on, evidence_refs, payload, rationale, decision)
 			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')`
 		);
-		for (const op of cs.operations) {
+		outcome.proposal.operations.forEach((op, sequence) => {
 			insertOp.run(
-				op.id,
-				cs.id,
-				op.clientRef,
-				op.sequence,
-				JSON.stringify(op.dependsOn),
-				JSON.stringify(op.evidenceRefs),
-				JSON.stringify(op.payload),
+				id('op'),
+				changeSetId,
+				op.client_ref,
+				sequence,
+				JSON.stringify(op.depends_on),
+				JSON.stringify(op.evidence_refs),
+				JSON.stringify(wireToPayload(op)),
 				op.rationale
 			);
-		}
+		});
 
-		if (scratchId) {
+		if (scratch) {
 			db.prepare('UPDATE scratch_notes SET distilled_change_set_id = ? WHERE id = ?').run(
-				cs.id,
-				scratchId
+				changeSetId,
+				scratch.id
 			);
 		}
-		return cs.id;
+		linkCallToChangeSet(outcome.callId, changeSetId);
+		return changeSetId;
 	})();
 
-	return { changeSetId };
+	return { changeSetId: csId };
 }
 
 // --- review decisions ---

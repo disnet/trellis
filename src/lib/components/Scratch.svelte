@@ -17,8 +17,13 @@
 		placeholder="Paste or type messy thinking here, then decompose it into thoughts…"
 		rows="10"
 	></textarea>
-	<button class="primary" onclick={decompose} disabled={ws.scratchDraft.trim().length === 0 && ws.selectedIds.length === 0}>
-		Decompose
+	<button
+		class="primary"
+		onclick={decompose}
+		disabled={ws.invoking !== null ||
+			(ws.scratchDraft.trim().length === 0 && ws.selectedIds.length === 0)}
+	>
+		{ws.invoking === 'decompose' ? 'Decomposing…' : 'Decompose'}
 	</button>
 	<p class="hint small">
 		Decomposes the scratch text above, or the selected card when scratch is empty.
