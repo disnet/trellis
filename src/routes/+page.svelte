@@ -1,0 +1,216 @@
+<script lang="ts">
+	import Canvas from '$lib/components/Canvas.svelte';
+	import Inspector from '$lib/components/Inspector.svelte';
+	import ProposalTray from '$lib/components/ProposalTray.svelte';
+	import Scratch from '$lib/components/Scratch.svelte';
+	import { workspace } from '$lib/workspace.svelte';
+	import type { AgentAction } from '$lib/types';
+
+	const ws = workspace;
+
+	const operations: { action: AgentAction; label: string; hint: string }[] = [
+		{ action: 'decompose', label: 'Decompose', hint: 'Split into atomic thoughts' },
+		{ action: 'develop', label: 'Develop', hint: 'Extend or refine the selection' },
+		{ action: 'challenge', label: 'Challenge', hint: 'Propose objections and assumptions' },
+		{ action: 'connect', label: 'Connect', hint: 'Find and link related thoughts' }
+	];
+
+	function invoke(action: AgentAction) {
+		const err = ws.invoke(action);
+		if (err) ws.notice = err;
+	}
+
+	// Auto-dismiss the notice toast.
+	$effect(() => {
+		if (ws.notice) {
+			const t = setTimeout(() => (ws.notice = null), 6000);
+			return () => clearTimeout(t);
+		}
+	});
+</script>
+
+<svelte:head>
+	<title>Trellis</title>
+</svelte:head>
+
+<div class="app">
+	<header class="toolbar">
+		<span class="logo">Trellis</span>
+		<div class="ops" role="group" aria-label="Agent operations">
+			{#each operations as { action, label, hint } (action)}
+				<button
+					title={hint}
+					disabled={ws.selectedIds.length === 0 &&
+						!(action === 'decompose' && ws.scratchDraft.trim().length > 0)}
+					onclick={() => invoke(action)}
+				>
+					{label}
+				</button>
+			{/each}
+		</div>
+		<span class="selection-hint">
+			{#if ws.selectedIds.length > 0}
+				{ws.selectedIds.length} selected — operations use the selection plus the working set
+			{:else}
+				Click a card to select · shift-click for multiple
+			{/if}
+		</span>
+		<div class="right">
+			<button
+				class="zoom"
+				onclick={() => (ws.zoom = ws.zoom === 'overview' ? 'reading' : 'overview')}
+			>
+				{ws.zoom === 'overview' ? '⊕ Reading view' : '⊖ Overview'}
+			</button>
+			<button class="undo" disabled={ws.undoLabel === null} title={ws.undoLabel ?? ''} onclick={() => ws.undoLastApply()}>
+				↩ Undo last apply
+			</button>
+		</div>
+	</header>
+
+	<aside class="left"><Scratch /></aside>
+	<main class="center"><Canvas /></main>
+	<aside class="right-panel">
+		<div class="tray-pane"><ProposalTray /></div>
+		<div class="inspector-pane"><Inspector /></div>
+	</aside>
+
+	{#if ws.notice}
+		<div class="toast" role="status">
+			{ws.notice}
+			<button class="dismiss" onclick={() => (ws.notice = null)} aria-label="Dismiss">✕</button>
+		</div>
+	{/if}
+</div>
+
+<style>
+	:global(html, body) {
+		height: 100%;
+	}
+	:global(body) {
+		font-family:
+			-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+		color: #2c2921;
+		background: #f6f3ec;
+	}
+	.app {
+		display: grid;
+		grid-template-areas:
+			'toolbar toolbar toolbar'
+			'left center right';
+		grid-template-columns: 270px 1fr 400px;
+		grid-template-rows: 48px 1fr;
+		height: 100vh;
+	}
+	.toolbar {
+		grid-area: toolbar;
+		display: flex;
+		align-items: center;
+		gap: 16px;
+		padding: 0 14px;
+		background: #fffdf8;
+		border-bottom: 1px solid #e0dbcf;
+	}
+	.logo {
+		font-weight: 800;
+		letter-spacing: 0.02em;
+		font-size: 16px;
+		color: #3d5537;
+	}
+	.ops {
+		display: flex;
+		gap: 6px;
+	}
+	.ops button {
+		font: inherit;
+		font-size: 12.5px;
+		font-weight: 600;
+		border: 1px solid #c9c4b8;
+		background: #fff;
+		border-radius: 6px;
+		padding: 5px 12px;
+		cursor: pointer;
+		color: #4d473c;
+	}
+	.ops button:hover:not(:disabled) {
+		border-color: #3b5bdb;
+		color: #3b5bdb;
+	}
+	.ops button:disabled {
+		opacity: 0.45;
+		cursor: not-allowed;
+	}
+	.selection-hint {
+		font-size: 11.5px;
+		color: #8a8375;
+		flex: 1;
+	}
+	.right {
+		display: flex;
+		gap: 6px;
+	}
+	.right button {
+		font: inherit;
+		font-size: 12px;
+		border: 1px solid #d5d0c4;
+		background: #fff;
+		border-radius: 6px;
+		padding: 5px 10px;
+		cursor: pointer;
+		color: #4d473c;
+	}
+	.right button:disabled {
+		opacity: 0.45;
+		cursor: not-allowed;
+	}
+	.left {
+		grid-area: left;
+		background: #fbf9f3;
+		border-right: 1px solid #e0dbcf;
+		min-height: 0;
+	}
+	.center {
+		grid-area: center;
+		min-height: 0;
+		min-width: 0;
+	}
+	.right-panel {
+		grid-area: right;
+		background: #fbf9f3;
+		border-left: 1px solid #e0dbcf;
+		display: grid;
+		grid-template-rows: minmax(0, 58%) minmax(0, 42%);
+		min-height: 0;
+	}
+	.tray-pane {
+		border-bottom: 1px solid #e0dbcf;
+		min-height: 0;
+	}
+	.inspector-pane {
+		min-height: 0;
+	}
+	.toast {
+		position: fixed;
+		bottom: 18px;
+		left: 50%;
+		transform: translateX(-50%);
+		background: #2c2921;
+		color: #fdf8ec;
+		border-radius: 8px;
+		padding: 10px 14px;
+		font-size: 13px;
+		display: flex;
+		gap: 12px;
+		align-items: center;
+		box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+		max-width: 60ch;
+	}
+	.toast .dismiss {
+		background: none;
+		border: none;
+		color: #fdf8ec;
+		cursor: pointer;
+		font-size: 12px;
+		padding: 0;
+	}
+</style>
