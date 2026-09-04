@@ -2,484 +2,369 @@
 
 ## Status
 
-Draft design for a focused prototype.
+Canonical design for the first Trellis prototype.
 
-Synthesized from [the framing prompt](brainstorm-prompt.md), [the concise brainstorm](fable-brainstorm.md), and [the extended brainstorm](gpt-brainstorm.md).
+Synthesized from [the framing prompt](brainstorm-prompt.md), [the concise brainstorm](fable-brainstorm.md), [the extended brainstorm](gpt-brainstorm.md), and the earlier design synthesis.
 
-## Summary
+## Product thesis
 
-Trellis is a shared cognitive workspace in which a person and an agent develop a persistent graph of thought objects. The graph—not a document and not a conversation transcript—is the primary artifact.
+Current tools preserve the wrong artifact. Chat products preserve a chronological transcript; note-taking products preserve pages. Neither gives a person and an agent an inspectable account of the current state of an idea.
 
-The prototype should test a single product thesis:
+Trellis is a shared cognitive workspace in which a person and an agent develop a persistent graph of thought objects. The graph—not a document or conversation—is primary.
+
+The prototype tests one thesis:
 
 > People can think more effectively with an agent when the agent proposes small, inspectable changes to shared thought state instead of replying with prose in a chronological chat.
 
 The core loop is:
 
-1. A person adds messy material to a temporary working set.
-2. The agent proposes a structured diff: thoughts to create or revise, relations to add, and questions or contradictions to surface.
-3. The person accepts, edits, or rejects each proposal.
-4. Accepted changes become durable, attributed thought objects that can be revisited through different views.
+1. A person captures messy material in scratch.
+2. The agent proposes a structured diff.
+3. The person accepts, edits, or rejects each operation.
+4. Accepted changes become durable, attributed state.
+5. The person later resumes from that state instead of reconstructing it from a transcript.
 
-Chat may exist as scratch space or as an explanation surface, but it is not the product's organizing metaphor and is never the only record of useful work.
-
-## Problem
-
-Current tools make the wrong artifact durable:
-
-- Chat products preserve the transcript. Chronology records what happened, but poorly represents the current state of an idea.
-- Note-taking products preserve pages. Pages are useful reading and writing surfaces, but agent features are usually bolted onto documents and do not create shared, manipulable thought state.
-- Agent memory is commonly invisible to the person. The agent gains context while the person still has to reconstruct prior thinking.
-
-These models break down during long-running, nonlinear work. A person must repeatedly recover context, extract conclusions from prose, remember side threads, and distinguish their own beliefs from plausible-sounding agent output.
+Chat may exist as scratch or explanation, but it is never the organizing metaphor or the only record of useful work.
 
 ## Product principles
 
 ### State over transcript
 
-The principal result of agent work is a diff to persistent state. A transcript can remain as provenance, but should collapse behind the concepts, decisions, questions, and relationships produced by the work.
+Agent work produces a diff to persistent state. A transcript may remain as provenance, but it collapses behind the concepts, questions, claims, and relations produced by the work.
 
 ### Selection is context
 
-The visible working set defines the agent's default context. People should be able to include, exclude, or background thoughts directly, instead of managing a hidden prompt or trusting opaque retrieval.
+The visible working set defines the agent's reasoning context. People directly include, exclude, or background thoughts rather than managing a hidden prompt.
+
+Discovery is an explicit exception. **Connect** may search the wider graph, but must expose the retrieved candidates and why they were selected before they influence accepted state.
 
 ### Stable identity over stable wording
 
-A thought has an identity independent of its current phrasing. It can be revised, summarized, expanded, or displayed in several views without breaking references to it.
+A thought can be revised, summarized, and displayed in different views without changing its identity or breaking references.
 
 ### The agent proposes; the person ratifies
 
-Agent changes enter a staging area. The person can accept, edit, or reject them individually or in a small batch. Deliberate ratification protects understanding and ownership; it is part of the thinking process, not incidental approval UI.
+Agent changes enter staging. Accepting, editing, or rejecting them is part of the thinking process, not incidental approval UI.
+
+### Authorship is not acceptance
+
+Provenance records both who authored a revision and who accepted it. Acceptance expresses endorsement, not retroactive authorship. Editing an agent proposal creates a human-authored revision derived from the proposal.
 
 ### Human-visible memory
 
-Long-term memory should appear as inspectable structure: a relevant prior claim, a dependency, a conflict, or a neglected question. The agent should not hold a richer private account of the person's thinking than the person can see.
+Memory appears as inspectable structure—a prior claim, dependency, conflict, or open question—not as private agent context the person cannot see.
 
-### Structure without premature bureaucracy
+### Structure without bureaucracy
 
-Typed objects and relationships should help the agent maintain order without making the person fill out a database. Freeform capture stays easy; the system proposes structure afterward.
+Freeform capture remains easy. The agent proposes types and relations afterward so the person is not forced to maintain a database.
 
 ### Views are projections
 
-A canvas, outline, argument map, and document are views of the same underlying objects. Layout and presentation are not the canonical knowledge model.
+Cards, outlines, argument maps, and documents are presentations of the same objects. Layout is not canonical knowledge.
 
-## Conceptual model
+## What the prototype must learn
 
-### Durable primitives
+The prototype is a research instrument, not a small version of the complete product.
 
-#### Thought
+| Hypothesis | Evidence | Failure signal |
+|---|---|---|
+| Structured state improves comprehension | People explain current claims, questions, and disagreements without rereading history | They repeatedly need raw model output or a transcript |
+| Ratification creates ownership | People distinguish accepted beliefs from provisional suggestions | Pending content is mistaken for accepted thought, or acceptance becomes automatic |
+| Thought-sized objects are workable | People can challenge, connect, and revise them | Objects feel page-sized or like database fragments |
+| Typed relations earn their complexity | Specific types improve understanding or operations | Most become `related_to`, or labels are misunderstood |
+| Explicit context is legible | People can predict what an operation will use | They cannot explain why the agent considered something |
+| Durable state improves re-entry | People resume accurately with less reconstruction than in chat | The graph is slower or less accurate than the transcript |
 
-A durable unit of meaning with stable identity.
-
-For the prototype, a thought has:
-
-- a short title;
-- a current statement;
-- a type: `claim`, `question`, `concept`, `example`, or `source`;
-- a status: `tentative`, `believed`, `contested`, or `retired`;
-- authorship and revision provenance;
-- created and updated timestamps;
-- zero or more typed relations.
-
-Thoughts should usually express one idea that can be independently challenged, connected, or revised. The type system is intentionally small; the prototype should learn whether these distinctions are useful before expanding them.
-
-#### Relation
-
-A directional, typed connection between two thoughts.
-
-The prototype supports:
-
-- `supports`
-- `contradicts`
-- `depends_on`
-- `example_of`
-- `supersedes`
-- `related_to` as an explicit escape hatch
-
-The agent may propose relation types, but the interface should not require the person to classify every connection during capture.
-
-#### Thread
-
-A named line of inquiry with a root question, a current working set, unresolved items, and history. Threads let people leave, branch, and resume work independently of a conversation session.
-
-For the first prototype, branching can be modeled as creating a new thread that references selected thoughts. Automated merge semantics are out of scope.
-
-#### Working set
-
-The small, explicit set of thoughts receiving attention now. Membership is temporary and does not change the durable graph. Each item may be marked:
-
-- `focus`: central to the current operation;
-- `context`: available as background;
-- `parked`: visible but excluded from agent context.
-
-#### Change set
-
-An ordered set of proposed graph operations with a shared rationale and provenance. Supported operations are:
-
-- create, revise, or retire a thought;
-- add, change, or remove a relation;
-- add or remove a thought from the working set.
-
-Change sets are immutable records. Accepting a proposal applies a new revision; rejecting it records the decision without mutating the graph.
-
-### Transient primitives
-
-#### Scratch
-
-Unstructured text used to capture an observation, paste notes, or ask for help. Scratch content may produce proposals but does not automatically become durable knowledge.
-
-#### View
-
-A query plus presentation configuration over the graph. Views can be temporary. The prototype only needs a spatial working-set view and a focused detail view; other projections can be simulated later.
-
-#### Conversation
-
-An optional exchange attached to a thought, thread, or change set. Its useful results should be reified into the graph. Conversation is retained for provenance but visually subordinate to current state.
-
-## Interaction design
-
-### Main workspace
-
-The main screen is a bounded working set, not an infinite global graph. It contains:
-
-- a top bar with the current thread, search, and working-set scope;
-- a central canvas of compact thought cards and relations;
-- a scratch composer for freeform capture;
-- an inspector for the selected thought;
-- a proposal tray showing pending agent changes.
-
-Cards show only enough information to scan: type, title or compressed statement, status, and provenance marker. Selecting or zooming a card reveals its full statement, relations, history, and attached sources.
-
-Agent-authored proposals are visually distinct until accepted. New material should enter at the edge of the current arrangement so it is noticeable without interrupting the person's flow.
-
-### Semantic zoom
-
-The prototype should support three information-density levels even if spatial zoom is initially implemented as a control rather than a polished gesture:
-
-1. **Overview:** title, type, status, and connections.
-2. **Reading:** current statement and immediately relevant relations.
-3. **Inspection:** evidence, provenance, revision history, and proposal rationale.
-
-This tests whether changing abstraction level reduces the need to read long agent responses.
-
-### Agent actions
-
-The agent operates on the selected thoughts plus the explicit working set. The initial actions are deliberately narrow:
-
-- **Decompose:** propose atomic claims, concepts, and questions from scratch or a selected thought.
-- **Challenge:** propose objections, contradictions, or missing assumptions.
-- **Connect:** find relevant thoughts already in the local graph and propose typed relations.
-- **Synthesize:** propose a revised thought that compresses a selected cluster without deleting its members.
-
-Every action returns a structured change set, not a freeform answer. A short rationale may explain why an operation was proposed, and “Why?” can reveal more detail on demand.
-
-### Proposal review
-
-The proposal tray is the critical prototype interaction. It should:
-
-- summarize impact first, such as “3 thoughts and 2 relations proposed”;
-- preview additions and before/after revisions in place on the canvas;
-- support accept, edit, or reject per operation;
-- prevent acceptance of a relation whose endpoint is rejected;
-- allow accepting a valid subset;
-- keep agent content visibly provisional until acceptance;
-- make undo available for the last applied change set.
-
-Batch acceptance can exist, but the interface should optimize for comprehension over speed.
-
-### Re-entry
-
-When a person reopens a thread, Trellis should restore the last working set and summarize structural state rather than replay activity:
-
-- the current central claim or question;
-- contested or unresolved thoughts;
-- material changes since the last visit;
-- one or two relevant older thoughts the agent proposes adding to context.
-
-This is the first test of shared, human-visible memory.
+Spatial layout, branching, global retrieval, and elaborate semantic zoom are separate bets. They must not obscure whether proposal and ratification work.
 
 ## Primary prototype scenario
 
-The demo and usability test should use one scenario from beginning to end:
-
-1. The person creates a thread from a broad question.
+1. The person opens a workspace around a broad question.
 2. They paste a rough paragraph into scratch.
-3. **Decompose** returns two claims and one question as a pending change set.
-4. The person accepts one, edits one, and rejects one.
-5. **Connect** surfaces an older thought and proposes a typed relation.
-6. **Challenge** proposes an objection connected to the central claim.
-7. The person changes the central claim in response and sees the earlier wording in history.
-8. They leave the thread and later reopen it to current state rather than a transcript.
+3. **Decompose** proposes two thoughts and one question.
+4. The person accepts one operation, edits one, and rejects one.
+5. They select an accepted claim and invoke **Challenge**.
+6. The agent proposes an objection and a typed relation to the claim.
+7. The person revises the claim and can inspect its earlier wording and provenance.
+8. They close the workspace and later resume from its claims and unresolved questions rather than a transcript.
 
-This scenario exercises capture, agent operation, ratification, explicit context, provenance, revision, and re-entry without requiring the entire envisioned product.
+This exercises the complete thesis without requiring a general graph editor or open-ended chat.
 
 ## Prototype scope
 
 ### Must have
 
-- Create and edit thoughts with stable IDs, types, and statuses.
-- Create typed relations.
-- Create a thread and manage its working set.
-- Spatial card view with selection, dragging, and basic relation rendering.
+- One durable workspace with a small working set.
+- Thoughts with stable IDs, types, epistemic statuses, and revision history.
+- Typed relations.
+- Compact cards and a focused inspector.
 - Scratch capture.
-- The four structured agent actions.
-- Staged proposal review with partial acceptance and rejection.
-- Provenance and thought revision history.
-- Local persistence across sessions.
-- A seeded graph that makes connection and contradiction flows testable.
-- Basic keyboard navigation and non-color-only proposal/status indicators.
+- Structured **Decompose** and **Challenge** actions.
+- Proposal preview with accept, edit, reject, partial acceptance, and dependency validation.
+- Non-color-only distinction between proposed and accepted state.
+- Separate authorship and acceptance provenance.
+- Local persistence and structural re-entry.
+- Deterministic fixtures for the full scenario.
+- Basic keyboard navigation.
 
-### Useful if inexpensive
+### Add only after the core loop works
 
-- Three semantic-density modes.
-- Undo for the most recently applied change set.
-- Side-thread creation from selected thoughts.
-- A simple outline projection of the working set.
-- Export of thoughts and relations as JSON.
+- **Connect**, with visible wider-graph discovery.
+- **Synthesize**, without deleting its source thoughts.
+- Draggable spatial layout and saved positions.
+- Richer semantic zoom.
+- Undo, outline projection, and JSON import/export.
+- Multiple workspaces.
 
-### Explicitly out of scope
+### Out of scope
 
-- Collaborative multi-user editing.
-- Autonomous background agents.
-- Web research, citation verification, or source ingestion pipelines.
-- A general-purpose document editor.
-- A global force-directed graph of the entire knowledge base.
-- Automatic branch merging.
-- Rich media, mobile clients, sync, permissions, and production security.
-- A large ontology or user-configurable schema.
-- Fully automated restructuring of accepted knowledge.
+- Thread branching and merging.
+- Multi-user collaboration or background agents.
+- Web research and source-ingestion pipelines.
+- A general-purpose document editor or global graph view.
+- Rich media, mobile, sync, permissions, and production security.
+- A configurable ontology or automated restructuring of accepted knowledge.
 
-## Technical design for the prototype
+## Conceptual model
 
-The repository currently contains only design inputs, so the stack should optimize for rapid interaction testing rather than architectural longevity.
+### Thought
 
-### Suggested stack
+A durable, independently useful unit of meaning:
 
-- TypeScript web application.
-- React for the interface.
-- A canvas/graph UI library for draggable cards and edges.
-- A small local application server for model calls and persistence.
-- SQLite for thoughts, relations, threads, working sets, revisions, and change sets.
-- A model adapter that can use either a live structured-output model or deterministic fixtures.
+- title and current statement;
+- type: `claim`, `question`, `concept`, or `example`;
+- epistemic status: `tentative`, `believed`, `contested`, or `retired`;
+- stable identity, revision history, and provenance.
 
-Deterministic fixtures are important: the full review flow should remain demoable and testable without network access or model variance.
+A thought may be too broad if it cannot be independently challenged, connected, or revised. It may be too small if it cannot be understood without repeatedly opening adjacent fragments.
 
-### Minimal data model
+Epistemic status is distinct from proposal workflow state.
 
-```text
-Thought
-  id, type, status, title, statement
-  created_at, updated_at
+### Relation
 
-ThoughtRevision
-  id, thought_id, title, statement, status
-  actor_type, actor_id, source_change_set_id, created_at
+A directional, typed connection between two thoughts. The initial vocabulary is:
 
-Relation
-  id, from_thought_id, to_thought_id, type
-  created_by, source_change_set_id, created_at
+- `supports`
+- `contradicts`
+- `depends_on`
+- `example_of`
+- `related_to` as an escape hatch
 
-Thread
-  id, title, root_thought_id, created_at, updated_at
+The agent may propose types, but capture never requires manual classification. Relation history preserves who created, revised, or retired a relation.
 
-WorkingSetItem
-  thread_id, thought_id, attention_role, x, y
+### Workspace and working set
 
-ChangeSet
-  id, thread_id, action, status, rationale
-  actor_id, created_at, applied_at
+A workspace is the durable container for the prototype. It has a root question and restores its working set on re-entry. Whether the mature concept is called a thread, project, or something else is deferred.
 
-ProposedOperation
-  id, change_set_id, sequence, operation_type
-  payload, status, decision_note
-```
+Working-set membership does not alter the durable graph. Each item has an attention role:
 
-For a prototype, snapshots in `ThoughtRevision` are simpler and safer than reconstructing state from a fully event-sourced model. `ProposedOperation.payload` can remain validated JSON until the operation vocabulary stabilizes.
+- `focus`: central to the operation;
+- `context`: available as background;
+- `parked`: visible but excluded from agent context.
 
-### Agent contract
+### Scratch
 
-The application sends:
+Unstructured input for observations, pasted notes, or questions. It may be retained as provenance but never becomes durable knowledge automatically.
 
-- the invoked action;
-- selected thought IDs;
-- the working set divided into focus and context;
-- relevant relations among those thoughts;
-- optional scratch content;
-- concise operation and schema instructions.
+### Change set
 
-The model returns validated structured output:
+An immutable proposal containing ordered graph operations, rationale, and provenance. V0 operations create, revise, or retire a thought and add or retire a relation.
+
+The original operation payload never changes. Human accept, edit, or reject decisions are stored separately; an edit preserves both the proposal and its replacement.
+
+Operations declare dependencies. A relation to a proposed thought, for example, depends on creating that thought. A valid subset may be accepted, but unresolved dependencies block application.
+
+Application is a human-initiated transaction. Model output never writes canonical state directly.
+
+### View
+
+V0 provides two information densities:
+
+1. **Scan:** title, type, status, provenance marker, and immediate connections.
+2. **Inspect:** statement, relations, revisions, and proposal rationale.
+
+This tests readable chunks without coupling the experiment to sophisticated canvas or zoom behavior.
+
+## Interaction design
+
+The main screen contains the workspace question, bounded working set, scratch composer, selected-thought inspector, and proposal tray. A stable card arrangement is sufficient; spatial dragging is not required.
+
+The proposal tray is the critical interaction. It must:
+
+- summarize impact first;
+- preview additions and before/after revisions in context;
+- identify the accepted thoughts or scratch behind each operation;
+- support accept, edit, and reject per operation;
+- display and enforce dependencies;
+- allow any valid subset;
+- preserve original and edited payloads;
+- keep provisional content visibly distinct;
+- never infer acceptance from scrolling, closing, or navigation.
+
+V0 optimizes for comprehension, not batch throughput.
+
+On re-entry, Trellis restores the root question, working set, central claims, contested thoughts, and unresolved questions. Because v0 has no background actors, it does not need a “changes while away” mechanism.
+
+## Agent boundary and context contract
+
+The application sends the model:
+
+- action and selected thought IDs;
+- working-set thoughts divided into `focus` and `context`;
+- relations among those thoughts;
+- optional scratch;
+- allowed operations and schema.
+
+`parked` thoughts are not sent. Ordinary actions do not silently retrieve other graph content.
+
+A future **Connect** action uses an explicit discovery mode: local retrieval produces a small candidate set, the UI discloses that retrieval, and proposals cite the candidates that influenced them.
+
+Model output is validated structured data:
 
 ```json
 {
-  "summary": "Proposed two claims and one open question.",
+  "summary": "Proposed one claim and one relation.",
   "operations": [
     {
+      "ref": "new-1",
       "op": "create_thought",
-      "client_ref": "new-1",
-      "thought": {
+      "payload": {
         "type": "claim",
         "status": "tentative",
         "title": "State should outlive conversation",
-        "statement": "The durable result of agent collaboration should be shared thought state rather than its transcript."
+        "statement": "Agent collaboration should produce durable shared thought state rather than only a transcript."
       },
-      "rationale": "This is independently challengeable and central to the input."
+      "depends_on": [],
+      "evidence_refs": ["scratch-1"],
+      "rationale": "This is independently challengeable."
     },
     {
+      "ref": "relation-1",
       "op": "add_relation",
-      "from": "new-1",
-      "to": "existing-thought-id",
-      "relation_type": "supports",
-      "rationale": "The new claim supplies a reason for the existing design direction."
+      "payload": {
+        "from": "new-1",
+        "to": "existing-thought-id",
+        "type": "supports"
+      },
+      "depends_on": ["new-1"],
+      "evidence_refs": ["new-1", "existing-thought-id"]
     }
   ]
 }
 ```
 
-The server validates allowed operations, referential integrity, text limits, and permissions before showing a preview. Model output never writes directly to accepted graph tables. Applying a change set is a transaction initiated by explicit user action.
+Before preview, the server validates schema, operations, references, text limits, and dependencies. Before application, it validates the chosen subset again and applies it transactionally.
 
-### Important implementation constraint
+## Technical design
 
-Keep the canonical graph separate from view state. Card coordinates, collapsed state, and density belong to the working-set projection, not to thoughts or relations. This preserves the ability to add other views without migrating the knowledge model.
+Use TypeScript, React, a small local server, SQLite, schema validation, and a model adapter supporting both deterministic fixtures and a live structured-output model. Vendor choice is configuration, not a design decision.
 
-## Prototype plan
+Minimal logical model:
+
+```text
+Workspace
+  id, title, root_thought_id, created_at, updated_at
+
+Thought
+  id, current_revision_id, created_at, retired_at
+ThoughtRevision
+  id, thought_id, type, status, title, statement
+  authored_by, derived_from_operation_id, source_application_id, created_at
+
+Relation
+  id, from_thought_id, to_thought_id, current_revision_id, created_at
+RelationRevision
+  id, relation_id, type, active
+  authored_by, derived_from_operation_id, source_application_id, created_at
+
+WorkingSetItem
+  workspace_id, thought_id, attention_role
+Scratch
+  id, workspace_id, body, authored_by, created_at
+
+ChangeSet
+  id, workspace_id, action, summary, rationale, authored_by, source_scratch_id, created_at
+ProposedOperation
+  id, change_set_id, ref, sequence, operation_type
+  payload, dependency_refs, evidence_refs, rationale
+OperationDecision
+  id, proposed_operation_id, decision, edited_payload, decided_by, decided_at
+ChangeApplication
+  id, change_set_id, applied_by, applied_at
+```
+
+The implementation may combine tables, but must preserve immutable proposals, human decisions, application provenance, and graph revision history.
+
+Canonical graph state and view state remain separate. Future coordinates, collapsed state, and density belong to a working-set view rather than to thoughts or relations.
+
+## Build plan
 
 ### Phase 0: interaction skeleton
 
-Goal: make the complete scenario clickable before integrating a model or durable storage.
+Build the complete scenario with fixtures and in-memory state: cards, inspector, scratch, proposal review, partial acceptance, dependencies, provenance styling, keyboard navigation, and simulated re-entry.
 
-- Build the main workspace, thought cards, inspector, scratch surface, and proposal tray.
-- Seed a small graph based on the agent-native PKB topic.
-- Implement the scenario with deterministic change-set fixtures.
-- Exercise accept, edit, reject, partial acceptance, and proposal dependencies.
+Exit: a person completes the scenario and always distinguishes pending from accepted content.
 
-Exit criterion: a person can complete the primary scenario and always distinguish accepted state from proposed state.
+### Phase 1: durable graph
 
-### Phase 1: durable graph core
+Add SQLite, thought and relation revisions, complete provenance, working-set restoration, and structural re-entry.
 
-Goal: prove that state survives and remains intelligible without a transcript.
+Exit: after reopening, a person can explain the workspace and how a thought reached its current wording.
 
-- Add SQLite persistence and the minimal schema.
-- Implement thought revisions, provenance, typed relations, and thread working sets.
-- Add re-entry state and the most-recent-change-set undo path.
-- Add JSON import/export for recovery and debugging.
+### Phase 2: live proposals
 
-Exit criterion: after closing and reopening the prototype, a person can explain the current state of the thread and how a selected thought changed.
+Add the model adapter and validation for Decompose and Challenge. Record inputs, raw outputs, errors, latency, and review decisions. Retain fixture fallback.
 
-### Phase 2: live agent proposals
+Exit: live output repeatedly completes the scenario, invalid output cannot mutate state, and proposals are understandable without raw model text.
 
-Goal: replace fixtures without weakening the safety or clarity of the review loop.
+### Phase 3: evaluate before expanding
 
-- Implement the structured agent contract and schema validation.
-- Integrate Decompose and Challenge first; add Connect once local retrieval is reliable, then Synthesize.
-- Limit retrieval to the explicit working set plus a small local candidate set.
-- Record inputs, raw outputs, validation errors, latency, and review decisions for evaluation.
-- Fall back to fixtures or a recoverable error state when generation fails.
+Run five to eight moderated sessions with people who maintain notes or do sustained conceptual work. Compare with a lightweight chat baseline using the same model, material, initial task, and delayed re-entry task.
 
-Exit criterion: live outputs can complete the scenario repeatedly, invalid output cannot mutate canonical state, and the person can understand each proposed operation without opening raw model text.
+Exit: evidence supports continuing, revising, or stopping before broader features are added.
 
-### Phase 3: test the thesis
+## Evaluation and decision rules
 
-Goal: learn whether this interaction is better than a transcript for the target work.
+Measure re-entry accuracy and time, history reading, proposal decisions, granularity corrections, relation-type use, pending/accepted confusion, provenance comprehension, and observed clerical fatigue or useful surprise.
 
-- Run five to eight moderated sessions with people who maintain notes or do sustained conceptual work.
-- Give each participant the same source material and thinking task.
-- Observe the initial session and a re-entry task after a delay.
-- Compare against a lightweight chat baseline using the same model and material.
-- Capture both behavior and interview feedback; avoid optimizing only for speed.
+- **Continue** if nearly everyone distinguishes pending from accepted state, a clear majority re-enters at least as accurately with less history reading than chat, and a core action is useful to most participants.
+- **Revise** if durable state helps but review, granularity, relation types, or cards create recurring friction.
+- **Stop or rethink** if chat matches or beats comprehension and re-entry while Trellis adds clerical work.
 
-Exit criterion: evidence is strong enough to choose whether to deepen the graph-diff interaction, revise it, or stop.
+Acceptance rate alone is not success. High unexamined acceptance may indicate automation bias; extensive editing may indicate productive thinking or poor proposals.
 
-## Evaluation
+## Risks and responses
 
-### Core hypotheses
-
-1. **Structural comprehension:** after a session, people can describe the current claims, questions, and disagreements without rereading a transcript.
-2. **Ownership:** people can reliably distinguish their accepted thinking from unratified agent suggestions.
-3. **Re-entry:** after time away, people resume from the graph faster and with fewer context-restoring prompts than from chat.
-4. **Proposal utility:** a meaningful portion of agent proposals are accepted or edited into accepted state rather than ignored wholesale.
-5. **Manageable granularity:** people can manipulate the proposed thoughts without feeling that they are maintaining a database.
-6. **Useful relation types:** the typed relations improve understanding often enough to justify their complexity.
-
-### Measures
-
-- Time to correctly summarize current state on re-entry.
-- Accuracy of identifying central, contested, and unresolved thoughts.
-- Accepted, edited, and rejected operations per action.
-- Frequency of opening expanded rationale or raw transcript.
-- Number of manual split, merge, or rewrite corrections caused by poor granularity.
-- Use of `related_to` compared with specific relation types.
-- Confidence about authorship and status, reported after the task.
-- Qualitative evidence of cognitive interruption, clutter, loss of trust, or useful surprise.
-
-### Prototype success criteria
-
-The prototype is promising if:
-
-- most participants complete the primary scenario without instruction after a short introduction;
-- participants do not mistake pending agent content for accepted thought;
-- re-entry summaries are at least as accurate as the chat baseline and require less transcript reading;
-- participants find at least two structured agent operations meaningfully useful;
-- proposal review feels like thinking or editing, not clerical cleanup;
-- no single granularity or ontology problem repeatedly blocks the workflow.
-
-These criteria are directional for a small qualitative study, not claims of statistical significance.
-
-## Risks and design responses
-
-### The graph becomes agent-generated slop
-
-Keep proposals staged, small, and attributable. Default to a modest operation count, prefer revising or connecting existing thoughts where appropriate, and make rejection cheap.
-
-### Thoughts become too granular
-
-Give every thought a readable statement, not just a label. Measure split/merge corrections and allow the person to edit agent-created boundaries during review.
-
-### Thoughts remain page-sized
-
-Tune Decompose toward independently challengeable ideas, and test whether Challenge and Connect work on each result. If an item cannot participate meaningfully in either operation, it may be too broad or too vague.
-
-### Typed links collapse into “related”
-
-Keep the vocabulary small, show relation labels in context, and measure escape-hatch usage. Remove types that people cannot understand or the agent cannot apply consistently.
-
-### Ratification becomes exhausting
-
-Keep change sets intentionally small, group dependent operations, support keyboard review, and allow trust to grow per action later. Do not remove review friction before learning which decisions create understanding.
-
-### The canvas becomes spatial clutter
-
-Limit the main view to the working set, keep layout state view-specific, and support a simple reset/arrange action. Do not attempt to render the entire knowledge base.
-
-### Agent context feels opaque despite the working set
-
-Before an action, show a compact “using” summary of focus and context. Afterward, attach each rationale to the thoughts and relations it used.
+| Risk | Response |
+|---|---|
+| Agent-generated slop | Keep proposals small, staged, attributable, and easy to reject |
+| Ratification fatigue | Observe decisions before removing friction; distinguish comprehension work from clerical work |
+| Bad granularity | Use independently challengeable meaning as a heuristic; track splits, merges, and rewrites |
+| Ontology collapse | Keep types few, show labels in context, and measure the escape hatch |
+| Opaque context | Show a “using” summary and evidence references; make wider retrieval explicit |
+| Interface confounds the thesis | Start with stable cards; test canvas, outline, and richer zoom separately |
 
 ## Open questions
 
-The prototype is intended to answer, rather than prematurely settle, these questions:
-
 - What makes a thought independently useful, and when should it split or merge?
-- Does deliberate ratification increase understanding enough to justify its cost?
-- Which relation types survive real, messy thought?
-- Should accepted agent wording become “human-owned,” or retain mixed authorship forever?
-- How much explanation belongs inline versus behind “Why?”
-- Can semantic zoom be driven reliably by stored representations, agent-generated summaries, or both?
-- When should the agent surface an older thought without being asked?
-- Is a spatial working set genuinely useful, or would an outline provide a better default?
-- Does the thread concept add value beyond a saved working set during the prototype?
+- Does ratification increase understanding enough to justify its cost?
+- Which relation types survive messy thought?
+- How much rationale belongs inline versus behind “Why?”
+- When does editing an agent proposal feel like authorship rather than cleanup?
+- When should the agent surface older material without being asked?
+- Is spatial organization better than a stable list or outline?
+- Does a thread add value beyond a saved workspace?
+- Can any low-risk operation eventually bypass individual ratification?
 
-## Decisions to defer
+## Deferred decisions
 
-Do not decide the following from the brainstorm alone:
-
-- the final ontology;
-- the long-term storage or event model;
-- whether the product is local-first or cloud-first;
-- whether the canvas or another projection is the default mature interface;
-- autonomous agent permissions;
-- collaboration and sharing semantics;
-- pricing, distribution, and migration from existing PKBs.
+- Final ontology and long-term storage model.
+- Local-first versus cloud-first product architecture.
+- Default mature view and thread semantics.
+- Autonomous permissions, collaboration, and sharing.
+- Model vendor.
+- Pricing, distribution, and PKB migration.
 
 ## Recommended first build
 
-Start with Phase 0 as a polished, deterministic vertical slice. The first artifact should not be a generic graph editor or an agent chat wired to a database. It should be the proposal-review loop, demonstrated with a small seeded graph and the full capture-to-re-entry scenario. That is the smallest prototype capable of testing what is actually new about Trellis.
+Start with Phase 0 as a polished deterministic vertical slice. Build the proposal-review loop—not a generic graph editor or an agent chat wired to a database—and demonstrate the complete path from messy capture to ratified state and later re-entry. That is the smallest prototype capable of testing what is genuinely new about Trellis.
