@@ -20,8 +20,10 @@
 		selected?: boolean;
 		/** Marked as a per-graph landmark (Phase 6). */
 		pinned?: boolean;
-		/** 'proposed' = new content awaiting ratification; 'surfaced' = existing thought previewed on canvas by a pending relation. */
-		ghost?: 'proposed' | 'surfaced' | null;
+		/** Outside the active working set (lens) — still present, visually quiet. */
+		dimmed?: boolean;
+		/** 'proposed' = new content awaiting ratification. */
+		ghost?: 'proposed' | null;
 		provenance: ActorType;
 		relationSummary?: string;
 		onmove?: (x: number, y: number) => void;
@@ -29,8 +31,6 @@
 		onselect?: (additive: boolean) => void;
 		/** Remove from the working set (shown on selected cards; the graph is untouched). */
 		onremove?: () => void;
-		/** Add a surfaced existing thought to the working set — a direct action, no ratification. */
-		onadd?: () => void;
 	}
 
 	let {
@@ -47,14 +47,14 @@
 		scale = 1,
 		selected = false,
 		pinned = false,
+		dimmed = false,
 		ghost = null,
 		provenance,
 		relationSummary,
 		onmove,
 		onsize,
 		onselect,
-		onremove,
-		onadd
+		onremove
 	}: Props = $props();
 
 	let dragging = $state(false);
@@ -105,6 +105,7 @@
 	bind:this={cardEl}
 	class:selected
 	class:dragging
+	class:dimmed
 	class:reading={zoom === 'reading'}
 	style="left: {x}px; top: {y}px; width: {width}px;"
 	onpointerdown={onpointerdown}
@@ -122,8 +123,6 @@
 		{#if pinned}<span class="pin" title="Pinned">⚑</span>{/if}
 		{#if ghost === 'proposed'}
 			<span class="badge proposed-badge">◇ proposed</span>
-		{:else if ghost === 'surfaced'}
-			<span class="badge surfaced-badge">↖ existing</span>
 		{:else}
 			<span class="badge actor">{provenance === 'agent' ? '✳ agent' : '✎ you'}</span>
 		{/if}
@@ -151,14 +150,6 @@
 		<span class="status">{status}</span>
 		{#if confidence}
 			<span class="confidence" title="Confidence">{formatConfidence(confidence)}</span>
-		{/if}
-		{#if ghost === 'surfaced' && onadd}
-			<button
-				class="add-to-set"
-				title="Keep this thought on the canvas after review"
-				onpointerdown={(e) => e.stopPropagation()}
-				onclick={onadd}
-			>+ add to working set</button>
 		{/if}
 	</div>
 </div>
@@ -194,10 +185,15 @@
 		border-color: var(--gold);
 		background: var(--parchment);
 	}
-	.card.surfaced {
-		border-style: dotted;
-		border-color: var(--surfaced-slate);
-		background: var(--surfaced-fill);
+	/* Outside the active lens: present (spatial memory intact) but quiet.
+	   Opacity, not color alone — and selection/hover lift the veil. */
+	.card.dimmed {
+		opacity: 0.4;
+	}
+	.card.dimmed:hover,
+	.card.dimmed.selected,
+	.card.dimmed.dragging {
+		opacity: 1;
 	}
 	.head {
 		display: flex;
@@ -232,7 +228,6 @@
 		color: var(--gold-ink);
 	}
 	.proposed-badge { color: var(--gold-ink); font-weight: 700; }
-	.surfaced-badge { color: var(--slate-ink); font-weight: 600; }
 	.title {
 		font-weight: 600;
 		line-height: 1.25;
@@ -274,22 +269,6 @@
 	}
 	.remove:hover {
 		color: var(--rust);
-	}
-	.add-to-set {
-		font: inherit;
-		font-size: var(--fs-10);
-		font-weight: 600;
-		border: 1px solid var(--surfaced-slate);
-		background: var(--card-white);
-		color: var(--slate-ink);
-		border-radius: 999px;
-		padding: 2px 8px;
-		cursor: pointer;
-		white-space: nowrap;
-	}
-	.add-to-set:hover {
-		border-color: var(--blue);
-		color: var(--blue);
 	}
 	.status {
 		font-size: var(--fs-10);

@@ -24,7 +24,7 @@ Rules for change sets:
 - add_relation endpoints are existing thought ids from the context, or client_refs of create_thought operations in this same change set. A relation whose endpoint is a client_ref must list that client_ref in depends_on. Never relate a thought to itself, and never propose a relation that already exists in the context.
 - revise_thought only for thoughts present in the context, and only include the fields that change.
 - evidence_refs name the thought ids, the scratch id, or client_refs you actually drew on.
-- Refer only to thought ids that appear in the context. There is no other graph retrieval; the context is everything you know about the graph.
+- Refer only to thought ids that appear in the context. For Connect and Challenge the context may include thoughts found by a graph-wide relevance search, marked as retrieved — the person is shown exactly which thoughts were consulted this way. Everything else in the graph is out of reach; the context is everything you know about it.
 - Web search and web fetch tools may be available. Fetch only URLs that already appear in the context (evidence sources, scratch text); search sparingly, when finding a source would materially strengthen or challenge a thought. Set source on evidence you ground this way to the fetched URL. Never invent URLs; if the web tools fail, propose from the context alone.
 - The summary states impact first ("Proposed 2 claims and 1 question…"), one sentence.`;
 
@@ -42,19 +42,28 @@ export function buildUserPrompt(action: AgentAction, context: AgentContext): str
 	lines.push('');
 	lines.push('## Context');
 	lines.push('');
-	lines.push('Thoughts (the working set and its 1-hop neighborhood):');
-	for (const t of context.thoughts) {
-		const marks = [
-			t.selected ? 'SELECTED' : null,
-			t.inWorkingSet ? null : 'outside working set'
-		].filter(Boolean);
+	const describe = (t: (typeof context.thoughts)[number], marks: (string | null)[]) => {
+		const shown = marks.filter(Boolean);
 		lines.push(
-			`- id=${t.id} [${t.type}, ${t.status}]${marks.length ? ` (${marks.join(', ')})` : ''}`
+			`- id=${t.id} [${t.type}, ${t.status}]${shown.length ? ` (${shown.join(', ')})` : ''}`
 		);
 		lines.push(`  title: ${t.title}`);
 		lines.push(`  statement: ${t.statement}`);
 		if (t.confidence) lines.push(`  confidence: ${formatConfidence(t.confidence)}`);
 		if (t.source) lines.push(`  source: ${t.source}`);
+	};
+	lines.push("Thoughts (the person's current focus and its 1-hop neighborhood):");
+	for (const t of context.thoughts) {
+		if (t.retrieved) continue;
+		describe(t, [t.selected ? 'SELECTED' : null, t.inFocus ? null : 'neighborhood']);
+	}
+	const retrieved = context.thoughts.filter((t) => t.retrieved);
+	if (retrieved.length > 0) {
+		lines.push('');
+		lines.push(
+			'Retrieved from elsewhere in the graph by relevance search (the person is shown these were consulted):'
+		);
+		for (const t of retrieved) describe(t, ['retrieved']);
 	}
 	lines.push('');
 	if (context.relations.length > 0) {

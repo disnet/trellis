@@ -27,7 +27,7 @@ The core loop: messy input → agent-proposed structure → human ratification �
 ## Design principles
 
 1. **State over transcript.** The principal result of agent work is a diff to persistent state — "found 7 related notes, proposed 3 connections and one merge" — which you inspect, not read. Language is produced *inside* the structure; it isn't the structure.
-2. **Selection is context.** The visible working set defines the agent's context. You include or exclude thoughts directly instead of managing a hidden prompt or trusting opaque retrieval. This makes non-linear jumping cheap: you jump, the agent follows, no re-explaining.
+2. **Selection is context — and retrieval is never invisible.** The selection plus the active working set defines the agent's context; you include or exclude thoughts directly instead of managing a hidden prompt. This makes non-linear jumping cheap: you jump, the agent follows, no re-explaining. *Amended (2026-09):* for the discovery operations (Connect, Challenge) — whose whole point is finding what you did *not* select — a deterministic graph-wide relevance search may add a few thoughts to the context. Every thought it pulls in is disclosed: marked in the prompt, recorded on the change set, and shown in the review tray as "consulted." The principle bends from "no hidden retrieval" to "no invisible retrieval"; it never becomes opaque memory.
 3. **The agent proposes; the human ratifies.** Agent changes enter a staging area until deliberately accepted. This friction is the point: ratification is where the thinking happens. A PKB you skim but didn't author isn't yours.
 4. **Authorship is not acceptance.** Provenance records both who authored a revision and who accepted it. Accepting an agent proposal expresses endorsement, not retroactive authorship; editing one creates a human-authored revision derived from the proposal, with the original preserved.
 5. **Stable identity over stable wording.** A thought can be revised, summarized, or displayed in several views without breaking references to it.
@@ -61,9 +61,9 @@ Two types carry structured, revisioned fields. A **prediction** is a falsifiable
 
 | Primitive | What it is |
 |---|---|
-| **Working set** | The small, explicit set of thoughts receiving attention now — the agent's context window made visible. Membership is binary (in or out) and does not change the durable graph. Persisted across sessions for re-entry. |
+| **Working set** | A *lens* over the whole-graph canvas: the explicit set of thoughts receiving attention now — the agent's context window made visible. Optional (the base state is the whole graph, no lens); membership is binary (in or out) and does not change the durable graph or its layout. Persisted across sessions for re-entry. |
 | **Scratch** | Unstructured capture surface. May produce proposals; never automatically becomes durable knowledge. |
-| **View** | A disposable projection of some subset. v0: the working-set canvas plus one read-only outline projection. |
+| **View** | A disposable projection. v0: the whole-graph canvas (with the active working set as a highlight/dim lens) plus one read-only outline projection. |
 
 **No Threads in v0.** Earlier drafts floated Threads as a durable primitive while also listing "does the thread concept add value?" as an open question. Resolution: cut them. A persisted working set covers re-entry — the part of Threads worth keeping. Branch/merge of lines of inquiry is deferred until the core loop proves out.
 
@@ -71,7 +71,7 @@ Two types carry structured, revisioned fields. A **prediction** is a falsifiable
 
 ### Main workspace
 
-The main screen is a bounded working set, not an infinite global graph:
+The main screen is the whole graph on an infinite pan/zoom canvas — every thought has one durable position per graph, so spatial memory ("the pricing argument lives upper-left") accrues. An active working set highlights its members and dims the rest; with no set active, the base state is simply all your thoughts. *(Amended 2026-09; earlier drafts bounded the canvas to the working set.)*
 
 - a central **canvas** of compact thought cards with rendered relations;
 - a **scratch composer** for freeform capture;
@@ -84,12 +84,12 @@ Agent proposals appear **at the edge** of the current arrangement, visually dist
 
 ### Agent operations
 
-Invoked on a selection (one or more cards, or scratch content). The selection plus the working set is *exactly* the agent's context — no hidden retrieval. Four operations in v0:
+Invoked on a selection (one or more cards, or scratch content). The selection plus the active working set (plus their 1-hop neighborhood) is the agent's context; for Connect and Challenge, a disclosed graph-wide relevance search may add a few more (see principle 2). Four operations in v0:
 
 - **Decompose:** propose atomic claims, concepts, and questions from scratch text or a too-big thought. This is the distill loop: paste a messy paragraph, get back "this contains two claims and a question; the second claim contradicts a node from March — reify?"
 - **Develop:** propose extensions, implications, or refinements of the selection.
 - **Challenge:** propose objections, contradictions, or missing assumptions, linked as `contradicts` / `depends_on`.
-- **Connect:** find relevant existing thoughts (working set + 1-hop neighborhood) and propose typed relations, flagging contradictions found.
+- **Connect:** find relevant existing thoughts (neighborhood plus disclosed graph-wide search) and propose typed relations, flagging contradictions found.
 
 Every operation returns a structured change set with a short rationale per operation, never a freeform answer. *Synthesize* (compress a cluster into a revised thought) is the first v0.1 candidate.
 
@@ -119,7 +119,7 @@ The agent endpoint's response type is `ChangeSet`, not `string`. **There is no c
 
 Local-first, single user, boring stack:
 
-- **App:** TypeScript + SvelteKit + Vite. Canvas via absolutely-positioned cards + SVG edges — no heavy graph library until needed (positions are per-working-set, not global knowledge).
+- **App:** TypeScript + SvelteKit + Vite. Canvas via absolutely-positioned cards + SVG edges — no heavy graph library until needed (positions are per-graph canvas layout — a projection, not knowledge).
 - **Server:** thin Node server (Hono or Express) for persistence and model calls. No auth, no deploy; runs on localhost.
 - **Storage:** SQLite.
 - **Agent:** Claude via the Anthropic SDK (e.g. `claude-sonnet-5` for cost during iteration), server-side, behind a **model adapter** that can also serve deterministic fixtures. Fixtures matter: the full review flow stays demoable and testable without network access or model variance.
@@ -140,7 +140,10 @@ Relation
   created_by, source_change_set_id, created_at
 
 WorkingSetItem
-  thought_id, x, y
+  working_set_id, thought_id        -- membership only (a lens)
+
+CanvasPosition
+  graph_id, thought_id, x, y        -- one canonical layout per graph
 
 ChangeSet
   id, action, status, rationale
@@ -157,11 +160,11 @@ ScratchNote
 
 Snapshots in `ThoughtRevision` are simpler and safer than event sourcing at this stage. `ProposedOperation.payload` stays validated JSON until the operation vocabulary stabilizes; it is immutable as proposed, and a human edit lands in `edited_payload` so both survive. Authorship and acceptance are recorded separately: `ThoughtRevision.actor_*` says who wrote the words, `ChangeSet.applied_by` says who ratified them.
 
-**Implementation constraint:** the canonical graph is separate from view state. Card coordinates, collapsed state, and density belong to the working-set projection, never to thoughts or relations.
+**Implementation constraint:** the canonical graph is separate from view state. Card coordinates, collapsed state, and density belong to projections (the per-graph canvas layout, working-set membership), never to thoughts or relations.
 
 ### Agent contract
 
-The application sends: the invoked operation, selected thought IDs, the working set, relations among those thoughts (plus 1-hop neighbors), optional scratch content, and concise schema instructions. Context assembly is deterministic.
+The application sends: the invoked operation, selected thought IDs, the active working set, relations among those thoughts (plus 1-hop neighbors), any graph-wide search results (Connect/Challenge; disclosed and recorded on the change set), optional scratch content, and concise schema instructions. Context assembly is deterministic — including the search, which is a stable term-overlap ranking, so identical graph state produces an identical request.
 
 The model returns validated structured output:
 
@@ -344,8 +347,8 @@ Acceptance rate alone is not success. High unexamined acceptance may indicate au
 - **Thoughts too granular / still page-sized.** Every thought gets a readable statement, not just a label; tune Decompose toward independently challengeable ideas — if a result can't participate meaningfully in Challenge or Connect, it's too broad or too vague. Measure split/merge corrections.
 - **Typed links collapse into "related."** Keep the vocabulary small, show labels in context, measure escape-hatch usage, remove types that fail.
 - **Ratification becomes exhausting.** Keep change sets small, group dependent operations, support keyboard review. Do not remove review friction before learning which decisions create understanding.
-- **Spatial clutter.** The canvas only ever shows the working set; layout is view-specific; provide a reset/arrange action. Never render the whole knowledge base.
-- **Context feels opaque despite the working set.** Show a compact "using: …" summary before an operation runs; attach each rationale to the thoughts it used.
+- **Spatial clutter.** *(Revised 2026-09: the canvas now shows the whole graph.)* Infinite zoom, per-topic graph isolation, and the working-set lens (dim everything outside the focus) carry the load the bounded canvas used to; provide a reset/arrange action. If a single graph outgrows this, that is a signal to split graphs, not to hide thoughts.
+- **Context feels opaque despite the working set.** Show a compact "using: …" summary before an operation runs; attach each rationale to the thoughts it used; disclose graph-wide search results as "consulted" on the change set.
 
 ## Out of scope (v0)
 

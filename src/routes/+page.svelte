@@ -120,7 +120,7 @@
 			<span class="wordmark">Trellis</span>
 			{#if !ws.loading && !ws.loadError}<GraphSwitcher compact={viewportWidth < 1000} />{/if}
 			<details class="sets-menu">
-				<summary>{ws.workingSets.find(set => set.id === ws.activeWorkingSetId)?.name ?? 'Working sets'} <Icon name="chevron-down" /></summary>
+				<summary>{ws.workingSets.find(set => set.id === ws.activeWorkingSetId)?.name ?? 'All thoughts'} <Icon name="chevron-down" /></summary>
 				<div class="sets-popover"><WorkingSetTabs /></div>
 			</details>
 		</div>

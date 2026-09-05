@@ -36,13 +36,16 @@
 
 	async function startFresh() {
 		const ok = await dialogs.confirm(
-			'Empty this working set? Thoughts and relations stay in the graph.',
+			'Empty this working set? Every thought stays on the canvas.',
 			'Empty set'
 		);
 		if (!ok) return;
 		const err = await ws.startFresh();
 		if (err) ws.notice = err;
 	}
+
+	// Emptying a working set only means something while one is active.
+	const canStartFresh = $derived(ws.lensActive && ws.workingSet.length > 0);
 
 	// --- progressive collapse ---
 	// The toolbar never wraps. When its content stops fitting it gives ground one
@@ -205,7 +208,7 @@
 		<div class="views" role="group" aria-label="Center view">
 			<button
 				class:active={ws.view === 'canvas'}
-				title="Spatial projection of the working set"
+				title="Your whole graph, spatially"
 				aria-label="Canvas"
 				aria-pressed={ws.view === 'canvas'}
 				onclick={() => (ws.view = 'canvas')}
@@ -214,7 +217,7 @@
 			</button>
 			<button
 				class:active={ws.view === 'outline'}
-				title="Outline projection — same working set, same selection"
+				title="Outline projection — same thoughts, same selection"
 				aria-label="Outline"
 				aria-pressed={ws.view === 'outline'}
 				onclick={() => (ws.view = 'outline')}
@@ -223,7 +226,7 @@
 			</button>
 			<button
 				class:active={ws.view === 'browse'}
-				title="Sort and filter every thought in the graph, then stage them onto the canvas"
+				title="Sort and filter every thought in the graph"
 				aria-label="Browse"
 				aria-pressed={ws.view === 'browse'}
 				onclick={() => (ws.view = 'browse')}
@@ -252,9 +255,9 @@
 								{ws.zoom === 'overview' ? 'Reading view' : 'Overview'}
 							</span>
 						</button>
-						<button class="item" disabled={ws.workingSet.length === 0} onclick={() => run(startFresh)}>
-							<span class="item-label"><Icon name="clear" /> Start fresh</span>
-							<span class="item-hint">Empty the working set — the durable graph is untouched</span>
+						<button class="item" disabled={!canStartFresh} onclick={() => run(startFresh)}>
+							<span class="item-label"><Icon name="clear" /> Empty working set</span>
+							<span class="item-hint">Membership only — every thought stays on the canvas</span>
 						</button>
 						<button class="item" disabled={ws.undoLabel === null} onclick={() => run(undo)}>
 							<span class="item-label"><Icon name="undo" /> Undo last apply</span>
@@ -278,12 +281,12 @@
 				<span class="label">{ws.zoom === 'overview' ? 'Reading view' : 'Overview'}</span>
 			</button>
 			<button
-				title="Empty the working set — the durable graph is untouched"
-				aria-label="Start fresh"
-				disabled={ws.workingSet.length === 0}
+				title="Empty the working set — every thought stays on the canvas"
+				aria-label="Empty working set"
+				disabled={!canStartFresh}
 				onclick={startFresh}
 			>
-				<Icon name="clear" /><span class="label">Start fresh</span>
+				<Icon name="clear" /><span class="label">Empty set</span>
 			</button>
 			<button
 				class="undo"

@@ -13,7 +13,7 @@
 	const cardH = $derived(ws.zoom === 'reading' ? 190 : 92);
 
 	// Camera for the infinite canvas: a surface point renders at surface * scale + (x, y).
-	// Pan is unbounded in every direction; recenter() snaps back to the working set.
+	// Pan is unbounded in every direction; recenter() snaps back to the focus.
 	let viewportEl = $state<HTMLDivElement>();
 	let cam = $state({ x: 48, y: 136, scale: 1 });
 	let vp = $state({ w: 0, h: 0 });
@@ -32,10 +32,18 @@
 		return Math.min(Math.max(v, lo), hi);
 	}
 
+	let sized = false;
 	$effect(() => {
 		if (!viewportEl) return;
 		const el = viewportEl;
-		const sync = () => (vp = { w: el.clientWidth, h: el.clientHeight });
+		const sync = () => {
+			vp = { w: el.clientWidth, h: el.clientHeight };
+			// First real measurement: frame the graph rather than the origin.
+			if (!sized && vp.w > 0) {
+				sized = true;
+				recenter();
+			}
+		};
 		sync();
 		const ro = new ResizeObserver(sync);
 		ro.observe(el);
@@ -90,10 +98,11 @@
 		y: number;
 	}
 
-	// Center point of any drawable node: working-set card or ghost preview card.
+	// Center point of any drawable node: a thought's card on the whole-graph
+	// canvas, or a ghost preview card.
 	function center(csId: string | null, ref: string): Pt | null {
-		const item = ws.workingSet.find((w) => w.thoughtId === ref);
-		if (item) return { x: item.x + (dimensions[ref]?.width ?? cardW) / 2, y: item.y + (dimensions[ref]?.height ?? cardH) / 2 };
+		const pos = ws.positions[ref];
+		if (pos) return { x: pos.x + (dimensions[ref]?.width ?? cardW) / 2, y: pos.y + (dimensions[ref]?.height ?? cardH) / 2 };
 		if (csId) {
 			const g = ws.ghostPositions[`${csId}:${ref}`];
 			if (g) return { x: g.x + (dimensions[`${csId}:${ref}`]?.width ?? cardW) / 2, y: g.y + (dimensions[`${csId}:${ref}`]?.height ?? cardH) / 2 };
@@ -151,7 +160,7 @@
 
 	interface GhostCard {
 		key: string;
-		kind: 'proposed' | 'surfaced';
+		kind: 'proposed';
 		pos: Pt;
 		type: import('$lib/types').ThoughtType;
 		status: import('$lib/types').ThoughtStatus;
@@ -161,27 +170,15 @@
 		source?: string;
 	}
 
+	// Only proposed new thoughts need preview cards — existing thoughts are
+	// always on the whole-graph canvas, so proposed relations draw to them
+	// directly.
 	const ghosts = $derived.by((): GhostCard[] => {
 		const out: GhostCard[] = [];
 		for (const cs of ws.pendingChangeSets) {
 			for (const pr of ws.previewRefs(cs)) {
 				const pos = ws.ghostPositions[`${cs.id}:${pr.ref}`];
 				if (!pos) continue;
-				if (pr.existingId) {
-					const t = ws.thoughts[pr.existingId];
-					out.push({
-						key: `${cs.id}:${pr.ref}`,
-						kind: 'surfaced',
-						pos,
-						type: t.type,
-						status: t.status,
-						title: t.title,
-						statement: t.statement,
-						confidence: t.confidence,
-						source: t.source
-					});
-					continue;
-				}
 				const op = cs.operations.find((o) => o.clientRef === pr.ref);
 				if (!op || op.decision === 'rejected') continue;
 				const p = effectivePayload(op);
@@ -206,9 +203,15 @@
 	function measure(id: string, width: number, height: number) {
 		if (dimensions[id]?.width !== width || dimensions[id]?.height !== height) dimensions[id] = { width, height };
 	}
+	// Every thought in the graph is on the canvas; an active working set is a
+	// lens that highlights its members and dims the rest.
+	const cards = $derived(
+		Object.values(ws.thoughts)
+			.map((t) => ({ t, pos: ws.positions[t.id] }))
+			.filter((c): c is { t: (typeof c)['t']; pos: NonNullable<(typeof c)['pos']> } => !!c.pos)
+	);
 	const items = $derived([
-		...ws.workingSet.map(w => ({ id: w.thoughtId, title: ws.thoughts[w.thoughtId]?.title ?? '',
-			statement: ws.thoughts[w.thoughtId]?.statement ?? '', kind: 'card', x: w.x, y: w.y })),
+		...cards.map(({ t, pos }) => ({ id: t.id, title: t.title, statement: t.statement, kind: 'card', x: pos.x, y: pos.y })),
 		...ghosts.map(g => ({ id: g.key, title: g.title, statement: g.statement, kind: g.kind, ...g.pos }))
 	]);
 	let searchEl = $state<HTMLInputElement>();
@@ -230,7 +233,14 @@
 	const offscreenHints = $derived.by((): OffscreenHint[] => {
 		if (vp.w === 0) return [];
 		const out: OffscreenHint[] = [];
-		for (const it of items) {
+		// With a lens active, only its members (and any selection) earn chips —
+		// the rest of the graph is deliberately quiet.
+		const hinted = ws.lensActive
+			? items.filter(
+					(i) => i.kind !== 'card' || ws.inWorkingSet(i.id) || ws.selectedIds.includes(i.id)
+				)
+			: items;
+		for (const it of hinted) {
 			const w = dimensions[it.id]?.width ?? cardW;
 			const h = dimensions[it.id]?.height ?? cardH;
 			const visible = it.x + w > view.left && it.x < view.left + view.w &&
@@ -256,11 +266,16 @@
 	});
 	const outside = $derived(offscreenHints.length);
 
-	// Bounding box of everything on the canvas, in surface coordinates.
+	// Bounding box of the current focus (lens members + ghosts when a lens is
+	// active, the whole canvas otherwise), in surface coordinates.
 	const bounds = $derived.by(() => {
-		if (!items.length) return null;
+		const focus = ws.lensActive
+			? items.filter((i) => i.kind !== 'card' || ws.inWorkingSet(i.id))
+			: items;
+		const boxed = focus.length ? focus : items;
+		if (!boxed.length) return null;
 		let l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
-		for (const i of items) {
+		for (const i of boxed) {
 			l = Math.min(l, i.x); t = Math.min(t, i.y);
 			r = Math.max(r, i.x + (dimensions[i.id]?.width ?? cardW));
 			b = Math.max(b, i.y + (dimensions[i.id]?.height ?? cardH));
@@ -268,7 +283,7 @@
 		return { l, t, r, b };
 	});
 
-	/** Snap back to the working set: center it, zooming out just enough to fit. */
+	/** Snap back to the focus: center it, zooming out just enough to fit. */
 	function recenter() {
 		glide(() => {
 			if (!bounds) { cam = { x: 48, y: 136, scale: 1 }; return; }
@@ -284,9 +299,15 @@
 	}
 
 	let previous = $state<{ id: string; x: number; y: number; kind: string }[] | null>(null);
+	// Switching graph or lens keeps the layout (it is the graph's own) and moves
+	// the camera instead: glide to fit whatever is now in focus.
 	$effect(() => {
 		ws.activeGraphId; ws.activeWorkingSetId;
-		untrack(() => { previous = null; query = ''; showIndex = false; cam = { x: 48, y: 136, scale: 1 }; });
+		untrack(() => {
+			previous = null; query = ''; showIndex = false;
+			if (vp.w === 0) { cam = { x: 48, y: 136, scale: 1 }; return; }
+			recenter();
+		});
 	});
 	function locate(item: typeof items[number]) {
 		if (item.kind === 'card') ws.select(item.id);
@@ -305,7 +326,8 @@
 		for (const cs of ws.pendingChangeSets) for (const op of cs.operations) {
 			const p = effectivePayload(op);
 			if (p.op !== 'add_relation' || op.decision === 'rejected') continue;
-			const resolve = (ref: string) => ws.inWorkingSet(ref) ? ref : `${cs.id}:${ref}`;
+			// An endpoint is a real card unless it is a client_ref of a proposed create.
+			const resolve = (ref: string) => (ref in ws.thoughts ? ref : `${cs.id}:${ref}`);
 			links.push({ from: resolve(p.from), to: resolve(p.to) });
 		}
 		const positions = layoutCanvas(items.map(i => ({ id: i.id, ...(dimensions[i.id] ?? { width: cardW, height: cardH }) })), links, view.w);
@@ -395,8 +417,8 @@
 			}} />
 			<div class="index-results">
 				{#each results as item (item.id)}
-					<button onclick={() => locate(item)}><span>{item.title}</span><small>{item.kind === 'card' ? 'Thought' : item.kind === 'proposed' ? '◇ Proposed' : 'Existing preview'} →</small></button>
-				{:else}<p>{items.length ? 'No matching thoughts.' : 'Add thoughts from the library or scratch to get started.'}</p>{/each}
+					<button onclick={() => locate(item)}><span>{item.title}</span><small>{item.kind === 'card' ? 'Thought' : '◇ Proposed'} →</small></button>
+				{:else}<p>{items.length ? 'No matching thoughts.' : 'Write a thought or decompose scratch text to get started.'}</p>{/each}
 			</div>
 		</div>
 	{/if}
@@ -437,34 +459,35 @@
 			{/each}
 		</svg>
 
-		{#each ws.workingSet as item (item.thoughtId)}
-			{@const t = ws.thoughts[item.thoughtId]}
-			{#if t}
-				<ThoughtCard
-					x={item.x}
-					y={item.y}
-					width={cardW}
-					onsize={(w, h) => measure(t.id, w, h)}
-					type={t.type}
-					status={t.status}
-					title={t.title}
-					statement={t.statement}
-					confidence={t.confidence}
-					source={t.source}
-					zoom={ws.zoom}
-					scale={cam.scale}
-					selected={ws.selectedIds.includes(t.id)}
-					pinned={ws.isPinned(t.id)}
-					provenance={provenance(t.id)}
-					relationSummary={ws.zoom === 'reading' ? relationSummary(t.id) : undefined}
-					onmove={(x, y) => ws.moveCard(t.id, x, y)}
-					onselect={(additive) => ws.select(t.id, additive)}
-					onremove={async () => {
-						const err = await ws.removeFromSet(t.id);
-						if (err) ws.notice = err;
-					}}
-				/>
-			{/if}
+		{#each cards as { t, pos } (t.id)}
+			{@const member = ws.inWorkingSet(t.id)}
+			<ThoughtCard
+				x={pos.x}
+				y={pos.y}
+				width={cardW}
+				onsize={(w, h) => measure(t.id, w, h)}
+				type={t.type}
+				status={t.status}
+				title={t.title}
+				statement={t.statement}
+				confidence={t.confidence}
+				source={t.source}
+				zoom={ws.zoom}
+				scale={cam.scale}
+				selected={ws.selectedIds.includes(t.id)}
+				pinned={ws.isPinned(t.id)}
+				dimmed={ws.lensActive && !member}
+				provenance={provenance(t.id)}
+				relationSummary={ws.zoom === 'reading' ? relationSummary(t.id) : undefined}
+				onmove={(x, y) => ws.moveCard(t.id, x, y)}
+				onselect={(additive) => ws.select(t.id, additive)}
+				onremove={ws.lensActive && member
+					? async () => {
+							const err = await ws.removeFromSet(t.id);
+							if (err) ws.notice = err;
+						}
+					: undefined}
+			/>
 		{/each}
 
 		{#each ghosts as g (g.key)}
@@ -484,16 +507,16 @@
 				ghost={g.kind}
 				provenance="agent"
 				onmove={(x, y) => ws.moveGhost(g.key, x, y)}
-				onadd={g.kind === 'surfaced'
-					? async () => {
-							const id = g.key.slice(g.key.indexOf(':') + 1);
-							const err = await ws.addToSetAt(id, g.pos);
-							if (err) ws.notice = err;
-						}
-					: undefined}
 			/>
 		{/each}
 	</div>
+
+	{#if items.length === 0}
+		<div class="canvas-empty">
+			<p><strong>Your canvas is empty.</strong></p>
+			<p>Write a thought, or paste something messy into Scratch and decompose it. Everything you keep lives here, spatially — working sets come later, when you want the agent focused.</p>
+		</div>
+	{/if}
 
 	{#each offscreenHints as h (h.item.id)}
 		<button
@@ -603,10 +626,27 @@
 		color: var(--gold-ink);
 		font-weight: 600;
 	}
-	.offscreen-hint.surfaced {
-		border: 1.5px dotted var(--surfaced-slate);
-		background: var(--surfaced-fill);
-		color: var(--slate-ink);
+	.canvas-empty {
+		position: absolute;
+		inset: 0;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 4px;
+		text-align: center;
+		color: var(--ink-quiet);
+		font-size: var(--fs-13);
+		pointer-events: none;
+		padding: 0 24px;
+	}
+	.canvas-empty p {
+		margin: 0;
+		max-width: 46ch;
+		line-height: 1.5;
+	}
+	.canvas-empty strong {
+		color: var(--ink-muted);
 	}
 	.hint-arrow {
 		font-size: var(--fs-12);

@@ -114,7 +114,11 @@ export interface Relation {
 	createdAt: number;
 }
 
-export interface WorkingSetItem {
+/** One thought's place on the graph's canvas. The canvas shows the whole
+ *  graph, so there is exactly one position per thought per graph — spatial
+ *  memory ("the pricing argument lives upper-left") is durable. Still a
+ *  projection: coordinates live beside the graph, never on thoughts. */
+export interface CanvasPosition {
 	thoughtId: string;
 	x: number;
 	y: number;
@@ -128,7 +132,8 @@ export interface GraphInfo {
 	createdAt: number;
 }
 
-/** A named working set (tab). Only membership + layout — never knowledge. */
+/** A named working set: a lens over the whole-graph canvas. Only membership —
+ *  never knowledge, and never layout (positions belong to the graph canvas). */
 export interface WorkingSetInfo {
 	id: string;
 	name: string;
@@ -207,6 +212,9 @@ export interface ChangeSet {
 	summary: string;
 	/** Thought ids the operation was invoked on (the selection). */
 	invokedOn: string[];
+	/** Thought ids pulled into context by graph-wide relevance search (Connect /
+	 *  Challenge). Disclosed so retrieval is never invisible. */
+	consulted: string[];
 	/** Scratch note id, when invoked from scratch. */
 	scratchId?: string;
 	operations: ProposedOperation[];
@@ -227,11 +235,14 @@ export interface WorkspaceState {
 	activeGraphId: string;
 	thoughts: Record<string, Thought>;
 	relations: Relation[];
-	/** All working sets, oldest first. */
+	/** Canvas layout of the whole graph: one position per thought. */
+	canvas: CanvasPosition[];
+	/** All working sets (lenses), oldest first. */
 	workingSets: WorkingSetInfo[];
-	activeWorkingSetId: string;
-	/** Items of the active working set. */
-	workingSet: WorkingSetItem[];
+	/** The active lens, or null for the base state: the whole graph, no lens. */
+	activeWorkingSetId: string | null;
+	/** Member thought ids of the active working set; empty when none is active. */
+	workingSet: string[];
 	/** Pinned thoughts of the active graph, oldest pin first (Phase 6).
 	 *  Attention state, not knowledge — pinning never mutates the durable graph. */
 	pinnedThoughtIds: string[];
@@ -255,9 +266,10 @@ export interface ReentrySummary {
 	/** Pinned thoughts (what *matters*, alongside what changed), each with the
 	 *  number of relations it gained since the last visit. */
 	pinned: (ReentryThoughtRef & { newRelations: number })[];
-	/** Most-connected claims and questions in the working set. */
+	/** Most-connected claims and questions in focus (the active working set,
+	 *  or the whole graph when no lens is active). */
 	central: (ReentryThoughtRef & { degree: number })[];
-	/** Contested or still-tentative thoughts in the working set. */
+	/** Contested or still-tentative thoughts in focus. */
 	attention: ReentryThoughtRef[];
 	newThoughts: ReentryThoughtRef[];
 	revisedThoughts: ReentryThoughtRef[];

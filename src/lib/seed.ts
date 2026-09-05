@@ -1,8 +1,9 @@
 // Seed graph: this design's own topic, per the prototype plan.
-// A handful of thoughts are in the working set; a couple sit outside it so
-// Connect has something real to surface.
+// Every thought is on the canvas (the canvas shows the whole graph); a couple
+// of older thoughts sit off to the side so Connect has something real to
+// surface from across the graph.
 
-import type { Relation, Thought, WorkingSetItem } from './types';
+import type { CanvasPosition, Relation, Thought } from './types';
 
 const MARCH = new Date('2026-03-12T10:00:00Z').getTime();
 const APRIL = new Date('2026-04-02T15:30:00Z').getTime();
@@ -123,10 +124,14 @@ export const seedRelations: Relation[] = [
 	}
 ];
 
-export const seedWorkingSet: WorkingSetItem[] = [
+// The recent cluster sits around the origin; the two older thoughts live off
+// to the left, the way an older line of thinking drifts to the edge of a desk.
+export const seedPositions: CanvasPosition[] = [
 	{ thoughtId: 't-state-over-transcript', x: 340, y: 120 },
 	{ thoughtId: 't-ratification', x: 90, y: 320 },
 	{ thoughtId: 't-selection-context', x: 620, y: 300 },
 	{ thoughtId: 't-granularity', x: 380, y: 480 },
-	{ thoughtId: 't-typed-links', x: 680, y: 60 }
+	{ thoughtId: 't-typed-links', x: 680, y: 60 },
+	{ thoughtId: 't-chat-compost', x: -420, y: 160 },
+	{ thoughtId: 't-outline-example', x: -360, y: 430 }
 ];

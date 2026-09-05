@@ -8,30 +8,30 @@ import {
 	openNeighborhood,
 	removeFromWorkingSet,
 	renameWorkingSet,
-	switchWorkingSet,
-	updatePositions
+	switchWorkingSet
 } from '$lib/server/store';
 import type { RequestHandler } from './$types';
 
-// POST /api/workingset mutates the transient working-set projection only:
-//   { items }                          → persist card positions (best-effort)
-//   { action: 'add', items }           → add thoughts to the active set
+// POST /api/workingset mutates working-set (lens) membership only:
+//   { action: 'add', thoughtIds }      → add thoughts to the active set
 //   { action: 'remove', thoughtId }    → drop one thought from the active set
-//   { action: 'clear' }                → start fresh with an empty active set
+//   { action: 'clear' }                → empty the active set
 //   { action: 'create', name?, thoughtIds? } → new working set, made active,
 //                                              optionally seeded with thoughts
-//   { action: 'switch', workingSetId } → change which set is active
+//   { action: 'switch', workingSetId } → change which set is active; null
+//                                        returns to the base state (no lens)
 //   { action: 'rename', workingSetId, name }
 //   { action: 'delete', workingSetId } → delete a set (membership only)
-//   { action: 'neighborhood', thoughtId } → new set seeded with a thought + its
+//   { action: 'neighborhood', thoughtId } → new set holding a thought + its
 //                                           1-hop neighbors, made active
-// None of these touch the durable graph.
+// None of these touch the durable graph or its canvas layout (POST
+// /api/canvas owns positions).
 export const POST: RequestHandler = async ({ request }) => {
 	const body = await request.json().catch(() => null);
 
 	if (body?.action === 'add') {
-		const items = Array.isArray(body.items) ? body.items : [];
-		const error = addToWorkingSet(items);
+		const thoughtIds = Array.isArray(body.thoughtIds) ? body.thoughtIds : [];
+		const error = addToWorkingSet(thoughtIds);
 		if (error) return json({ error }, { status: 400 });
 		return json({ state: getState() });
 	}
@@ -41,7 +41,8 @@ export const POST: RequestHandler = async ({ request }) => {
 		return json({ state: getState() });
 	}
 	if (body?.action === 'clear') {
-		clearWorkingSet();
+		const error = clearWorkingSet();
+		if (error) return json({ error }, { status: 400 });
 		return json({ state: getState() });
 	}
 	if (body?.action === 'create') {
@@ -50,7 +51,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		return json({ state: getState() });
 	}
 	if (body?.action === 'switch') {
-		const error = switchWorkingSet(body.workingSetId);
+		const error = switchWorkingSet(body.workingSetId ?? null);
 		if (error) return json({ error }, { status: 400 });
 		return json({ state: getState() });
 	}
@@ -70,7 +71,5 @@ export const POST: RequestHandler = async ({ request }) => {
 		return json({ state: getState() });
 	}
 
-	const items = Array.isArray(body?.items) ? body.items : [];
-	updatePositions(items);
-	return json({ ok: true });
+	return json({ error: 'Unknown working-set action.' }, { status: 400 });
 };

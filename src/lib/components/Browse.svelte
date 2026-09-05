@@ -1,9 +1,8 @@
 <script lang="ts">
-	// Graph-wide browse table (the third center view). Unlike Canvas and Outline,
-	// which project the working set, this shows every thought in the active graph
-	// so it can be sorted, filtered, and staged onto the canvas. Read-only over
-	// the durable graph; its verbs are membership only (add to set, promote a
-	// filter to a new working set).
+	// Graph-wide browse table (the third center view): every thought in the
+	// active graph, sortable and filterable. Read-only over the durable graph;
+	// its verbs are membership only (add to the active working set, promote a
+	// filter to a new one).
 	import { dialogs } from '$lib/dialogs.svelte';
 	import { workspace } from '$lib/workspace.svelte';
 	import { effectivePayload, type Thought, type ThoughtStatus, type ThoughtType } from '$lib/types';
@@ -69,8 +68,11 @@
 			const deg = degrees.get(t.id) ?? 0;
 			if (linkFilter === 'connected' && deg === 0) return false;
 			if (linkFilter === 'orphan' && deg > 0) return false;
-			if (setFilter === 'in' && !ws.inWorkingSet(t.id)) return false;
-			if (setFilter === 'out' && ws.inWorkingSet(t.id)) return false;
+			// Membership facets only mean something while a working set is active.
+			if (ws.lensActive) {
+				if (setFilter === 'in' && !ws.inWorkingSet(t.id)) return false;
+				if (setFilter === 'out' && ws.inWorkingSet(t.id)) return false;
+			}
 			return true;
 		});
 		const dir = sortDir === 'asc' ? 1 : -1;
@@ -258,16 +260,18 @@
 					<option value="connected">connected</option>
 					<option value="orphan">orphans</option>
 				</select>
-				<select bind:value={setFilter} aria-label="Filter by working-set membership">
-					<option value="all">Set: any</option>
-					<option value="in">in this set</option>
-					<option value="out">not in this set</option>
-				</select>
+				{#if ws.lensActive}
+					<select bind:value={setFilter} aria-label="Filter by working-set membership">
+						<option value="all">Set: any</option>
+						<option value="in">in this set</option>
+						<option value="out">not in this set</option>
+					</select>
+				{/if}
 			</div>
 			<span class="count" aria-live="polite">
 				{rows.length} of {totalThoughts} thought{totalThoughts === 1 ? '' : 's'}
 			</span>
-			{#if stageable.length > 0}
+			{#if ws.lensActive && stageable.length > 0}
 				<button
 					class="action"
 					title="Add the selected thoughts to the active working set"
@@ -335,17 +339,19 @@
 								{ago(t.updatedAt)}
 							</td>
 							<td class="col-actions">
-								{#if inSet}
-									<span class="in-set">in set</span>
-								{:else}
-									<button
-										class="add"
-										title="Add to the active working set"
-										onclick={(ev) => {
-											ev.stopPropagation();
-											run(() => ws.addToSet([t.id]));
-										}}
-									>+ add</button>
+								{#if ws.lensActive}
+									{#if inSet}
+										<span class="in-set">in set</span>
+									{:else}
+										<button
+											class="add"
+											title="Add to the active working set"
+											onclick={(ev) => {
+												ev.stopPropagation();
+												run(() => ws.addToSet([t.id]));
+											}}
+										>+ add</button>
+									{/if}
 								{/if}
 							</td>
 						</tr>

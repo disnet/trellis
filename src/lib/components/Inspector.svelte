@@ -194,28 +194,30 @@
 					{pinned ? '⚑ Unpin' : '⚑ Pin'}
 				</button>
 				<button
-					title="Spawn a new working set with this thought and its 1-hop neighbors"
+					title="Focus this thought and its 1-hop neighbors in a new working set"
 					onclick={() => run(() => ws.openNeighborhood(thought.id))}
 				>
-					⌾ Open neighborhood
+					⌾ Focus neighborhood
 				</button>
-				{#if inSet}
-					<button
-						title="1-hop neighbors outside the working set"
-						disabled={neighborCount === 0}
-						onclick={() => run(() => ws.pullNeighbors(thought.id))}
-					>
-						Pull in neighbors{neighborCount > 0 ? ` (${neighborCount})` : ''}
-					</button>
-					<button
-						title="The thought stays in the graph"
-						onclick={() => run(() => ws.removeFromSet(thought.id))}
-					>
-						Remove from set
-					</button>
-				{:else}
-					<span class="off-canvas">Not in the working set.</span>
-					<button onclick={() => run(() => ws.addToSet([thought.id]))}>Add to working set</button>
+				{#if ws.lensActive}
+					{#if inSet}
+						<button
+							title="1-hop neighbors outside the working set"
+							disabled={neighborCount === 0}
+							onclick={() => run(() => ws.pullNeighbors(thought.id))}
+						>
+							Pull in neighbors{neighborCount > 0 ? ` (${neighborCount})` : ''}
+						</button>
+						<button
+							title="Membership only — the thought stays on the canvas"
+							onclick={() => run(() => ws.removeFromSet(thought.id))}
+						>
+							Remove from set
+						</button>
+					{:else}
+						<span class="off-canvas">Not in the working set.</span>
+						<button onclick={() => run(() => ws.addToSet([thought.id]))}>Add to working set</button>
+					{/if}
 				{/if}
 			</div>
 		{/if}

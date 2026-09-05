@@ -20,7 +20,7 @@ import { validateProposal, type ValidationDeps } from './validate';
 import type { AgentProposal } from './wire';
 
 export type GenerateOutcome =
-	| { ok: true; proposal: AgentProposal; callId: string }
+	| { ok: true; proposal: AgentProposal; callId: string; consulted: string[] }
 	| { ok: false; error: string };
 
 // Dev-console trace of the agent pipeline, alongside the durable agent_calls
@@ -87,10 +87,12 @@ export async function generateProposal(
 	};
 
 	const adapter = selectAdapter({ thoughtExists: validationDeps.thoughtExists }, selection);
-	const context = buildContext(selectedIds, scratch);
+	const context = buildContext(action, selectedIds, scratch);
 	log(
 		`${action} via ${adapter.name} (${adapter.model}) — context: ${context.thoughts.length} thoughts, ` +
-			`${context.relations.length} relations, ${selectedIds.length} selected${scratch ? ', scratch input' : ''}`
+			`${context.relations.length} relations, ${selectedIds.length} selected` +
+			`${context.retrievedIds.length ? `, ${context.retrievedIds.length} retrieved by graph search` : ''}` +
+			`${scratch ? ', scratch input' : ''}`
 	);
 
 	// Attempt, validate; model-backed adapters get one corrective retry with
@@ -146,7 +148,7 @@ export async function generateProposal(
 				`attempt ${attempt}: ✓ ${p.operations.length} op${p.operations.length === 1 ? '' : 's'} in ` +
 					`${latencyMs}ms${usage ? ` (${usage})` : ''} — “${p.summary}”`
 			);
-			return { ok: true, proposal: p, callId };
+			return { ok: true, proposal: p, callId, consulted: context.retrievedIds };
 		}
 		log(
 			`attempt ${attempt}: invalid proposal after ${latencyMs}ms — ${validated.errors.join('; ')}` +

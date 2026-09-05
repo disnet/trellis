@@ -1,7 +1,8 @@
 <script lang="ts">
-	// Read-only outline projection of the working set (Phase 4). Same objects,
-	// same selection, same provisional change-set content as the canvas — only
-	// the presentation differs. No editing, reordering, or capture here.
+	// Read-only outline projection (Phase 4): the active working set when one
+	// is on, the whole graph otherwise. Same objects, same selection, same
+	// provisional change-set content as the canvas — only the presentation
+	// differs. No editing, reordering, or capture here.
 	import { workspace } from '$lib/workspace.svelte';
 	import { effectivePayload, type ThoughtType } from '$lib/types';
 
@@ -19,9 +20,9 @@
 
 	interface OutlineEntry {
 		key: string;
-		/** Present only for accepted working-set thoughts — ghosts are not selectable. */
+		/** Present only for accepted thoughts — ghosts are not selectable. */
 		id?: string;
-		ghost: 'proposed' | 'surfaced' | null;
+		ghost: 'proposed' | null;
 		type: ThoughtType;
 		status: string;
 		title: string;
@@ -58,8 +59,10 @@
 		// ids, plus `${csId}:${clientRef}` for proposed creates.
 		const byToken = new Map<string, OutlineEntry>();
 
-		for (const item of ws.workingSet) {
-			const t = ws.thoughts[item.thoughtId];
+		// Focus scope: the active working set when one is on, else the whole graph.
+		const focusIds = ws.lensActive ? ws.workingSet : Object.keys(ws.thoughts);
+		for (const tid of focusIds) {
+			const t = ws.thoughts[tid];
 			if (!t) continue;
 			const e: OutlineEntry = {
 				key: t.id,
@@ -78,29 +81,11 @@
 			byToken.set(t.id, e);
 		}
 
-		// Provisional entries, mirroring the canvas ghost cards.
+		// Provisional entries, mirroring the canvas ghost cards (proposed new
+		// thoughts only — existing thoughts are always in the graph views).
 		for (const cs of ws.pendingChangeSets) {
 			for (const pr of ws.previewRefs(cs)) {
 				const key = `${cs.id}:${pr.ref}`;
-				if (pr.existingId) {
-					const t = ws.thoughts[pr.existingId];
-					if (!t || byToken.has(pr.existingId)) continue;
-					const e: OutlineEntry = {
-						key,
-						ghost: 'surfaced',
-						type: t.type,
-						status: t.status,
-						title: t.title,
-						statement: t.statement,
-						provenance: provenance(t.id),
-						pinned: ws.isPinned(t.id),
-						refs: [],
-						pendingRevision: false
-					};
-					out.push(e);
-					byToken.set(pr.existingId, e);
-					continue;
-				}
 				const op = cs.operations.find((o) => o.clientRef === pr.ref);
 				if (!op || op.decision === 'rejected') continue;
 				const p = effectivePayload(op);
@@ -214,7 +199,7 @@
 			entries: entries
 				.filter((e) => e.type === type)
 				.sort((a, b) => {
-					const rank = (e: OutlineEntry) => (e.ghost === null ? 0 : e.ghost === 'proposed' ? 1 : 2);
+					const rank = (e: OutlineEntry) => (e.ghost === null ? 0 : 1);
 					return rank(a) - rank(b) || a.title.localeCompare(b.title);
 				})
 		})).filter((g) => g.entries.length > 0)
@@ -229,9 +214,13 @@
 	}
 </script>
 
-<div class="outline" aria-label="Outline projection of the working set">
+<div class="outline" aria-label="Outline projection">
 	{#if entries.length === 0}
-		<div class="empty">The working set is empty — search the library to add thoughts.</div>
+		<div class="empty">
+			{ws.lensActive
+				? 'The working set is empty — add thoughts from the library or browse.'
+				: 'The graph is empty — write a thought or decompose scratch text to begin.'}
+		</div>
 	{:else}
 		<div class="inner">
 			{#each groups as g (g.type)}
@@ -262,8 +251,6 @@
 										<span class="title">{e.title}</span>
 										{#if e.ghost === 'proposed'}
 											<span class="badge proposed-badge">◇ proposed</span>
-										{:else if e.ghost === 'surfaced'}
-											<span class="badge surfaced-badge">↖ existing</span>
 										{:else}
 											<span class="badge actor">{e.provenance === 'agent' ? '✳ agent' : '✎ you'}</span>
 										{/if}
@@ -392,11 +379,6 @@
 		border-color: var(--gold);
 		background: var(--parchment);
 	}
-	.row.surfaced {
-		border-style: dotted;
-		border-color: var(--surfaced-slate);
-		background: var(--surfaced-fill);
-	}
 	.head {
 		display: flex;
 		align-items: baseline;
@@ -414,7 +396,6 @@
 		color: var(--ink-muted);
 	}
 	.proposed-badge { color: var(--gold-ink); font-weight: 700; }
-	.surfaced-badge { color: var(--slate-ink); font-weight: 600; }
 	.revision-badge { color: var(--gold-ink); font-weight: 700; }
 	.pin {
 		font-size: var(--fs-11);

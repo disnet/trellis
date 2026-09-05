@@ -2,10 +2,9 @@
 // data/trellis.db (gitignored); override with TRELLIS_DB for scratch runs.
 
 import Database from 'better-sqlite3';
-import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { seedRelations, seedThoughts, seedWorkingSet } from '$lib/seed';
+import { seedPositions, seedRelations, seedThoughts } from '$lib/seed';
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS graphs (
@@ -60,12 +59,23 @@ CREATE TABLE IF NOT EXISTS working_sets (
   created_at INTEGER NOT NULL
 );
 
+-- Working sets are lenses over the whole-graph canvas: membership only.
+-- Layout lives in canvas_positions, one position per thought per graph.
 CREATE TABLE IF NOT EXISTS working_set_items (
   working_set_id TEXT NOT NULL REFERENCES working_sets(id),
   thought_id TEXT NOT NULL REFERENCES thoughts(id),
+  PRIMARY KEY (working_set_id, thought_id)
+);
+
+-- The graph's one canonical canvas layout. Still a projection (never a column
+-- on thoughts), but per-graph rather than per-working-set so spatial memory
+-- survives switching lenses.
+CREATE TABLE IF NOT EXISTS canvas_positions (
+  graph_id TEXT NOT NULL REFERENCES graphs(id),
+  thought_id TEXT NOT NULL REFERENCES thoughts(id),
   x REAL NOT NULL,
   y REAL NOT NULL,
-  PRIMARY KEY (working_set_id, thought_id)
+  PRIMARY KEY (graph_id, thought_id)
 );
 
 CREATE TABLE IF NOT EXISTS change_sets (
@@ -74,6 +84,7 @@ CREATE TABLE IF NOT EXISTS change_sets (
   status TEXT NOT NULL,
   summary TEXT NOT NULL,
   invoked_on TEXT NOT NULL,
+  consulted TEXT NOT NULL DEFAULT '[]',
   scratch_id TEXT,
   graph_id TEXT NOT NULL REFERENCES graphs(id),
   created_at INTEGER NOT NULL,
@@ -106,7 +117,7 @@ CREATE TABLE IF NOT EXISTS scratch_notes (
 
 -- Pins (Phase 6): per-graph attention state, not knowledge — which thoughts
 -- the person keeps returning to. Not a column on thoughts for the same reason
--- card coordinates live in working_set_items.
+-- card coordinates live in canvas_positions.
 CREATE TABLE IF NOT EXISTS pinned_thoughts (
   graph_id TEXT NOT NULL REFERENCES graphs(id),
   thought_id TEXT NOT NULL REFERENCES thoughts(id),
@@ -148,8 +159,86 @@ function open(): Database.Database {
 	migrateToMultipleWorkingSets(db);
 	migrateToMultipleGraphs(db);
 	migrateToPredictionEvidence(db);
+	migrateToWholeGraphCanvas(db);
+	migrateToConsultedColumn(db);
 	seedIfEmpty(db);
 	return db;
+}
+
+// Databases created before the whole-graph canvas keep coordinates on
+// working_set_items (per-set layouts). Move each graph's coordinates into
+// canvas_positions — the active set's layout wins where a thought appeared in
+// several sets — then rebuild working_set_items as membership only. Thoughts
+// never staged in any set get grid slots below everything placed so far.
+// Pre-migration undo snapshots are in the old shape; drop them rather than
+// restore garbage.
+function migrateToWholeGraphCanvas(db: Database.Database) {
+	const cols = db.pragma('table_info(working_set_items)') as { name: string }[];
+	if (!cols.some((c) => c.name === 'x')) return;
+	db.pragma('foreign_keys = OFF');
+	db.transaction(() => {
+		const insertPos = db.prepare(
+			'INSERT INTO canvas_positions (graph_id, thought_id, x, y) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING'
+		);
+		const graphs = db.prepare('SELECT id FROM graphs').all() as { id: string }[];
+		for (const g of graphs) {
+			const active = db
+				.prepare('SELECT value FROM meta WHERE key = ?')
+				.get(`active_working_set:${g.id}`) as { value: string } | undefined;
+			const sets = (
+				db
+					.prepare('SELECT id FROM working_sets WHERE graph_id = ? ORDER BY created_at, rowid')
+					.all(g.id) as { id: string }[]
+			).map((r) => r.id);
+			const ordered = active && sets.includes(active.value)
+				? [active.value, ...sets.filter((s) => s !== active.value)]
+				: sets;
+			for (const wsId of ordered) {
+				const items = db
+					.prepare('SELECT thought_id, x, y FROM working_set_items WHERE working_set_id = ?')
+					.all(wsId) as { thought_id: string; x: number; y: number }[];
+				for (const item of items) insertPos.run(g.id, item.thought_id, item.x, item.y);
+			}
+			const maxY = (
+				db
+					.prepare('SELECT COALESCE(MAX(y), -140) AS y FROM canvas_positions WHERE graph_id = ?')
+					.get(g.id) as { y: number }
+			).y;
+			const unplaced = db
+				.prepare(
+					`SELECT id FROM thoughts WHERE graph_id = ?
+					 AND id NOT IN (SELECT thought_id FROM canvas_positions WHERE graph_id = ?)
+					 ORDER BY created_at, rowid`
+				)
+				.all(g.id, g.id) as { id: string }[];
+			unplaced.forEach((t, i) =>
+				insertPos.run(g.id, t.id, 80 + (i % 7) * 320, maxY + 200 + Math.floor(i / 7) * 148)
+			);
+		}
+		db.exec(`
+			ALTER TABLE working_set_items RENAME TO working_set_items_old;
+			CREATE TABLE working_set_items (
+			  working_set_id TEXT NOT NULL REFERENCES working_sets(id),
+			  thought_id TEXT NOT NULL REFERENCES thoughts(id),
+			  PRIMARY KEY (working_set_id, thought_id)
+			);
+			INSERT INTO working_set_items (working_set_id, thought_id)
+			  SELECT working_set_id, thought_id FROM working_set_items_old;
+			DROP TABLE working_set_items_old;
+		`);
+		db.prepare(
+			"DELETE FROM meta WHERE key LIKE 'undo_snapshot%' OR key LIKE 'undo_label%'"
+		).run();
+	})();
+	db.pragma('foreign_keys = ON');
+}
+
+// Change sets gained a consulted column (thoughts pulled in by graph-wide
+// relevance search) when retrieval became disclosed rather than forbidden.
+function migrateToConsultedColumn(db: Database.Database) {
+	const cols = db.pragma('table_info(change_sets)') as { name: string }[];
+	if (!cols.some((c) => c.name === 'consulted'))
+		db.exec("ALTER TABLE change_sets ADD COLUMN consulted TEXT NOT NULL DEFAULT '[]'");
 }
 
 // Databases created before the prediction/evidence thought types lack the
@@ -247,31 +336,19 @@ export function activeGraphId(): string {
 	return first.id;
 }
 
-/** A graph's active working set, self-healing if the meta pointer is stale;
- *  a graph with no sets at all gets a fresh "Main". Defaults to the active graph. */
-export function activeWorkingSetId(graphId: string = activeGraphId()): string {
+/** A graph's active working set (lens), or null for the base state: the whole
+ *  graph, no lens. Self-healing if the meta pointer names a deleted set.
+ *  Defaults to the active graph. */
+export function activeWorkingSetId(graphId: string = activeGraphId()): string | null {
 	const key = `active_working_set:${graphId}`;
 	const row = db.prepare('SELECT value FROM meta WHERE key = ?').get(key) as
 		| { value: string }
 		| undefined;
-	if (row && db.prepare('SELECT 1 FROM working_sets WHERE id = ? AND graph_id = ?').get(row.value, graphId))
+	if (!row) return null;
+	if (db.prepare('SELECT 1 FROM working_sets WHERE id = ? AND graph_id = ?').get(row.value, graphId))
 		return row.value;
-	let first = db
-		.prepare('SELECT id FROM working_sets WHERE graph_id = ? ORDER BY created_at, rowid LIMIT 1')
-		.get(graphId) as { id: string } | undefined;
-	if (!first) {
-		first = { id: `ws-${crypto.randomUUID().slice(0, 8)}` };
-		db.prepare('INSERT INTO working_sets (id, name, graph_id, created_at) VALUES (?, ?, ?, ?)').run(
-			first.id,
-			'Main',
-			graphId,
-			Date.now()
-		);
-	}
-	db.prepare(
-		'INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
-	).run(key, first.id);
-	return first.id;
+	db.prepare('DELETE FROM meta WHERE key = ?').run(key);
+	return null;
 }
 
 function seedIfEmpty(db: Database.Database) {
@@ -293,8 +370,8 @@ function seedIfEmpty(db: Database.Database) {
 		`INSERT INTO relations (id, from_thought_id, to_thought_id, type, created_by, source_change_set_id, graph_id, created_at)
 		 VALUES (@id, @fromThoughtId, @toThoughtId, @type, @createdBy, NULL, 'g-main', @createdAt)`
 	);
-	const insertItem = db.prepare(
-		"INSERT INTO working_set_items (working_set_id, thought_id, x, y) VALUES ('ws-main', @thoughtId, @x, @y)"
+	const insertPosition = db.prepare(
+		"INSERT INTO canvas_positions (graph_id, thought_id, x, y) VALUES ('g-main', @thoughtId, @x, @y)"
 	);
 
 	db.transaction(() => {
@@ -307,15 +384,10 @@ function seedIfEmpty(db: Database.Database) {
 		}
 		for (const r of seedRelations) insertRelation.run(r);
 		db.prepare(
-			"INSERT INTO working_sets (id, name, graph_id, created_at) VALUES ('ws-main', 'Main', 'g-main', ?) ON CONFLICT(id) DO NOTHING"
-		).run(Date.now());
-		db.prepare(
 			"INSERT INTO meta (key, value) VALUES ('active_graph', 'g-main') ON CONFLICT(key) DO UPDATE SET value = excluded.value"
 		).run();
-		db.prepare(
-			"INSERT INTO meta (key, value) VALUES ('active_working_set:g-main', 'ws-main') ON CONFLICT(key) DO UPDATE SET value = excluded.value"
-		).run();
-		for (const item of seedWorkingSet) insertItem.run(item);
+		// No working sets: the base state is the whole graph on the canvas.
+		for (const item of seedPositions) insertPosition.run(item);
 	})();
 }
 

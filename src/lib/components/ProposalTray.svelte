@@ -140,6 +140,24 @@
 							using: {cs.invokedOn.map((id) => ws.thoughts[id]?.title ?? id).join(', ')}
 						</p>
 					{/if}
+					{#if cs.consulted.length > 0}
+						<!-- Graph-wide retrieval is disclosed, never invisible: exactly
+						     which thoughts the search added to the agent's context. -->
+						<details class="consulted">
+							<summary>consulted {cs.consulted.length} thought{cs.consulted.length === 1 ? '' : 's'} found across the graph</summary>
+							<ul>
+								{#each cs.consulted as cid (cid)}
+									<li>
+										<button
+											class="consulted-link"
+											title="Select this thought"
+											onclick={() => ws.select(cid)}
+										>{ws.thoughts[cid]?.title ?? cid}</button>
+									</li>
+								{/each}
+							</ul>
+						</details>
+					{/if}
 				</header>
 
 				<ul class="ops">
@@ -339,6 +357,48 @@
 		margin: 4px 0 0;
 		font-size: var(--fs-11);
 		color: var(--ink-quiet);
+	}
+	.consulted {
+		margin: 4px 0 0;
+		font-size: var(--fs-11);
+		color: var(--slate-ink);
+	}
+	.consulted summary {
+		cursor: pointer;
+		list-style: none;
+	}
+	.consulted summary::before {
+		content: '▸ ';
+	}
+	.consulted[open] summary::before {
+		content: '▾ ';
+	}
+	.consulted summary::-webkit-details-marker {
+		display: none;
+	}
+	.consulted ul {
+		list-style: none;
+		margin: 4px 0 0;
+		padding: 0 0 0 14px;
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+	.consulted-link {
+		font: inherit;
+		border: none;
+		background: none;
+		padding: 0;
+		color: inherit;
+		cursor: pointer;
+		text-align: left;
+		text-decoration: underline;
+		text-decoration-color: var(--card-border);
+		text-underline-offset: 2px;
+	}
+	.consulted-link:hover {
+		color: var(--blue);
+		text-decoration-color: var(--blue);
 	}
 	.ops {
 		list-style: none;

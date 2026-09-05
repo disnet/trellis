@@ -34,15 +34,29 @@
 
 	async function remove(id: string, name: string) {
 		const ok = await dialogs.confirm(
-			`Delete working set “${name}”? Thoughts and relations stay in the graph.`,
+			`Delete working set “${name}”? Every thought stays on the canvas.`,
 			'Delete set'
 		);
 		if (!ok) return;
 		await run(() => ws.deleteSet(id));
 	}
+
+	const totalThoughts = $derived(Object.keys(ws.thoughts).length);
 </script>
 
 <div class="tabs" role="tablist" aria-label="Working sets">
+	<div class="tab" class:active={!ws.lensActive}>
+		<button
+			class="tab-name"
+			role="tab"
+			aria-selected={!ws.lensActive}
+			title="The whole graph — no working set active"
+			onclick={() => run(() => ws.switchSet(null))}
+		>
+			All thoughts
+			<span class="count">{totalThoughts}</span>
+		</button>
+	</div>
 	{#each ws.workingSets as set (set.id)}
 		{@const active = set.id === ws.activeWorkingSetId}
 		{#if renamingId === set.id}
@@ -77,10 +91,10 @@
 					{set.name}
 					<span class="count">{set.size}</span>
 				</button>
-				{#if active && ws.workingSets.length > 1}
+				{#if active}
 					<button
 						class="close"
-						title="Delete this working set (thoughts stay in the graph)"
+						title="Delete this working set (every thought stays on the canvas)"
 						aria-label="Delete working set “{set.name}”"
 						onclick={() => remove(set.id, set.name)}
 					><Icon name="x" size="0.9em" /></button>
@@ -88,7 +102,11 @@
 			</div>
 		{/if}
 	{/each}
-	<button class="new-tab" title="New working set" onclick={() => run(() => ws.createSet())}>
+	<button
+		class="new-tab"
+		title="New working set — a focus for you and the agent; the canvas keeps every thought"
+		onclick={() => run(() => ws.createSet())}
+	>
 		+ New set
 	</button>
 </div>

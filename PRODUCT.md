@@ -29,14 +29,15 @@ The agent's response type is a change set, not a string. There is no chat surfac
 
 ## Capabilities and Constraints
 
-Shipped surfaces: canvas of draggable thought cards with typed rendered relations (two zoom levels), Scratch composer, Inspector (statement, relations, revision history, provenance, human revision), proposal tray (accept / edit-then-accept / reject, partial acceptance, dependency blocking with cascade rejection, undo of last applied change set), Outline projection, Browse and Library views, re-entry panel, pins with pinned rail, multiple working-set tabs, multiple isolated graphs with a switcher, model switcher, local-agent setup flow, appearance menu with font switching, JSON export, and web fetch/search for agent operations.
+Shipped surfaces: whole-graph infinite pan/zoom canvas of draggable thought cards with typed rendered relations (one canonical layout per graph, two zoom levels), working sets as optional lenses over that canvas (members highlighted, the rest dimmed; base state is "All thoughts", no lens), Scratch composer, Inspector (statement, relations, revision history, provenance, human revision), proposal tray (accept / edit-then-accept / reject, partial acceptance, dependency blocking with cascade rejection, undo of last applied change set, disclosed "consulted" list), Outline projection, Browse and Library views, re-entry panel, pins with pinned rail, multiple isolated graphs with a switcher, model switcher, local-agent setup flow, appearance menu with font switching, JSON export, and web fetch/search for agent operations.
 
-Agent operations: Decompose, Develop, Challenge, Connect — invoked on a selection; context assembly is deterministic (selection + working set + 1-hop neighborhood, nothing hidden). Output is validated server-side (allowed operations, referential integrity, dependency refs, text limits) with one corrective retry; every attempt is logged to `agent_calls` for evaluation.
+Agent operations: Decompose, Develop, Challenge, Connect — invoked on a selection; context assembly is deterministic (selection + active working set + 1-hop neighborhood; Connect/Challenge additionally run a deterministic graph-wide relevance search whose results are disclosed in the tray and recorded on the change set as `consulted` — retrieval is never invisible). Output is validated server-side (allowed operations, referential integrity, dependency refs, text limits) with one corrective retry; every attempt is logged to `agent_calls` for evaluation.
 
 Hard constraints future work must preserve:
 - Model output never mutates canonical graph state; applying a change set is an explicit user action.
 - Pending agent content must always be visibly distinguishable from accepted thought.
-- Card coordinates, collapsed state, and view layout belong to projections, never to thoughts or relations.
+- Card coordinates, collapsed state, and view layout belong to projections (the per-graph canvas layout, working-set membership), never to thoughts or relations.
+- Any graph-wide retrieval feeding an agent operation must be disclosed to the person (marked in context, recorded on the change set) — no invisible retrieval.
 - Working-set membership, pins, and other attention state are direct human actions — instant, never routed through the proposal tray.
 - The desktop app exposes no general-purpose shell commands to the page; CLI credentials stay managed by the CLIs.
 

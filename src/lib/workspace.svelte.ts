@@ -20,7 +20,6 @@ import {
 	type ThoughtStatus,
 	type ThoughtType,
 	type WorkingSetInfo,
-	type WorkingSetItem,
 	type WorkspaceState
 } from './types';
 
@@ -56,9 +55,13 @@ class Workspace {
 	activeGraphId = $state('');
 	thoughts = $state<Record<string, Thought>>({});
 	relations = $state<Relation[]>([]);
+	/** Whole-graph canvas layout: one position per thought. */
+	positions = $state<Record<string, GhostPosition>>({});
 	workingSets = $state<WorkingSetInfo[]>([]);
-	activeWorkingSetId = $state('');
-	workingSet = $state<WorkingSetItem[]>([]);
+	/** The active working set (lens), or null: the whole graph, no lens. */
+	activeWorkingSetId = $state<string | null>(null);
+	/** Member thought ids of the active working set (empty when none active). */
+	workingSet = $state<string[]>([]);
 	pinnedThoughtIds = $state<string[]>([]);
 	scratchNotes = $state<ScratchNote[]>([]);
 	scratchDraft = $state('');
@@ -117,6 +120,9 @@ class Workspace {
 		this.activeGraphId = s.activeGraphId;
 		this.thoughts = s.thoughts;
 		this.relations = s.relations;
+		const positions: Record<string, GhostPosition> = {};
+		for (const p of s.canvas) positions[p.thoughtId] = { x: p.x, y: p.y };
+		this.positions = positions;
 		this.workingSets = s.workingSets;
 		this.activeWorkingSetId = s.activeWorkingSetId;
 		this.workingSet = s.workingSet;
@@ -172,10 +178,8 @@ class Workspace {
 	private moveTimer: ReturnType<typeof setTimeout> | null = null;
 
 	moveCard(thoughtId: string, x: number, y: number) {
-		const item = this.workingSet.find((w) => w.thoughtId === thoughtId);
-		if (!item) return;
-		item.x = x;
-		item.y = y;
+		if (!this.positions[thoughtId]) return;
+		this.positions[thoughtId] = { x, y };
 		this.pendingMoves.set(thoughtId, { x, y });
 		if (this.moveTimer) clearTimeout(this.moveTimer);
 		this.moveTimer = setTimeout(() => void this.flushMoves(), 400);
@@ -193,7 +197,7 @@ class Workspace {
 		}));
 		this.pendingMoves.clear();
 		try {
-			await fetch('/api/workingset', {
+			await fetch('/api/canvas', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ items })
@@ -204,11 +208,17 @@ class Workspace {
 	}
 
 	// --- working-set membership (Phase 3) ---
-	// Membership is transient and binary: adding or removing never mutates the
-	// durable graph, so it applies immediately, not through the proposal tray.
+	// Working sets are lenses over the whole-graph canvas: membership is
+	// transient and binary, never mutates the durable graph or its layout, and
+	// applies immediately, not through the proposal tray.
+
+	/** Whether a working set (lens) is active — null means the whole graph. */
+	get lensActive(): boolean {
+		return this.activeWorkingSetId !== null;
+	}
 
 	inWorkingSet(thoughtId: string): boolean {
-		return this.workingSet.some((w) => w.thoughtId === thoughtId);
+		return this.workingSet.includes(thoughtId);
 	}
 
 	/** First position not overlapping `taken`, scanning near `near` first, else a grid. */
@@ -242,29 +252,12 @@ class Workspace {
 		return { x: 80, y: 60 };
 	}
 
-	/** Add existing thoughts to the working set, placed near `near` when given. */
-	async addToSet(thoughtIds: string[], near?: GhostPosition): Promise<string | null> {
+	/** Add existing thoughts to the working set — membership only; the cards
+	 *  stay where they already live on the canvas. */
+	async addToSet(thoughtIds: string[]): Promise<string | null> {
 		const ids = thoughtIds.filter((id) => id in this.thoughts && !this.inWorkingSet(id));
 		if (ids.length === 0) return null;
-		const taken: GhostPosition[] = [
-			...this.workingSet.map((w) => ({ x: w.x, y: w.y })),
-			...Object.values(this.ghostPositions)
-		];
-		const items = ids.map((thoughtId) => {
-			const pos = this.freePosition(taken, near);
-			taken.push(pos);
-			return { thoughtId, ...pos };
-		});
-		return this.post('/api/workingset', { action: 'add', items });
-	}
-
-	/** Add one thought at an exact position (e.g. where its surfaced ghost sits). */
-	async addToSetAt(thoughtId: string, pos: GhostPosition): Promise<string | null> {
-		if (!(thoughtId in this.thoughts) || this.inWorkingSet(thoughtId)) return null;
-		return this.post('/api/workingset', {
-			action: 'add',
-			items: [{ thoughtId, x: pos.x, y: pos.y }]
-		});
+		return this.post('/api/workingset', { action: 'add', thoughtIds: ids });
 	}
 
 	/** Drop a thought from the working set; the durable graph is untouched. */
@@ -296,7 +289,8 @@ class Workspace {
 		return err;
 	}
 
-	async switchSet(workingSetId: string): Promise<string | null> {
+	/** Change which lens is active; null returns to the whole-graph base state. */
+	async switchSet(workingSetId: string | null): Promise<string | null> {
 		if (workingSetId === this.activeWorkingSetId) return null;
 		const err = await this.post('/api/workingset', { action: 'switch', workingSetId });
 		if (!err) this.selectedIds = [];
@@ -320,7 +314,7 @@ class Workspace {
 		const err = await this.post('/api/workingset', { action: 'clear' });
 		if (!err) {
 			this.selectedIds = [];
-			this.notice = 'Working set emptied. The graph is untouched — search to rebuild.';
+			this.notice = 'Working set emptied. Every thought is still on the canvas.';
 		}
 		return err;
 	}
@@ -378,14 +372,15 @@ class Workspace {
 		return this.post('/api/pins', { action, thoughtId });
 	}
 
-	/** Spawn a new working set around a thought and its 1-hop neighbors. */
+	/** Spawn a new working set holding a thought and its 1-hop neighbors. The
+	 *  cards light up where they already live — layout never changes. */
 	async openNeighborhood(thoughtId: string): Promise<string | null> {
 		const title = this.thoughts[thoughtId]?.title ?? thoughtId;
 		const err = await this.post('/api/workingset', { action: 'neighborhood', thoughtId });
 		if (!err) {
 			this.selectedIds = [thoughtId];
 			const n = this.workingSet.length - 1;
-			this.notice = `Opened “${title}” and ${n} neighbor${n === 1 ? '' : 's'} in a new working set.`;
+			this.notice = `Focused “${title}” and ${n} neighbor${n === 1 ? '' : 's'} in a new working set.`;
 		}
 		return err;
 	}
@@ -401,13 +396,13 @@ class Workspace {
 		return [...out];
 	}
 
-	/** Pull a thought's 1-hop neighbors onto the canvas, near its card. */
+	/** Pull a thought's 1-hop neighbors into the working set. */
 	async pullNeighbors(thoughtId: string): Promise<string | null> {
 		const ids = this.neighborIds([thoughtId]);
 		if (ids.length === 0) {
 			return 'No neighbors outside the working set.';
 		}
-		const err = await this.addToSet(ids, this.position(thoughtId));
+		const err = await this.addToSet(ids);
 		if (!err)
 			this.notice = `Added ${ids.length} neighbor${ids.length === 1 ? '' : 's'} to the working set.`;
 		return err;
@@ -437,7 +432,7 @@ class Workspace {
 	}
 
 	position(thoughtId: string): GhostPosition | undefined {
-		return this.workingSet.find((w) => w.thoughtId === thoughtId);
+		return this.positions[thoughtId];
 	}
 
 	// --- invoking agent operations ---
@@ -471,28 +466,17 @@ class Workspace {
 		}
 	}
 
-	/** Cards a pending change set will add to the canvas: new thoughts plus
-	 *  existing off-canvas thoughts referenced by proposed relations. */
-	previewRefs(cs: ChangeSet): { ref: string; existingId?: string }[] {
-		const out: { ref: string; existingId?: string }[] = [];
+	/** Cards a pending change set will add to the canvas: proposed new thoughts.
+	 *  Existing thoughts are always on the whole-graph canvas already — proposed
+	 *  relations to them draw straight to the real card. */
+	previewRefs(cs: ChangeSet): { ref: string }[] {
+		const out: { ref: string }[] = [];
 		const seen = new Set<string>();
 		for (const op of cs.operations) {
 			const p = effectivePayload(op);
-			if (p.op === 'create_thought') {
-				if (!seen.has(op.clientRef)) {
-					seen.add(op.clientRef);
-					out.push({ ref: op.clientRef });
-				}
-			} else if (p.op === 'add_relation') {
-				if (op.decision === 'rejected') continue;
-				for (const end of [p.from, p.to]) {
-					const isExisting = end in this.thoughts;
-					const onCanvas = isExisting && this.workingSet.some((w) => w.thoughtId === end);
-					if (isExisting && !onCanvas && !seen.has(end)) {
-						seen.add(end);
-						out.push({ ref: end, existingId: end });
-					}
-				}
+			if (p.op === 'create_thought' && !seen.has(op.clientRef)) {
+				seen.add(op.clientRef);
+				out.push({ ref: op.clientRef });
 			}
 		}
 		return out;
@@ -503,9 +487,16 @@ class Workspace {
 			({ ref }) => !this.ghostPositions[`${cs.id}:${ref}`]
 		);
 		if (missing.length === 0) return;
-		const maxX = Math.max(0, ...this.workingSet.map((w) => w.x));
+		// Proposals appear at the edge of what they were invoked on: just right
+		// of the selection's cards, falling back to the canvas as a whole.
+		const anchors = cs.invokedOn
+			.map((id) => this.positions[id])
+			.filter((p): p is GhostPosition => p !== undefined);
+		const pool = anchors.length > 0 ? anchors : Object.values(this.positions);
+		const maxX = Math.max(0, ...pool.map((p) => p.x));
+		const baseY = anchors.length > 0 ? Math.min(...anchors.map((p) => p.y)) : 60;
 		const baseX = maxX + CARD_W + 80;
-		let y = 60;
+		let y = baseY;
 		const taken = new Set(
 			Object.entries(this.ghostPositions)
 				.filter(([key]) => key.startsWith(`${cs.id}:`))
@@ -599,8 +590,9 @@ class Workspace {
 
 	// --- manual creation (from the composer) ---
 
-	/** Create a human-authored thought directly in the graph; it joins the
-	 *  working set at a free position and becomes the selection. */
+	/** Create a human-authored thought directly in the graph; it lands on the
+	 *  canvas at a free position (joining the active lens, if any) and becomes
+	 *  the selection. */
 	async createThought(fields: {
 		type: ThoughtType;
 		status: ThoughtStatus;
@@ -610,7 +602,7 @@ class Workspace {
 		source?: string | null;
 	}): Promise<string | null> {
 		const taken: GhostPosition[] = [
-			...this.workingSet.map((w) => ({ x: w.x, y: w.y })),
+			...Object.values(this.positions),
 			...Object.values(this.ghostPositions)
 		];
 		const pos = this.freePosition(taken);
