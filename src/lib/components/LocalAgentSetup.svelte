@@ -81,17 +81,19 @@
 </div>
 
 <style>
-  .setup { border-top: 1px solid #d5d0c4; margin-top: 16px; padding-top: 16px; }
-  h3 { font-size: var(--fs-14, 14px); margin: 0 0 8px; }
+  .setup { border-top: 1px solid var(--control-border); margin-top: 16px; padding-top: 16px; }
+  h3 { font-size: var(--fs-13); margin: 0 0 8px; }
   h4 { font-size: var(--fs-12); margin: 0; }
   p, small, summary, label, span { font-size: var(--fs-11-5); line-height: 1.5; }
-  p, small { color: #756d5f; }
-  section { border-top: 1px solid #e5e0d5; padding: 16px 0 0; margin-top: 16px; }
+  p, small { color: var(--ink-muted); }
+  section { border-top: 1px solid var(--divider); padding: 16px 0 0; margin-top: 16px; }
   .heading, .actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-  .heading span { color: #756d5f; } .heading .ready { color: #476545; }
-  button, input { font: inherit; font-size: var(--fs-12); color: #4d473c; background: #fffdf8; border: 1px solid #c9c4b8; border-radius: 6px; padding: 6px 8px; }
-  button, summary { cursor: pointer; } button:disabled { opacity: .5; cursor: default; }
-  a { color: #476545; } code { display: block; overflow-wrap: anywhere; font-size: 11px; padding: 8px; background: #f1eee6; }
+  .heading span { color: var(--ink-muted); } .heading .ready { color: var(--moss-ink); }
+  button, input { font: inherit; font-size: var(--fs-12); color: var(--ink-soft); background: var(--paper-raised); border: 1px solid var(--card-border); border-radius: 6px; padding: 6px 8px; }
+  button, summary { cursor: pointer; } button:hover:not(:disabled) { border-color: var(--blue); color: var(--blue); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  a { color: var(--moss-ink); text-underline-offset: 2px; } a:hover { color: var(--blue); }
+  code { display: block; overflow-wrap: anywhere; font-size: var(--fs-11); border-radius: 4px; padding: 8px; background: var(--inset-fill); color: var(--ink-soft); }
   details { margin: 12px 0; } label { display: grid; gap: 4px; margin-top: 8px; }
   input { width: 100%; box-sizing: border-box; } small { display: block; margin: 6px 0; } .path { overflow-wrap: anywhere; }
 </style>

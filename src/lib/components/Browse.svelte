@@ -4,8 +4,10 @@
 	// so it can be sorted, filtered, and staged onto the canvas. Read-only over
 	// the durable graph; its verbs are membership only (add to set, promote a
 	// filter to a new working set).
+	import { dialogs } from '$lib/dialogs.svelte';
 	import { workspace } from '$lib/workspace.svelte';
 	import { effectivePayload, type Thought, type ThoughtStatus, type ThoughtType } from '$lib/types';
+	import Icon from './Icon.svelte';
 
 	const ws = workspace;
 
@@ -126,7 +128,7 @@
 		},
 		{
 			key: 'attention',
-			label: '⚠ Needs attention',
+			label: 'Needs attention',
 			hint: 'Contested and tentative thoughts',
 			apply: () => {
 				resetFilters();
@@ -136,7 +138,7 @@
 		},
 		{
 			key: 'central',
-			label: '◉ Most central',
+			label: 'Most central',
 			hint: 'Most-connected thoughts first',
 			apply: () => {
 				resetFilters();
@@ -149,7 +151,7 @@
 		},
 		{
 			key: 'orphans',
-			label: '◌ Orphans',
+			label: 'Orphans',
 			hint: 'Thoughts with no relations at all',
 			apply: () => {
 				resetFilters();
@@ -201,17 +203,19 @@
 		const q = query.trim();
 		if (q) return q;
 		const preset = presets.find((p) => p.key !== 'all' && p.active());
-		if (preset) return preset.label.replace(/^\S+\s/, '').replace(/^./, (c) => c.toUpperCase());
+		if (preset) return preset.label;
 		return 'From browse';
 	}
 
 	async function promote() {
 		const ids = rows.map((t) => t.id);
-		if (
-			ids.length > 30 &&
-			!confirm(`Open a new working set with all ${ids.length} matching thoughts?`)
-		)
-			return;
+		if (ids.length > 30) {
+			const ok = await dialogs.confirm(
+				`Open a new working set with all ${ids.length} matching thoughts?`,
+				'Open set'
+			);
+			if (!ok) return;
+		}
 		await run(() => ws.createSetFrom(promoteName(), ids));
 	}
 </script>
@@ -269,7 +273,7 @@
 					title="Add the selected thoughts to the active working set"
 					onclick={() => run(() => ws.addToSet(stageable))}
 				>
-					＋ Add {stageable.length} selected to set
+					+ Add {stageable.length} selected to set
 				</button>
 			{/if}
 			<button
@@ -278,7 +282,7 @@
 				title="Open a new working set containing every thought matching the current filter"
 				onclick={promote}
 			>
-				⌗ New set from results
+				New set from results
 			</button>
 		</div>
 	</header>
@@ -296,7 +300,9 @@
 							<th class="col-{h.key}" aria-sort={sortKey === h.key ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined}>
 								<button class="sort" onclick={() => sortBy(h.key, h.defaultDir)}>
 									{h.label}
-									<span class="dir">{sortKey === h.key ? (sortDir === 'asc' ? '▲' : '▼') : ''}</span>
+									{#if sortKey === h.key}
+										<Icon name={sortDir === 'asc' ? 'caret-up' : 'caret-down'} size="0.85em" />
+									{/if}
 								</button>
 							</th>
 						{/each}
@@ -355,15 +361,15 @@
 		height: 100%;
 		display: flex;
 		flex-direction: column;
-		background: #f6f3ec;
+		background: var(--paper);
 	}
 	.controls {
 		display: flex;
 		flex-direction: column;
 		gap: 8px;
 		padding: 10px 14px;
-		background: #fbf9f3;
-		border-bottom: 1px solid #e0dbcf;
+		background: var(--paper-panel);
+		border-bottom: 1px solid var(--hairline);
 	}
 	.row {
 		display: flex;
@@ -380,22 +386,22 @@
 		font: inherit;
 		font-size: var(--fs-11-5);
 		font-weight: 600;
-		border: 1px solid #d5d0c4;
-		background: #fff;
+		border: 1px solid var(--control-border);
+		background: var(--card-white);
 		border-radius: 999px;
 		padding: 3px 11px;
 		cursor: pointer;
-		color: #4d473c;
+		color: var(--ink-soft);
 		white-space: nowrap;
 	}
 	.chip:hover {
-		border-color: #3b5bdb;
-		color: #3b5bdb;
+		border-color: var(--blue);
+		color: var(--blue);
 	}
 	.chip.active {
-		border-color: #3b5bdb;
-		background: #e9edfb;
-		color: #2c47b8;
+		border-color: var(--blue);
+		background: var(--blue-wash);
+		color: var(--blue-deep);
 	}
 	input[type='search'] {
 		flex: 1;
@@ -403,16 +409,16 @@
 		max-width: 380px;
 		margin-left: auto;
 		box-sizing: border-box;
-		border: 1px solid #d5d0c4;
+		border: 1px solid var(--control-border);
 		border-radius: 6px;
 		padding: 5px 8px;
 		font: inherit;
 		font-size: var(--fs-13);
-		background: #fffdf8;
+		background: var(--paper-raised);
 	}
 	input[type='search']:focus {
-		outline: 2px solid #3b5bdb33;
-		border-color: #3b5bdb;
+		outline: 2px solid var(--focus-glow);
+		border-color: var(--blue);
 	}
 	.facets {
 		display: flex;
@@ -422,15 +428,15 @@
 	.facets select {
 		font: inherit;
 		font-size: var(--fs-11-5);
-		border: 1px solid #d5d0c4;
+		border: 1px solid var(--control-border);
 		border-radius: 6px;
 		padding: 3px 6px;
-		background: #fffdf8;
-		color: #4d473c;
+		background: var(--paper-raised);
+		color: var(--ink-soft);
 	}
 	.count {
 		font-size: var(--fs-11-5);
-		color: #8a8375;
+		color: var(--ink-quiet);
 		margin-left: auto;
 		white-space: nowrap;
 	}
@@ -438,37 +444,37 @@
 		font: inherit;
 		font-size: var(--fs-12);
 		font-weight: 600;
-		border: 1px solid #c9c4b8;
-		background: #fff;
+		border: 1px solid var(--card-border);
+		background: var(--card-white);
 		border-radius: 6px;
 		padding: 4px 10px;
 		cursor: pointer;
-		color: #4d473c;
+		color: var(--ink-soft);
 		white-space: nowrap;
 	}
 	.action:hover:not(:disabled) {
-		border-color: #3b5bdb;
-		color: #3b5bdb;
+		border-color: var(--blue);
+		color: var(--blue);
 	}
 	.action:disabled {
 		opacity: 0.45;
 		cursor: not-allowed;
 	}
 	.action.promote {
-		border-color: #3d5537;
-		color: #3d5537;
+		border-color: var(--moss-ink);
+		color: var(--moss-ink);
 	}
 	.action.promote:hover:not(:disabled) {
-		background: #e3ecdf;
-		border-color: #3d5537;
-		color: #3d5537;
+		background: var(--moss);
+		border-color: var(--moss-ink);
+		color: var(--moss-ink);
 	}
 	.empty {
 		flex: 1;
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		color: #8a8375;
+		color: var(--ink-quiet);
 		font-size: var(--fs-13);
 	}
 	.table-wrap {
@@ -485,8 +491,8 @@
 		position: sticky;
 		top: 0;
 		z-index: 1;
-		background: #f1ede2;
-		border-bottom: 1px solid #d5d0c4;
+		background: var(--inset-fill);
+		border-bottom: 1px solid var(--control-border);
 		text-align: left;
 		padding: 0;
 	}
@@ -496,7 +502,7 @@
 		font-weight: 700;
 		text-transform: uppercase;
 		letter-spacing: 0.07em;
-		color: #6d675c;
+		color: var(--ink-muted);
 		border: none;
 		background: none;
 		padding: 7px 10px;
@@ -506,22 +512,19 @@
 		white-space: nowrap;
 	}
 	.sort:hover {
-		color: #3b5bdb;
-	}
-	.dir {
-		font-size: var(--fs-9);
+		color: var(--blue);
 	}
 	tbody tr {
-		background: #fffdf8;
-		border-bottom: 1px solid #eae5d9;
+		background: var(--paper-raised);
+		border-bottom: 1px solid var(--divider);
 		cursor: pointer;
 	}
 	tbody tr:hover {
-		background: #fdf9ef;
+		background: var(--paper);
 	}
 	tbody tr.selected {
-		background: #e9edfb;
-		box-shadow: inset 3px 0 0 #3b5bdb;
+		background: var(--blue-wash);
+		box-shadow: inset 3px 0 0 var(--blue);
 	}
 	td {
 		padding: 6px 10px;
@@ -537,11 +540,11 @@
 	}
 	.col-degree {
 		text-align: right;
-		color: #6d675c;
+		color: var(--ink-muted);
 		font-variant-numeric: tabular-nums;
 	}
 	.col-updated {
-		color: #8a8375;
+		color: var(--ink-quiet);
 		font-size: var(--fs-11-5);
 	}
 	.type {
@@ -551,32 +554,32 @@
 		font-weight: 700;
 		padding: 1px 5px;
 		border-radius: 4px;
-		background: #eee9dd;
-		color: #5a523f;
+		background: var(--chip-neutral);
+		color: var(--ink-faded);
 		white-space: nowrap;
 	}
-	.type-claim { background: #e3ecdf; color: #3d5537; }
-	.type-question { background: #e5e1f2; color: #4a4174; }
-	.type-concept { background: #dfe9ef; color: #35586b; }
-	.type-example { background: #f2e6df; color: #6b4a35; }
-	.type-prediction { background: #f2dfe7; color: #6b3550; }
-	.type-evidence { background: #ece5c8; color: #635417; }
+	.type-claim { background: var(--moss); color: var(--moss-ink); }
+	.type-question { background: var(--violet); color: var(--violet-ink); }
+	.type-concept { background: var(--slate); color: var(--slate-ink); }
+	.type-example { background: var(--clay); color: var(--clay-ink); }
+	.type-prediction { background: var(--plum); color: var(--plum-ink); }
+	.type-evidence { background: var(--ochre); color: var(--ochre-ink); }
 	.title {
 		font-weight: 600;
-		color: #2c2921;
+		color: var(--ink);
 		line-height: 1.3;
 	}
 	.pin {
 		font-size: var(--fs-11);
-		color: #8a6a1f;
+		color: var(--gold-ink);
 	}
 	.revision {
 		font-weight: 700;
-		color: #8a6a1f;
+		color: var(--gold-ink);
 	}
 	.statement {
 		margin: 4px 0 0;
-		color: #4d473c;
+		color: var(--ink-soft);
 		font-weight: 400;
 		line-height: 1.4;
 		font-size: var(--fs-12);
@@ -584,16 +587,16 @@
 	}
 	.status {
 		font-size: var(--fs-10);
-		border: 1px solid #d5d0c4;
+		border: 1px solid var(--control-border);
 		border-radius: 999px;
 		padding: 1px 7px;
-		color: #5a523f;
-		background: #faf7f0;
+		color: var(--ink-faded);
+		background: var(--pill-fill);
 	}
 	.in-set {
 		font-size: var(--fs-10);
-		color: #3d5537;
-		background: #e3ecdf;
+		color: var(--moss-ink);
+		background: var(--moss);
 		border-radius: 999px;
 		padding: 1px 7px;
 		white-space: nowrap;
@@ -602,17 +605,17 @@
 		font: inherit;
 		font-size: var(--fs-11);
 		font-weight: 600;
-		border: 1px solid #c9c4b8;
-		background: #fff;
+		border: 1px solid var(--card-border);
+		background: var(--card-white);
 		border-radius: 999px;
 		padding: 2px 9px;
 		cursor: pointer;
-		color: #4d473c;
+		color: var(--ink-soft);
 		white-space: nowrap;
 	}
 	.add:hover {
-		border-color: #3b5bdb;
-		color: #3b5bdb;
+		border-color: var(--blue);
+		color: var(--blue);
 	}
 	.visually-hidden {
 		position: absolute;

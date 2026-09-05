@@ -312,7 +312,7 @@
 	.outline {
 		height: 100%;
 		overflow-y: auto;
-		background: #f6f3ec;
+		background: var(--paper);
 	}
 	.inner {
 		max-width: 720px;
@@ -327,7 +327,7 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		color: #8a8375;
+		color: var(--ink-quiet);
 		font-size: var(--fs-13);
 	}
 	h2 {
@@ -339,25 +339,25 @@
 		font-weight: 700;
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
-		color: #6d675c;
+		color: var(--ink-muted);
 	}
 	.count {
 		font-size: var(--fs-11);
 		font-weight: 600;
-		color: #8a8375;
+		color: var(--ink-quiet);
 	}
 	.type {
 		padding: 1px 6px;
 		border-radius: 4px;
-		background: #eee9dd;
-		color: #5a523f;
+		background: var(--chip-neutral);
+		color: var(--ink-faded);
 	}
-	.type-claim { background: #e3ecdf; color: #3d5537; }
-	.type-question { background: #e5e1f2; color: #4a4174; }
-	.type-concept { background: #dfe9ef; color: #35586b; }
-	.type-example { background: #f2e6df; color: #6b4a35; }
-	.type-prediction { background: #f2dfe7; color: #6b3550; }
-	.type-evidence { background: #ece5c8; color: #635417; }
+	.type-claim { background: var(--moss); color: var(--moss-ink); }
+	.type-question { background: var(--violet); color: var(--violet-ink); }
+	.type-concept { background: var(--slate); color: var(--slate-ink); }
+	.type-example { background: var(--clay); color: var(--clay-ink); }
+	.type-prediction { background: var(--plum); color: var(--plum-ink); }
+	.type-evidence { background: var(--ochre); color: var(--ochre-ink); }
 	.rows {
 		list-style: none;
 		margin: 0;
@@ -367,8 +367,8 @@
 		gap: 8px;
 	}
 	.row {
-		background: #fff;
-		border: 1.5px solid #c9c4b8;
+		background: var(--card-white);
+		border: 1.5px solid var(--card-border);
 		border-radius: 8px;
 		padding: 8px 10px;
 		font-size: var(--fs-13);
@@ -377,22 +377,24 @@
 		cursor: pointer;
 	}
 	.row.selectable:hover {
-		border-color: #3b5bdb;
+		border-color: var(--blue);
 	}
 	.row.selected {
-		border-color: #3b5bdb;
-		border-width: 2px;
-		box-shadow: 0 0 0 3px rgba(59, 91, 219, 0.18);
+		border-color: var(--blue);
+		/* Border width stays fixed so selecting never reflows the row. */
+		box-shadow:
+			inset 0 0 0 0.5px var(--blue),
+			var(--ring-selection);
 	}
 	.row.proposed {
 		border-style: dashed;
-		border-color: #b08a3e;
-		background: #fdf8ec;
+		border-color: var(--gold);
+		background: var(--parchment);
 	}
 	.row.surfaced {
 		border-style: dotted;
-		border-color: #6b7f8a;
-		background: #f0f4f6;
+		border-color: var(--surfaced-slate);
+		background: var(--surfaced-fill);
 	}
 	.head {
 		display: flex;
@@ -402,33 +404,33 @@
 	.title {
 		font-weight: 600;
 		line-height: 1.25;
-		color: #2c2921;
+		color: var(--ink);
 		flex: 1;
 	}
 	.badge {
 		font-size: var(--fs-10);
 		white-space: nowrap;
-		color: #6d675c;
+		color: var(--ink-muted);
 	}
-	.proposed-badge { color: #8a6a1f; font-weight: 700; }
-	.surfaced-badge { color: #4a616f; font-weight: 600; }
-	.revision-badge { color: #8a6a1f; font-weight: 700; }
+	.proposed-badge { color: var(--gold-ink); font-weight: 700; }
+	.surfaced-badge { color: var(--slate-ink); font-weight: 600; }
+	.revision-badge { color: var(--gold-ink); font-weight: 700; }
 	.pin {
 		font-size: var(--fs-11);
-		color: #8a6a1f;
+		color: var(--gold-ink);
 	}
 	.status {
 		font-size: var(--fs-10);
-		border: 1px solid #d5d0c4;
+		border: 1px solid var(--control-border);
 		border-radius: 999px;
 		padding: 1px 7px;
-		color: #5a523f;
-		background: #faf7f0;
+		color: var(--ink-faded);
+		background: var(--pill-fill);
 		white-space: nowrap;
 	}
 	.statement {
 		margin: 6px 0 0;
-		color: #4d473c;
+		color: var(--ink-soft);
 		line-height: 1.4;
 		font-size: var(--fs-12);
 	}
@@ -436,7 +438,7 @@
 		list-style: none;
 		margin: 6px 0 0;
 		padding: 4px 0 0;
-		border-top: 1px solid #eae5d9;
+		border-top: 1px solid var(--divider);
 		display: flex;
 		flex-direction: column;
 		gap: 2px;
@@ -446,10 +448,10 @@
 		align-items: baseline;
 		gap: 5px;
 		font-size: var(--fs-11);
-		color: #6d675c;
+		color: var(--ink-muted);
 	}
 	.ref.proposed {
-		color: #7a5c15;
+		color: var(--gold-deep);
 	}
 	.dir {
 		font-size: var(--fs-11);
@@ -463,26 +465,26 @@
 		border: none;
 		background: none;
 		padding: 0;
-		color: #4d473c;
+		color: var(--ink-soft);
 		cursor: pointer;
 		text-align: left;
 		text-decoration: underline;
-		text-decoration-color: #c9c4b8;
+		text-decoration-color: var(--card-border);
 		text-underline-offset: 2px;
 	}
 	.ref-target:hover {
-		color: #3b5bdb;
-		text-decoration-color: #3b5bdb;
+		color: var(--blue);
+		text-decoration-color: var(--blue);
 	}
 	.ref-target.plain {
 		cursor: default;
 		text-decoration: none;
 	}
 	.ref.proposed .ref-target {
-		color: #7a5c15;
+		color: var(--gold-deep);
 	}
 	.ref-mark {
 		font-weight: 700;
-		color: #8a6a1f;
+		color: var(--gold-ink);
 	}
 </style>

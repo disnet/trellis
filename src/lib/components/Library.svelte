@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { workspace } from '$lib/workspace.svelte';
+	import Icon from './Icon.svelte';
 
 	const ws = workspace;
 
@@ -58,7 +59,7 @@
 							title="Unpin"
 							aria-label="Unpin “{t.title}”"
 							onclick={() => run(() => ws.togglePin(t.id))}
-						>✕</button>
+						><Icon name="x" size="0.85em" /></button>
 					</li>
 				{/each}
 			</ul>
@@ -112,12 +113,12 @@
 		font-size: var(--fs-13);
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
-		color: #6d675c;
+		color: var(--ink-muted);
 	}
 	.hint {
 		margin: 0;
 		font-size: var(--fs-12);
-		color: #8a8375;
+		color: var(--ink-quiet);
 		line-height: 1.4;
 	}
 	.hint.small {
@@ -126,20 +127,20 @@
 	input {
 		width: 100%;
 		box-sizing: border-box;
-		border: 1px solid #d5d0c4;
+		border: 1px solid var(--control-border);
 		border-radius: 6px;
 		padding: 6px 8px;
 		font: inherit;
 		font-size: var(--fs-13);
-		background: #fffdf8;
+		background: var(--paper-raised);
 	}
 	input:focus {
-		outline: 2px solid #3b5bdb33;
-		border-color: #3b5bdb;
+		outline: 2px solid var(--focus-glow);
+		border-color: var(--blue);
 	}
 	.pinned-rail {
-		border: 1px solid #dcd3bd;
-		background: #faf6ea;
+		border: 1px solid var(--pin-border);
+		background: var(--pin-fill);
 		border-radius: 6px;
 		padding: 6px 8px;
 	}
@@ -148,7 +149,7 @@
 		font-size: var(--fs-10);
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
-		color: #8a6a1f;
+		color: var(--gold-ink);
 	}
 	.pins {
 		list-style: none;
@@ -172,7 +173,7 @@
 		font: inherit;
 		font-size: var(--fs-12);
 		font-weight: 600;
-		color: #4d473c;
+		color: var(--ink-soft);
 		text-align: left;
 		cursor: pointer;
 		flex: 1;
@@ -183,39 +184,39 @@
 		line-height: 1.35;
 	}
 	.pin-title:hover {
-		color: #3b5bdb;
+		color: var(--blue);
 	}
 	.pin-open {
 		font: inherit;
 		font-size: var(--fs-10);
 		font-weight: 600;
-		border: 1px solid #c9c4b8;
-		background: #fff;
+		border: 1px solid var(--card-border);
+		background: var(--card-white);
 		border-radius: 999px;
 		padding: 1px 7px;
 		cursor: pointer;
-		color: #4d473c;
+		color: var(--ink-soft);
 		white-space: nowrap;
 	}
 	.pin-open:hover {
-		border-color: #3b5bdb;
-		color: #3b5bdb;
+		border-color: var(--blue);
+		color: var(--blue);
 	}
 	.unpin {
 		border: none;
 		background: none;
 		padding: 0 2px;
 		font-size: var(--fs-10);
-		color: #a89f8d;
+		color: var(--edge-ink);
 		cursor: pointer;
 		line-height: 1;
 	}
 	.unpin:hover {
-		color: #8a3a2a;
+		color: var(--rust);
 	}
 	.pin-mark {
 		font-size: var(--fs-11);
-		color: #8a6a1f;
+		color: var(--gold-ink);
 	}
 	.results {
 		list-style: none;
@@ -229,8 +230,8 @@
 		overflow-y: auto;
 	}
 	.results li {
-		background: #fffdf8;
-		border: 1px solid #e0dbcf;
+		background: var(--paper-raised);
+		border: 1px solid var(--hairline);
 		border-radius: 6px;
 		padding: 6px 8px;
 		display: flex;
@@ -245,7 +246,7 @@
 	.title {
 		font-size: var(--fs-12);
 		font-weight: 600;
-		color: #2c2921;
+		color: var(--ink);
 		line-height: 1.3;
 	}
 	.type {
@@ -255,16 +256,16 @@
 		font-weight: 700;
 		padding: 1px 5px;
 		border-radius: 4px;
-		background: #eee9dd;
-		color: #5a523f;
+		background: var(--chip-neutral);
+		color: var(--ink-faded);
 		white-space: nowrap;
 	}
-	.type-claim { background: #e3ecdf; color: #3d5537; }
-	.type-question { background: #e5e1f2; color: #4a4174; }
-	.type-concept { background: #dfe9ef; color: #35586b; }
-	.type-example { background: #f2e6df; color: #6b4a35; }
-	.type-prediction { background: #f2dfe7; color: #6b3550; }
-	.type-evidence { background: #ece5c8; color: #635417; }
+	.type-claim { background: var(--moss); color: var(--moss-ink); }
+	.type-question { background: var(--violet); color: var(--violet-ink); }
+	.type-concept { background: var(--slate); color: var(--slate-ink); }
+	.type-example { background: var(--clay); color: var(--clay-ink); }
+	.type-prediction { background: var(--plum); color: var(--plum-ink); }
+	.type-evidence { background: var(--ochre); color: var(--ochre-ink); }
 	.result-actions {
 		display: flex;
 		gap: 8px;
@@ -272,13 +273,13 @@
 	}
 	.status {
 		font-size: var(--fs-10);
-		color: #8a8375;
+		color: var(--ink-quiet);
 		flex: 1;
 	}
 	.in-set {
 		font-size: var(--fs-10);
-		color: #3d5537;
-		background: #e3ecdf;
+		color: var(--moss-ink);
+		background: var(--moss);
 		border-radius: 999px;
 		padding: 1px 7px;
 		white-space: nowrap;
@@ -287,17 +288,17 @@
 		font: inherit;
 		font-size: var(--fs-11);
 		font-weight: 600;
-		border: 1px solid #c9c4b8;
-		background: #fff;
+		border: 1px solid var(--card-border);
+		background: var(--card-white);
 		border-radius: 999px;
 		padding: 2px 9px;
 		cursor: pointer;
-		color: #4d473c;
+		color: var(--ink-soft);
 		white-space: nowrap;
 	}
 	button.add:hover {
-		border-color: #3b5bdb;
-		color: #3b5bdb;
+		border-color: var(--blue);
+		color: var(--blue);
 	}
 	button.link {
 		border: none;
@@ -305,7 +306,14 @@
 		padding: 0;
 		font: inherit;
 		font-size: var(--fs-11);
-		color: #3b5bdb;
+		color: var(--ink-muted);
+		text-decoration: underline;
+		text-decoration-color: var(--card-border);
+		text-underline-offset: 2px;
 		cursor: pointer;
+	}
+	button.link:hover {
+		color: var(--blue);
+		text-decoration-color: var(--blue);
 	}
 </style>

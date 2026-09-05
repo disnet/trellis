@@ -1,5 +1,7 @@
 <script lang="ts">
+	import { dialogs } from '$lib/dialogs.svelte';
 	import { workspace } from '$lib/workspace.svelte';
+	import Icon from './Icon.svelte';
 
 	const ws = workspace;
 
@@ -31,7 +33,11 @@
 	}
 
 	async function remove(id: string, name: string) {
-		if (!confirm(`Delete working set “${name}”? Thoughts and relations stay in the graph.`)) return;
+		const ok = await dialogs.confirm(
+			`Delete working set “${name}”? Thoughts and relations stay in the graph.`,
+			'Delete set'
+		);
+		if (!ok) return;
 		await run(() => ws.deleteSet(id));
 	}
 </script>
@@ -77,7 +83,7 @@
 						title="Delete this working set (thoughts stay in the graph)"
 						aria-label="Delete working set “{set.name}”"
 						onclick={() => remove(set.id, set.name)}
-					>✕</button>
+					><Icon name="x" size="0.9em" /></button>
 				{/if}
 			</div>
 		{/if}
@@ -93,23 +99,23 @@
 		align-items: flex-end;
 		gap: 4px;
 		padding: 6px 10px 0;
-		background: #efebe1;
-		border-bottom: 1px solid #e0dbcf;
+		background: var(--divider);
+		border-bottom: 1px solid var(--hairline);
 		overflow-x: auto;
 		flex-shrink: 0;
 	}
 	.tab {
 		display: flex;
 		align-items: center;
-		border: 1px solid #d5d0c4;
+		border: 1px solid var(--control-border);
 		border-bottom: none;
 		border-radius: 7px 7px 0 0;
-		background: #f4f0e6;
+		background: var(--inset-fill);
 		max-width: 220px;
 	}
 	.tab.active {
-		background: #f6f3ec;
-		border-color: #c9c4b8;
+		background: var(--paper);
+		border-color: var(--card-border);
 		/* Blend into the canvas below. */
 		margin-bottom: -1px;
 		padding-bottom: 1px;
@@ -117,7 +123,7 @@
 	.tab-name {
 		font: inherit;
 		font-size: var(--fs-12);
-		color: #6d675c;
+		color: var(--ink-muted);
 		background: none;
 		border: none;
 		padding: 5px 10px;
@@ -130,31 +136,28 @@
 		gap: 6px;
 	}
 	.tab.active .tab-name {
-		color: #2c2921;
+		color: var(--ink);
 		font-weight: 600;
 	}
 	.count {
 		font-size: var(--fs-10);
 		font-weight: 400;
-		color: #8a8375;
-		background: #e7e2d5;
+		color: var(--ink-quiet);
+		background: var(--hairline);
 		border-radius: 999px;
 		padding: 0 6px;
-	}
-	.tab.active .count {
-		background: #e0dbcf;
 	}
 	.close {
 		border: none;
 		background: none;
 		font-size: var(--fs-10);
-		color: #8a8375;
+		color: var(--ink-quiet);
 		cursor: pointer;
 		padding: 2px 8px 2px 0;
 		line-height: 1;
 	}
 	.close:hover {
-		color: #8a3a2a;
+		color: var(--rust);
 	}
 	.tab.renaming {
 		margin: 0;
@@ -163,19 +166,19 @@
 	.tab.renaming input {
 		font: inherit;
 		font-size: var(--fs-12);
-		border: 1px solid #3b5bdb;
+		border: 1px solid var(--blue);
 		border-radius: 4px;
 		padding: 2px 6px;
 		width: 130px;
-		background: #fffdf8;
-		color: #2c2921;
+		background: var(--paper-raised);
+		color: var(--ink);
 	}
 	.new-tab {
 		font: inherit;
 		font-size: var(--fs-11-5);
-		color: #6d675c;
+		color: var(--ink-muted);
 		background: none;
-		border: 1px dashed #c9c4b8;
+		border: 1px dashed var(--card-border);
 		border-bottom: none;
 		border-radius: 7px 7px 0 0;
 		padding: 5px 10px;
@@ -183,7 +186,7 @@
 		white-space: nowrap;
 	}
 	.new-tab:hover {
-		color: #3b5bdb;
-		border-color: #3b5bdb;
+		color: var(--blue);
+		border-color: var(--blue);
 	}
 </style>

@@ -19,6 +19,7 @@
 	></textarea>
 	<button
 		class="primary"
+		class:busy={ws.invoking === 'decompose'}
 		onclick={decompose}
 		disabled={ws.invoking !== null ||
 			(ws.scratchDraft.trim().length === 0 && ws.selectedIds.length === 0)}
@@ -59,17 +60,17 @@
 		font-size: var(--fs-13);
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
-		color: #6d675c;
+		color: var(--ink-muted);
 	}
 	h3 {
 		margin: 10px 0 0;
 		font-size: var(--fs-12);
-		color: #6d675c;
+		color: var(--ink-muted);
 	}
 	.hint {
 		margin: 0;
 		font-size: var(--fs-12);
-		color: #8a8375;
+		color: var(--ink-quiet);
 		line-height: 1.4;
 	}
 	.hint.small {
@@ -79,31 +80,57 @@
 		width: 100%;
 		box-sizing: border-box;
 		resize: vertical;
-		border: 1px solid #d5d0c4;
+		/* The capture field never collapses below a few usable lines, however
+		   full the notes below it get. */
+		flex-shrink: 0;
+		min-height: 96px;
+		border: 1px solid var(--control-border);
 		border-radius: 6px;
 		padding: 8px;
 		font: inherit;
 		font-size: var(--fs-13);
-		background: #fffdf8;
+		background: var(--paper-raised);
+		color: var(--ink);
 	}
 	textarea:focus {
-		outline: 2px solid #3b5bdb33;
-		border-color: #3b5bdb;
+		outline: 2px solid var(--focus-glow);
+		border-color: var(--blue);
 	}
 	button.primary {
 		align-self: flex-start;
-		background: #3b5bdb;
-		color: #fff;
-		border: none;
+		background: var(--card-white);
+		color: var(--ink-soft);
+		border: 1px solid var(--card-border);
 		border-radius: 6px;
-		padding: 7px 14px;
+		padding: 6px 14px;
 		font: inherit;
 		font-weight: 600;
 		cursor: pointer;
 	}
+	button.primary:hover:not(:disabled) {
+		border-color: var(--blue);
+		color: var(--blue);
+	}
 	button.primary:disabled {
-		background: #b5b0a4;
+		opacity: 0.45;
 		cursor: not-allowed;
+	}
+	button.primary.busy {
+		opacity: 1;
+		border-color: var(--blue);
+		color: var(--blue);
+		cursor: progress;
+		animation: busy-pulse 1.2s ease-in-out infinite;
+	}
+	@keyframes busy-pulse {
+		50% {
+			opacity: 0.55;
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		button.primary.busy {
+			animation: none;
+		}
 	}
 	.notes {
 		list-style: none;
@@ -115,8 +142,8 @@
 	}
 	.notes li {
 		font-size: var(--fs-12);
-		color: #5a523f;
-		background: #f2eee4;
+		color: var(--ink-faded);
+		background: var(--inset-fill);
 		border-radius: 6px;
 		padding: 6px 8px;
 		display: flex;
@@ -126,8 +153,8 @@
 	}
 	.distilled {
 		font-size: var(--fs-10);
-		color: #3d5537;
-		background: #e3ecdf;
+		color: var(--moss-ink);
+		background: var(--moss);
 		border-radius: 999px;
 		padding: 1px 7px;
 		white-space: nowrap;

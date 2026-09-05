@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { formatConfidence, type ActorType, type Confidence, type ThoughtStatus, type ThoughtType } from '$lib/types';
+	import Icon from './Icon.svelte';
 
 	interface Props {
 		x: number;
@@ -130,7 +131,7 @@
 				aria-label="Remove from working set"
 				onpointerdown={(e) => e.stopPropagation()}
 				onclick={onremove}
-			>✕</button>
+			><Icon name="x" size="0.85em" /></button>
 		{/if}
 	</div>
 	<div class="title">{title}</div>
@@ -162,11 +163,11 @@
 <style>
 	.card {
 		position: absolute;
-		background: var(--card-bg, #fff);
-		border: 1.5px solid #c9c4b8;
+		background: var(--card-bg, var(--card-white));
+		border: 1.5px solid var(--card-border);
 		border-radius: 8px;
 		padding: 8px 10px;
-		box-shadow: 0 1px 3px rgba(60, 50, 30, 0.12);
+		box-shadow: var(--shadow-rest);
 		cursor: grab;
 		user-select: none;
 		font-size: var(--fs-13);
@@ -174,23 +175,26 @@
 	}
 	.card.dragging {
 		cursor: grabbing;
-		box-shadow: 0 6px 16px rgba(60, 50, 30, 0.2);
+		box-shadow: var(--shadow-lift);
 		z-index: 10;
 	}
 	.card.selected {
-		border-color: #3b5bdb;
-		border-width: 2px;
-		box-shadow: 0 0 0 3px rgba(59, 91, 219, 0.18);
+		border-color: var(--blue);
+		/* Keep the border width fixed so selecting never reflows the card;
+		   the inset ring supplies the extra weight. */
+		box-shadow:
+			inset 0 0 0 0.5px var(--blue),
+			var(--ring-selection);
 	}
 	.card.proposed {
 		border-style: dashed;
-		border-color: #b08a3e;
-		background: #fdf8ec;
+		border-color: var(--gold);
+		background: var(--parchment);
 	}
 	.card.surfaced {
 		border-style: dotted;
-		border-color: #6b7f8a;
-		background: #f0f4f6;
+		border-color: var(--surfaced-slate);
+		background: var(--surfaced-fill);
 	}
 	.head {
 		display: flex;
@@ -206,42 +210,42 @@
 		font-weight: 700;
 		padding: 1px 6px;
 		border-radius: 4px;
-		background: #eee9dd;
-		color: #5a523f;
+		background: var(--chip-neutral);
+		color: var(--ink-faded);
 	}
-	.type-claim { background: #e3ecdf; color: #3d5537; }
-	.type-question { background: #e5e1f2; color: #4a4174; }
-	.type-concept { background: #dfe9ef; color: #35586b; }
-	.type-example { background: #f2e6df; color: #6b4a35; }
-	.type-prediction { background: #f2dfe7; color: #6b3550; }
-	.type-evidence { background: #ece5c8; color: #635417; }
+	.type-claim { background: var(--moss); color: var(--moss-ink); }
+	.type-question { background: var(--violet); color: var(--violet-ink); }
+	.type-concept { background: var(--slate); color: var(--slate-ink); }
+	.type-example { background: var(--clay); color: var(--clay-ink); }
+	.type-prediction { background: var(--plum); color: var(--plum-ink); }
+	.type-evidence { background: var(--ochre); color: var(--ochre-ink); }
 	.badge {
 		font-size: var(--fs-10);
 		white-space: nowrap;
-		color: #6d675c;
+		color: var(--ink-muted);
 	}
 	.pin {
 		font-size: var(--fs-11);
-		color: #8a6a1f;
+		color: var(--gold-ink);
 	}
-	.proposed-badge { color: #8a6a1f; font-weight: 700; }
-	.surfaced-badge { color: #4a616f; font-weight: 600; }
+	.proposed-badge { color: var(--gold-ink); font-weight: 700; }
+	.surfaced-badge { color: var(--slate-ink); font-weight: 600; }
 	.title {
 		font-weight: 600;
 		line-height: 1.25;
-		color: #2c2921;
+		color: var(--ink);
 	}
 	.statement {
 		margin: 6px 0 0;
-		color: #4d473c;
+		color: var(--ink-soft);
 		line-height: 1.4;
 		font-size: var(--fs-12);
 	}
 	.relsum {
 		margin-top: 6px;
 		font-size: var(--fs-11);
-		color: #6d675c;
-		border-top: 1px solid #eae5d9;
+		color: var(--ink-muted);
+		border-top: 1px solid var(--divider);
 		padding-top: 4px;
 	}
 	.foot {
@@ -256,7 +260,7 @@
 		background: none;
 		padding: 0 2px;
 		font-size: var(--fs-11);
-		color: #8a8375;
+		color: var(--ink-quiet);
 		cursor: pointer;
 		line-height: 1;
 		/* Present but invisible until selected, so the head row never reflows. */
@@ -266,47 +270,47 @@
 		visibility: visible;
 	}
 	.remove:hover {
-		color: #8a3a2a;
+		color: var(--rust);
 	}
 	.add-to-set {
 		font: inherit;
 		font-size: var(--fs-10);
 		font-weight: 600;
-		border: 1px solid #6b7f8a;
-		background: #fff;
-		color: #35586b;
+		border: 1px solid var(--surfaced-slate);
+		background: var(--card-white);
+		color: var(--slate-ink);
 		border-radius: 999px;
 		padding: 2px 8px;
 		cursor: pointer;
 		white-space: nowrap;
 	}
 	.add-to-set:hover {
-		border-color: #3b5bdb;
-		color: #3b5bdb;
+		border-color: var(--blue);
+		color: var(--blue);
 	}
 	.status {
 		font-size: var(--fs-10);
-		border: 1px solid #d5d0c4;
+		border: 1px solid var(--control-border);
 		border-radius: 999px;
 		padding: 1px 7px;
-		color: #5a523f;
-		background: #faf7f0;
+		color: var(--ink-faded);
+		background: var(--pill-fill);
 	}
 	.confidence {
 		font-size: var(--fs-10);
 		font-weight: 700;
-		border: 1px solid #ddb8c8;
+		border: 1px solid var(--confidence-border);
 		border-radius: 999px;
 		padding: 1px 7px;
-		color: #6b3550;
-		background: #faf2f6;
+		color: var(--plum-ink);
+		background: var(--confidence-fill);
 		white-space: nowrap;
 	}
 	.source {
 		margin-top: 6px;
 		font-size: var(--fs-11);
-		color: #635417;
-		border-top: 1px solid #eae5d9;
+		color: var(--ochre-ink);
+		border-top: 1px solid var(--divider);
 		padding-top: 4px;
 		word-break: break-word;
 	}

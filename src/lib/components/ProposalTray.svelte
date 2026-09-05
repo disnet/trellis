@@ -287,24 +287,24 @@
 		font-size: var(--fs-13);
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
-		color: #6d675c;
+		color: var(--ink-muted);
 	}
 	h3 {
 		margin: 8px 0 0;
 		font-size: var(--fs-11);
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
-		color: #8a8375;
+		color: var(--ink-quiet);
 	}
 	.hint {
 		font-size: var(--fs-12);
-		color: #8a8375;
+		color: var(--ink-quiet);
 		line-height: 1.4;
 	}
 	.changeset {
-		border: 1.5px dashed #c9a860;
+		border: 1.5px dashed var(--gold-soft);
 		border-radius: 8px;
-		background: #fdf8ec;
+		background: var(--parchment);
 		padding: 10px;
 	}
 	.changeset header {
@@ -315,26 +315,30 @@
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
 		font-weight: 700;
-		color: #8a6a1f;
-		background: #f5e9c9;
+		color: var(--gold-ink);
+		background: var(--gold-tag);
 		border-radius: 4px;
 		padding: 2px 7px;
 	}
+	/* Ratified history: gold leaves an accepted change set entirely — the tag
+	   goes neutral once the decision is made. */
 	.action.small {
 		font-size: var(--fs-9);
 		padding: 1px 5px;
+		background: var(--divider);
+		color: var(--ink-muted);
 	}
 	.summary {
 		margin: 6px 0 0;
 		font-size: var(--fs-13);
 		font-weight: 600;
-		color: #4d473c;
+		color: var(--ink-soft);
 		line-height: 1.35;
 	}
 	.using {
 		margin: 4px 0 0;
 		font-size: var(--fs-11);
-		color: #8a8375;
+		color: var(--ink-quiet);
 	}
 	.ops {
 		list-style: none;
@@ -345,19 +349,19 @@
 		gap: 8px;
 	}
 	.op {
-		background: #fff;
-		border: 1px solid #e2dccc;
+		background: var(--card-white);
+		border: 1px solid var(--hairline);
 		border-radius: 6px;
 		padding: 8px;
 		font-size: var(--fs-12);
 	}
 	.op.decision-accepted {
-		border-color: #7fa876;
-		background: #f4f8f2;
+		border-color: var(--accept-green);
+		background: var(--accept-fill);
 	}
 	.op.decision-rejected {
-		border-color: #d0c6be;
-		background: #f5f2ef;
+		border-color: var(--control-border);
+		background: var(--inset-fill);
 		opacity: 0.75;
 	}
 	.op-head {
@@ -367,64 +371,64 @@
 	}
 	.op-kind {
 		font-weight: 700;
-		color: #5a523f;
+		color: var(--ink-faded);
 		font-size: var(--fs-11);
 	}
 	.op-decision {
 		font-size: var(--fs-11);
-		color: #6d675c;
+		color: var(--ink-muted);
 		font-weight: 600;
 	}
 	.decision-accepted .op-decision {
-		color: #3d5537;
+		color: var(--moss-ink);
 	}
 	.decision-rejected .op-decision {
-		color: #7a4a3a;
+		color: var(--clay-ink);
 	}
 	.op-label {
 		font-weight: 600;
-		color: #2c2921;
+		color: var(--ink);
 		line-height: 1.3;
 	}
 	.op-statement {
 		margin: 4px 0 0;
-		color: #4d473c;
+		color: var(--ink-soft);
 		line-height: 1.4;
 	}
 	.rationale {
 		margin: 6px 0 0;
-		color: #6d675c;
+		color: var(--ink-muted);
 		font-style: italic;
 		line-height: 1.35;
 	}
 	.evidence {
 		margin: 4px 0 0;
 		font-size: var(--fs-11);
-		color: #8a8375;
+		color: var(--ink-quiet);
 	}
 	.op-extra {
 		margin: 4px 0 0;
 		font-size: var(--fs-11);
 		font-weight: 600;
-		color: #6b3550;
+		color: var(--plum-ink);
 		word-break: break-word;
 	}
 	.edited-note {
 		margin: 6px 0 0;
 		font-size: var(--fs-11);
-		color: #3d5537;
+		color: var(--moss-ink);
 	}
 	.original {
 		margin-top: 4px;
-		border-left: 2px solid #d5d0c4;
+		border-left: 2px solid var(--control-border);
 		padding-left: 8px;
 		opacity: 0.8;
 	}
 	.blocked {
 		margin: 6px 0 0;
 		font-size: var(--fs-11);
-		color: #8a3a2a;
-		background: #f8ece8;
+		color: var(--rust);
+		background: var(--rust-wash);
 		border-radius: 4px;
 		padding: 4px 6px;
 	}
@@ -439,42 +443,57 @@
 	button {
 		font: inherit;
 		font-size: var(--fs-12);
-		border: 1px solid #d5d0c4;
-		background: #fff;
+		border: 1px solid var(--control-border);
+		background: var(--card-white);
+		color: var(--ink-soft);
 		border-radius: 6px;
 		padding: 4px 10px;
 		cursor: pointer;
 	}
+	button:hover:not(:disabled) {
+		border-color: var(--blue);
+		color: var(--blue);
+	}
 	button:disabled {
-		opacity: 0.5;
+		opacity: 0.45;
 		cursor: not-allowed;
 	}
 	button.accept {
-		border-color: #7fa876;
-		color: #3d5537;
+		border-color: var(--accept-green);
+		color: var(--moss-ink);
 		font-weight: 600;
+	}
+	button.accept:hover:not(:disabled) {
+		border-color: var(--accept-green);
+		background: var(--accept-fill);
+		color: var(--moss-ink);
 	}
 	button.reject {
 		border-color: #c8a89a;
-		color: #7a4a3a;
+		color: var(--clay-ink);
+	}
+	button.reject:hover:not(:disabled) {
+		border-color: var(--rust);
+		color: var(--rust);
 	}
 	button.primary {
-		background: #3b5bdb;
-		border-color: #3b5bdb;
-		color: #fff;
+		border-color: var(--card-border);
 		font-weight: 600;
-	}
-	button.primary:disabled {
-		background: #b5b0a4;
-		border-color: #b5b0a4;
 	}
 	button.link {
 		border: none;
 		background: none;
 		padding: 0;
-		color: #3b5bdb;
+		color: var(--ink-muted);
+		text-decoration: underline;
+		text-decoration-color: var(--card-border);
+		text-underline-offset: 2px;
 		cursor: pointer;
 		font-size: var(--fs-11);
+	}
+	button.link:hover {
+		color: var(--blue);
+		text-decoration-color: var(--blue);
 	}
 	.edit-form {
 		display: flex;
@@ -487,10 +506,10 @@
 	.edit-form select {
 		font: inherit;
 		font-size: var(--fs-12);
-		border: 1px solid #d5d0c4;
+		border: 1px solid var(--control-border);
 		border-radius: 6px;
 		padding: 5px 7px;
-		background: #fffdf8;
+		background: var(--paper-raised);
 		width: 100%;
 		box-sizing: border-box;
 	}
@@ -499,7 +518,7 @@
 		flex-direction: column;
 		gap: 3px;
 		font-size: var(--fs-11);
-		color: #8a8375;
+		color: var(--ink-quiet);
 	}
 	.changeset footer {
 		margin-top: 10px;
@@ -510,7 +529,7 @@
 	}
 	.tally {
 		font-size: var(--fs-11);
-		color: #6d675c;
+		color: var(--ink-muted);
 	}
 	.history {
 		list-style: none;
@@ -522,11 +541,11 @@
 	}
 	.history li {
 		font-size: var(--fs-11);
-		color: #6d675c;
+		color: var(--ink-muted);
 		display: flex;
 		gap: 6px;
 		align-items: baseline;
-		background: #f2eee4;
+		background: var(--inset-fill);
 		border-radius: 6px;
 		padding: 5px 8px;
 	}
@@ -537,6 +556,6 @@
 	.hist-status {
 		white-space: nowrap;
 		font-weight: 600;
-		color: #5a523f;
+		color: var(--ink-faded);
 	}
 </style>

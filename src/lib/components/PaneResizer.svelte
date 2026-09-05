@@ -111,7 +111,7 @@
 	.resizer:hover::after,
 	.resizer:focus-visible::after,
 	.resizer.dragging::after {
-		background: #3b5bdb;
+		background: var(--blue);
 	}
 	.resizer:focus-visible {
 		outline: none;

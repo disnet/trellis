@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
+	import AppDialog from '$lib/components/AppDialog.svelte';
 	import Browse from '$lib/components/Browse.svelte';
+	import Icon from '$lib/components/Icon.svelte';
 	import Canvas from '$lib/components/Canvas.svelte';
 	import Inspector from '$lib/components/Inspector.svelte';
 	import Outline from '$lib/components/Outline.svelte';
@@ -127,11 +129,14 @@
 	</aside>
 
 	<ReentryPanel />
+	<AppDialog />
 
 	{#if ws.notice}
 		<div class="toast" role="status">
 			{ws.notice}
-			<button class="dismiss" onclick={() => (ws.notice = null)} aria-label="Dismiss">✕</button>
+			<button class="dismiss" onclick={() => (ws.notice = null)} aria-label="Dismiss">
+				<Icon name="x" />
+			</button>
 		</div>
 	{/if}
 </div>
@@ -143,8 +148,8 @@
 	:global(body) {
 		font-family:
 			-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-		color: #2c2921;
-		background: #f6f3ec;
+		color: var(--ink);
+		background: var(--paper);
 	}
 	.app {
 		display: grid;
@@ -162,25 +167,30 @@
 		align-items: center;
 		justify-content: center;
 		gap: 8px;
-		color: #8a8375;
+		color: var(--ink-quiet);
 		font-size: var(--fs-13);
 	}
 	.load-state.error {
-		color: #8a3a2a;
+		color: var(--rust);
 	}
 	.load-state button {
 		font: inherit;
 		font-size: var(--fs-12);
-		border: 1px solid #d5d0c4;
-		background: #fff;
+		border: 1px solid var(--control-border);
+		background: var(--card-white);
+		color: var(--ink-soft);
 		border-radius: 6px;
 		padding: 5px 12px;
 		cursor: pointer;
 	}
+	.load-state button:hover {
+		border-color: var(--blue);
+		color: var(--blue);
+	}
 	.left {
 		grid-area: left;
-		background: #fbf9f3;
-		border-right: 1px solid #e0dbcf;
+		background: var(--paper-panel);
+		border-right: 1px solid var(--hairline);
 		min-height: 0;
 		display: grid;
 		grid-template-rows: minmax(0, 55%) minmax(0, 45%);
@@ -189,7 +199,7 @@
 		z-index: 1;
 	}
 	.scratch-pane {
-		border-bottom: 1px solid #e0dbcf;
+		border-bottom: 1px solid var(--hairline);
 		min-height: 0;
 		/* min-width guards against grid min-content blowout from nowrap content
 		   (e.g. long pinned-thought titles), which would widen the whole column. */
@@ -214,8 +224,8 @@
 	}
 	.right-panel {
 		grid-area: right;
-		background: #fbf9f3;
-		border-left: 1px solid #e0dbcf;
+		background: var(--paper-panel);
+		border-left: 1px solid var(--hairline);
 		display: grid;
 		grid-template-rows: minmax(0, 58%) minmax(0, 42%);
 		min-height: 0;
@@ -223,7 +233,7 @@
 		z-index: 1;
 	}
 	.tray-pane {
-		border-bottom: 1px solid #e0dbcf;
+		border-bottom: 1px solid var(--hairline);
 		min-height: 0;
 	}
 	.inspector-pane {
@@ -234,21 +244,21 @@
 		bottom: 18px;
 		left: 50%;
 		transform: translateX(-50%);
-		background: #2c2921;
-		color: #fdf8ec;
+		background: var(--ink);
+		color: var(--parchment);
 		border-radius: 8px;
 		padding: 10px 14px;
 		font-size: var(--fs-13);
 		display: flex;
 		gap: 12px;
 		align-items: center;
-		box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+		box-shadow: var(--shadow-toast);
 		max-width: 60ch;
 	}
 	.toast .dismiss {
 		background: none;
 		border: none;
-		color: #fdf8ec;
+		color: var(--parchment);
 		cursor: pointer;
 		font-size: var(--fs-12);
 		padding: 0;

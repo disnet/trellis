@@ -163,7 +163,7 @@
 			</div>
 		{:else}
 			<div class="head">
-				<span class="type">{thought.type}</span>
+				<span class="type type-{thought.type}">{thought.type}</span>
 				<span class="status">{thought.status}</span>
 				{#if thought.confidence}
 					<span class="confidence" title="Confidence">{formatConfidence(thought.confidence)}</span>
@@ -277,23 +277,23 @@
 		font-size: var(--fs-13);
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
-		color: #6d675c;
+		color: var(--ink-muted);
 	}
 	h3 {
 		margin: 6px 0;
 		font-size: var(--fs-15);
-		color: #2c2921;
+		color: var(--ink);
 	}
 	h4 {
 		margin: 16px 0 6px;
 		font-size: var(--fs-11);
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
-		color: #8a8375;
+		color: var(--ink-quiet);
 	}
 	.hint {
 		font-size: var(--fs-12);
-		color: #8a8375;
+		color: var(--ink-quiet);
 	}
 	.head {
 		display: flex;
@@ -303,45 +303,66 @@
 	.pin-mark {
 		font-size: var(--fs-10);
 		font-weight: 700;
-		color: #8a6a1f;
+		color: var(--gold-ink);
 	}
 	.actions button.pinned {
-		border-color: #c9a860;
-		background: #faf6ea;
-		color: #8a6a1f;
+		border-color: var(--gold-soft);
+		background: var(--pin-fill);
+		color: var(--gold-ink);
 	}
-	.type,
-	.status {
+	/* The specimen tag: same bound type→hue pairings as every other surface. */
+	.type {
 		font-size: var(--fs-10);
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
+		font-weight: 700;
 		border-radius: 4px;
 		padding: 2px 7px;
-		background: #eee9dd;
-		color: #5a523f;
+		background: var(--chip-neutral);
+		color: var(--ink-faded);
+	}
+	.type-claim { background: var(--moss); color: var(--moss-ink); }
+	.type-question { background: var(--violet); color: var(--violet-ink); }
+	.type-concept { background: var(--slate); color: var(--slate-ink); }
+	.type-example { background: var(--clay); color: var(--clay-ink); }
+	.type-prediction { background: var(--plum); color: var(--plum-ink); }
+	.type-evidence { background: var(--ochre); color: var(--ochre-ink); }
+	.status {
+		font-size: var(--fs-10);
+		border: 1px solid var(--control-border);
+		border-radius: 999px;
+		padding: 1px 7px;
+		background: var(--pill-fill);
+		color: var(--ink-faded);
 	}
 	.statement {
 		font-size: var(--fs-13);
 		line-height: 1.5;
-		color: #4d473c;
+		color: var(--ink-soft);
 	}
 	.confidence {
 		font-size: var(--fs-10);
 		font-weight: 700;
-		border: 1px solid #ddb8c8;
+		border: 1px solid var(--confidence-border);
 		border-radius: 999px;
 		padding: 2px 7px;
-		color: #6b3550;
-		background: #faf2f6;
+		color: var(--plum-ink);
+		background: var(--confidence-fill);
 		white-space: nowrap;
 	}
 	.source {
 		font-size: var(--fs-12);
-		color: #635417;
+		color: var(--ochre-ink);
 		word-break: break-word;
 	}
 	.source a {
-		color: #3b5bdb;
+		color: inherit;
+		text-decoration-color: var(--card-border);
+		text-underline-offset: 2px;
+	}
+	.source a:hover {
+		color: var(--blue);
+		text-decoration-color: var(--blue);
 	}
 	.confidence-row label {
 		flex: 1;
@@ -354,25 +375,35 @@
 	button {
 		font: inherit;
 		font-size: var(--fs-12);
-		border: 1px solid #d5d0c4;
-		background: #fff;
+		border: 1px solid var(--control-border);
+		background: var(--card-white);
+		color: var(--ink-soft);
 		border-radius: 6px;
 		padding: 5px 10px;
 		cursor: pointer;
 	}
+	button:hover:not(:disabled) {
+		border-color: var(--blue);
+		color: var(--blue);
+	}
 	button.primary {
-		background: #3b5bdb;
-		border-color: #3b5bdb;
-		color: #fff;
+		border-color: var(--card-border);
 		font-weight: 600;
 	}
 	button.link {
 		border: none;
 		background: none;
 		padding: 0;
-		color: #3b5bdb;
+		color: var(--ink-soft);
 		text-align: left;
+		text-decoration: underline;
+		text-decoration-color: var(--card-border);
+		text-underline-offset: 2px;
 		cursor: pointer;
+	}
+	button.link:hover {
+		color: var(--blue);
+		text-decoration-color: var(--blue);
 	}
 	.plain {
 		list-style: none;
@@ -390,25 +421,25 @@
 		align-items: baseline;
 	}
 	.rel-type {
-		color: #5a523f;
+		color: var(--ink-faded);
 		font-weight: 600;
 		white-space: nowrap;
 	}
 	.meta {
 		font-size: var(--fs-11);
-		color: #8a8375;
+		color: var(--ink-quiet);
 	}
 	.revision {
-		border-left: 2px solid #e0dbcf;
+		border-left: 2px solid var(--hairline);
 		padding-left: 8px;
 		font-size: var(--fs-12);
 	}
 	.rev-title {
 		font-weight: 600;
-		color: #4d473c;
+		color: var(--ink-soft);
 	}
 	.rev-statement {
-		color: #6d675c;
+		color: var(--ink-muted);
 		margin-top: 2px;
 	}
 	.edit-form {
@@ -423,18 +454,18 @@
 		font-size: var(--fs-11);
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
-		color: #8a8375;
+		color: var(--ink-quiet);
 	}
 	.edit-form input,
 	.edit-form textarea,
 	.edit-form select {
 		font: inherit;
 		font-size: var(--fs-13);
-		border: 1px solid #d5d0c4;
+		border: 1px solid var(--control-border);
 		border-radius: 6px;
 		padding: 6px 8px;
-		background: #fffdf8;
-		color: #2c2921;
+		background: var(--paper-raised);
+		color: var(--ink);
 	}
 	.row {
 		display: flex;
@@ -452,6 +483,6 @@
 	}
 	.off-canvas {
 		font-size: var(--fs-11);
-		color: #8a8375;
+		color: var(--ink-quiet);
 	}
 </style>

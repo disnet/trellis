@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { appearance } from '$lib/appearance.svelte';
 	import { workspace, CARD_W } from '$lib/workspace.svelte';
 	import { effectivePayload } from '$lib/types';
 	import ThoughtCard from './ThoughtCard.svelte';
@@ -87,6 +88,13 @@
 
 	function mid(e: Edge): Pt {
 		return { x: (e.a.x + e.b.x) / 2, y: (e.a.y + e.b.y) / 2 };
+	}
+
+	// Edge-label pills are sized in JS, so they must follow the same text scale
+	// as the --fs-* tokens the labels render at.
+	const labelScale = $derived(appearance.fontScale);
+	function labelWidth(e: Edge): number {
+		return (e.type.length * 6 + (e.proposed ? 26 : 12)) * labelScale;
 	}
 
 	interface GhostCard {
@@ -298,15 +306,15 @@
 				/>
 				<g>
 					<rect
-						x={mid(e).x - (e.type.length * 3.4 + (e.proposed ? 34 : 8)) / 2}
-						y={mid(e).y - 9}
-						width={e.type.length * 3.4 + (e.proposed ? 34 : 8)}
-						height="16"
-						rx="8"
+						x={mid(e).x - labelWidth(e) / 2}
+						y={mid(e).y - 9 * labelScale}
+						width={labelWidth(e)}
+						height={16 * labelScale}
+						rx={8 * labelScale}
 						class="edge-label-bg"
 						class:proposed={e.proposed}
 					/>
-					<text x={mid(e).x} y={mid(e).y + 3} class="edge-label" class:proposed={e.proposed}>
+					<text x={mid(e).x} y={mid(e).y + 3 * labelScale} class="edge-label" class:proposed={e.proposed}>
 						{e.type.replace('_', ' ')}{e.proposed ? ' ◇' : ''}
 					</text>
 				</g>
@@ -373,18 +381,20 @@
 </div>
 
 <style>
-	.canvas-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 12px; background: #f6f3ec; border-bottom: 1px solid #d5d0c4; }
-	.canvas-tools button, .canvas-tools select { font: inherit; font-size: var(--fs-12); color: #5a523f; background: #fffdf8; border: 1px solid #c9c4b8; border-radius: 4px; padding: 8px; cursor: pointer; }
-	.canvas-tools button:disabled { opacity: .5; cursor: default; }
-	.canvas-tools label { display: flex; align-items: center; gap: 8px; font-size: var(--fs-12); color: #5a523f; }
+	.canvas-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 12px; background: var(--paper); border-bottom: 1px solid var(--hairline); }
+	.canvas-tools button, .canvas-tools select { font: inherit; font-size: var(--fs-12); color: var(--ink-soft); background: var(--card-white); border: 1px solid var(--card-border); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+	.canvas-tools button:hover:not(:disabled), .canvas-tools select:hover { border-color: var(--blue); color: var(--blue); }
+	.canvas-tools button:disabled { opacity: .45; cursor: not-allowed; }
+	.canvas-tools label { display: flex; align-items: center; gap: 8px; font-size: var(--fs-12); color: var(--ink-faded); }
 	.canvas-tools .find { margin-left: auto; }
-	.find span { color: #6d675c; }
-	.canvas-index { position: absolute; top: 56px; right: 12px; width: min(360px, calc(100% - 24px)); max-height: calc(100% - 72px); display: flex; flex-direction: column; background: #fffdf8; border: 1px solid #c9c4b8; border-radius: 8px; padding: 12px; box-sizing: border-box; z-index: 20; box-shadow: 0 4px 16px #3c321e20; }
-	.canvas-index input { font: inherit; font-size: var(--fs-13); padding: 8px; border: 1px solid #c9c4b8; border-radius: 4px; min-width: 0; background: #faf7f0; }
+	.find span { color: var(--ink-muted); }
+	.canvas-index { position: absolute; top: 56px; right: 12px; width: min(360px, calc(100% - 24px)); max-height: calc(100% - 72px); display: flex; flex-direction: column; background: var(--paper-raised); border: 1px solid var(--card-border); border-radius: 8px; padding: 12px; box-sizing: border-box; z-index: 20; box-shadow: var(--shadow-menu); }
+	.canvas-index input { font: inherit; font-size: var(--fs-13); padding: 6px 8px; border: 1px solid var(--control-border); border-radius: 6px; min-width: 0; background: var(--paper-raised); color: var(--ink); }
+	.canvas-index input:focus { outline: 2px solid var(--focus-glow); border-color: var(--blue); }
 	.index-results { overflow: auto; margin-top: 8px; }
-	.index-results button { display: flex; flex-direction: column; gap: 4px; width: 100%; text-align: left; font: inherit; font-size: var(--fs-13); padding: 12px 8px; border: 0; border-bottom: 1px solid #eae5d9; background: transparent; color: #2c2921; cursor: pointer; }
-	.index-results button:hover { background: #efeadf; }
-	.index-results small, .index-results p { color: #6d675c; font-size: var(--fs-11); }
+	.index-results button { display: flex; flex-direction: column; gap: 4px; width: 100%; text-align: left; font: inherit; font-size: var(--fs-13); padding: 12px 8px; border: 0; border-bottom: 1px solid var(--divider); background: transparent; color: var(--ink); cursor: pointer; }
+	.index-results button:hover { background: var(--divider); }
+	.index-results small, .index-results p { color: var(--ink-muted); font-size: var(--fs-11); }
 
 	.canvas-wrap {
 		position: relative;
@@ -395,8 +405,8 @@
 	.canvas-viewport {
 		overflow: auto;
 		flex: 1; min-height: 0;
-		background: #f6f3ec;
-		background-image: radial-gradient(circle, #ddd8cc 1px, transparent 1px);
+		background: var(--paper);
+		background-image: radial-gradient(circle, var(--dot-grid) 1px, transparent 1px);
 		background-size: 24px 24px;
 		cursor: grab;
 	}
@@ -414,30 +424,32 @@
 		pointer-events: none;
 	}
 	.edge {
-		stroke: #a89f8d;
+		stroke: var(--edge-ink);
 		stroke-width: 1.5;
 	}
 	.edge.proposed {
-		stroke: #b08a3e;
+		stroke: var(--gold);
 		stroke-dasharray: 5 4;
 	}
 	.edge-label-bg {
-		fill: #efeadf;
-		stroke: #cfc8b8;
+		fill: var(--divider);
+		stroke: var(--construction);
 		stroke-width: 0.5;
 	}
 	.edge-label-bg.proposed {
-		fill: #fbf3de;
-		stroke: #c9a860;
+		fill: var(--parchment);
+		stroke: var(--gold-soft);
 	}
 	.edge-label {
 		font-size: var(--fs-9);
-		fill: #5a523f;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		fill: var(--ink-faded);
 		text-anchor: middle;
 		font-family: inherit;
 	}
 	.edge-label.proposed {
-		fill: #7a5c15;
-		font-weight: 600;
+		fill: var(--gold-deep);
 	}
 </style>

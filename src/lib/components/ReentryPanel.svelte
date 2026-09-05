@@ -82,7 +82,7 @@
 				<ul>
 					{#each summary.central as t (t.id)}
 						<li>
-							<span class="chip">{t.type}</span>
+							<span class="chip type-{t.type}">{t.type}</span>
 							<button class="link" onclick={() => open(t.id)}>{t.title}</button>
 							<span class="meta">{t.degree} {t.degree === 1 ? 'relation' : 'relations'}</span>
 						</li>
@@ -107,7 +107,7 @@
 				<ul>
 					{#each summary.newThoughts as t (t.id)}
 						<li>
-							<span class="chip">{t.type}</span>
+							<span class="chip type-{t.type}">{t.type}</span>
 							<button class="link" onclick={() => open(t.id)}>{t.title}</button>
 						</li>
 					{/each}
@@ -132,10 +132,10 @@
 		z-index: 50;
 	}
 	.panel {
-		background: #fffdf8;
-		border: 1px solid #e0dbcf;
-		border-radius: 10px;
-		box-shadow: 0 10px 40px rgba(40, 33, 18, 0.3);
+		background: var(--paper-raised);
+		border: 1px solid var(--hairline);
+		border-radius: 8px;
+		box-shadow: var(--shadow-modal);
 		padding: 20px 24px;
 		width: min(560px, calc(100vw - 48px));
 		max-height: 80vh;
@@ -150,33 +150,33 @@
 	h2 {
 		margin: 0;
 		font-size: var(--fs-17);
-		color: #2c2921;
+		color: var(--ink);
 	}
 	h3 {
 		margin: 16px 0 6px;
 		font-size: var(--fs-11);
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
-		color: #8a8375;
+		color: var(--ink-quiet);
 	}
 	.meta {
 		font-size: var(--fs-11);
-		color: #8a8375;
+		color: var(--ink-quiet);
 		white-space: nowrap;
 	}
 	.changes {
 		margin: 10px 0 0;
 		font-size: var(--fs-13);
-		color: #4d473c;
+		color: var(--ink-soft);
 		line-height: 1.45;
 	}
 	.pending {
 		margin: 8px 0 0;
 		font-size: var(--fs-13);
 		font-weight: 600;
-		color: #7a5c15;
-		background: #fdf8ec;
-		border: 1.5px dashed #c9a860;
+		color: var(--gold-deep);
+		background: var(--parchment);
+		border: 1.5px dashed var(--gold-soft);
 		border-radius: 6px;
 		padding: 6px 10px;
 	}
@@ -198,23 +198,38 @@
 		font-size: var(--fs-10);
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
+		font-weight: 700;
 		border-radius: 4px;
 		padding: 1px 6px;
-		background: #eee9dd;
-		color: #5a523f;
+		background: var(--chip-neutral);
+		color: var(--ink-faded);
 		white-space: nowrap;
 	}
+	/* The bound specimen-tag pairings, same as cards and the library. */
+	.chip.type-claim { background: var(--moss); color: var(--moss-ink); }
+	.chip.type-question { background: var(--violet); color: var(--violet-ink); }
+	.chip.type-concept { background: var(--slate); color: var(--slate-ink); }
+	.chip.type-example { background: var(--clay); color: var(--clay-ink); }
+	.chip.type-prediction { background: var(--plum); color: var(--plum-ink); }
+	.chip.type-evidence { background: var(--ochre); color: var(--ochre-ink); }
+	/* Thought status is accepted state, not a proposal — it never wears gold. */
 	.chip.status {
-		background: #f5e9c9;
-		color: #8a6a1f;
+		font-weight: 400;
+		text-transform: none;
+		letter-spacing: normal;
+		border: 1px solid var(--control-border);
+		border-radius: 999px;
+		padding: 1px 7px;
+		background: var(--pill-fill);
+		color: var(--ink-faded);
 	}
 	.chip.pin {
-		background: #faf6ea;
-		border: 1px solid #dcd3bd;
-		color: #8a6a1f;
+		background: var(--pin-fill);
+		border: 1px solid var(--pin-border);
+		color: var(--gold-ink);
 	}
 	.meta.new {
-		color: #7a5c15;
+		color: var(--ink-soft);
 		font-weight: 600;
 	}
 	.link {
@@ -222,13 +237,17 @@
 		background: none;
 		padding: 0;
 		font: inherit;
-		color: #3b5bdb;
+		color: var(--ink-soft);
 		text-align: left;
+		text-decoration: underline;
+		text-decoration-color: var(--card-border);
+		text-underline-offset: 2px;
 		cursor: pointer;
 		line-height: 1.35;
 	}
 	.link:hover {
-		text-decoration: underline;
+		color: var(--blue);
+		text-decoration-color: var(--blue);
 	}
 	footer {
 		margin-top: 18px;
@@ -239,11 +258,15 @@
 		font: inherit;
 		font-size: var(--fs-13);
 		font-weight: 600;
-		background: #3b5bdb;
-		border: 1px solid #3b5bdb;
-		color: #fff;
+		background: var(--card-white);
+		border: 1px solid var(--card-border);
+		color: var(--ink-soft);
 		border-radius: 6px;
-		padding: 7px 16px;
+		padding: 6px 16px;
 		cursor: pointer;
+	}
+	button.primary:hover {
+		border-color: var(--blue);
+		color: var(--blue);
 	}
 </style>

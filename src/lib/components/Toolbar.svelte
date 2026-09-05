@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { appearance } from '$lib/appearance.svelte';
+	import { dialogs } from '$lib/dialogs.svelte';
 	import AppearanceMenu from './AppearanceMenu.svelte';
 	import GraphSwitcher from './GraphSwitcher.svelte';
+	import Icon from './Icon.svelte';
 	import ModelSwitcher from './ModelSwitcher.svelte';
 	import { workspace } from '$lib/workspace.svelte';
 	import type { AgentAction } from '$lib/types';
@@ -34,7 +36,11 @@
 	}
 
 	async function startFresh() {
-		if (!confirm('Empty this working set? Thoughts and relations stay in the graph.')) return;
+		const ok = await dialogs.confirm(
+			'Empty this working set? Thoughts and relations stay in the graph.',
+			'Empty set'
+		);
+		if (!ok) return;
 		const err = await ws.startFresh();
 		if (err) ws.notice = err;
 	}
@@ -154,7 +160,7 @@
 					disabled={ws.invoking !== null}
 					onclick={() => (openMenu = openMenu === 'ops' ? null : 'ops')}
 				>
-					{ws.invoking ? `${ws.invoking}…` : 'Operations'} <span aria-hidden="true">⌄</span>
+					{ws.invoking ? `${ws.invoking}…` : 'Operations'} <Icon name="chevron-down" size="0.9em" />
 				</button>
 				{#if openMenu === 'ops'}
 					<div class="panel" id="ops-menu">
@@ -202,7 +208,7 @@
 				aria-pressed={ws.view === 'canvas'}
 				onclick={() => (ws.view = 'canvas')}
 			>
-				<span aria-hidden="true">▦</span><span class="label">Canvas</span>
+				<Icon name="canvas" /><span class="label">Canvas</span>
 			</button>
 			<button
 				class:active={ws.view === 'outline'}
@@ -211,7 +217,7 @@
 				aria-pressed={ws.view === 'outline'}
 				onclick={() => (ws.view = 'outline')}
 			>
-				<span aria-hidden="true">☰</span><span class="label">Outline</span>
+				<Icon name="outline" /><span class="label">Outline</span>
 			</button>
 			<button
 				class:active={ws.view === 'browse'}
@@ -220,7 +226,7 @@
 				aria-pressed={ws.view === 'browse'}
 				onclick={() => (ws.view = 'browse')}
 			>
-				<span aria-hidden="true">▤</span><span class="label">Browse</span>
+				<Icon name="browse" /><span class="label">Browse</span>
 			</button>
 		</div>
 		{#if utilsInMenu}
@@ -232,25 +238,28 @@
 					aria-controls="more-menu"
 					title="More actions"
 					onclick={() => (openMenu = openMenu === 'more' ? null : 'more')}
-				>⋯</button>
+				><Icon name="ellipsis" /></button>
 				{#if openMenu === 'more'}
 					<div class="panel" id="more-menu">
 						<button
 							class="item"
 							onclick={() => run(() => (ws.zoom = ws.zoom === 'overview' ? 'reading' : 'overview'))}
 						>
-							<span class="item-label">{ws.zoom === 'overview' ? '⊕ Reading view' : '⊖ Overview'}</span>
+							<span class="item-label">
+								<Icon name={ws.zoom === 'overview' ? 'zoom-in' : 'zoom-out'} />
+								{ws.zoom === 'overview' ? 'Reading view' : 'Overview'}
+							</span>
 						</button>
 						<button class="item" disabled={ws.workingSet.length === 0} onclick={() => run(startFresh)}>
-							<span class="item-label">⌀ Start fresh</span>
+							<span class="item-label"><Icon name="clear" /> Start fresh</span>
 							<span class="item-hint">Empty the working set — the durable graph is untouched</span>
 						</button>
 						<button class="item" disabled={ws.undoLabel === null} onclick={() => run(undo)}>
-							<span class="item-label">↩ Undo last apply</span>
+							<span class="item-label"><Icon name="undo" /> Undo last apply</span>
 							{#if ws.undoLabel}<span class="item-hint">{ws.undoLabel}</span>{/if}
 						</button>
 						<a class="item" href="/api/export" download onclick={() => (openMenu = null)}>
-							<span class="item-label">⇩ Export</span>
+							<span class="item-label"><Icon name="download" /> Export</span>
 							<span class="item-hint">Download the active graph as JSON</span>
 						</a>
 					</div>
@@ -263,7 +272,7 @@
 				aria-label={ws.zoom === 'overview' ? 'Reading view' : 'Overview'}
 				onclick={() => (ws.zoom = ws.zoom === 'overview' ? 'reading' : 'overview')}
 			>
-				<span aria-hidden="true">{ws.zoom === 'overview' ? '⊕' : '⊖'}</span>
+				<Icon name={ws.zoom === 'overview' ? 'zoom-in' : 'zoom-out'} />
 				<span class="label">{ws.zoom === 'overview' ? 'Reading view' : 'Overview'}</span>
 			</button>
 			<button
@@ -272,7 +281,7 @@
 				disabled={ws.workingSet.length === 0}
 				onclick={startFresh}
 			>
-				<span aria-hidden="true">⌀</span><span class="label">Start fresh</span>
+				<Icon name="clear" /><span class="label">Start fresh</span>
 			</button>
 			<button
 				class="undo"
@@ -281,7 +290,7 @@
 				aria-label="Undo last apply"
 				onclick={undo}
 			>
-				<span aria-hidden="true">↩</span><span class="label">Undo last apply</span>
+				<Icon name="undo" /><span class="label">Undo last apply</span>
 			</button>
 			<a
 				class="export"
@@ -290,7 +299,7 @@
 				title="Download the active graph as JSON"
 				aria-label="Export"
 			>
-				<span aria-hidden="true">⇩</span><span class="label">Export</span>
+				<Icon name="download" /><span class="label">Export</span>
 			</a>
 		{/if}
 		<AppearanceMenu />
@@ -306,8 +315,8 @@
 		align-items: center;
 		gap: 16px;
 		padding: 8px 14px;
-		background: #fffdf8;
-		border-bottom: 1px solid #e0dbcf;
+		background: var(--paper-raised);
+		border-bottom: 1px solid var(--hairline);
 	}
 	/* Nothing but the hint may shrink: squeezed controls would hide the overflow
 	   that the collapse steps exist to detect. */
@@ -318,7 +327,7 @@
 		font-weight: 800;
 		letter-spacing: 0.02em;
 		font-size: var(--fs-16);
-		color: #3d5537;
+		color: var(--moss-ink);
 	}
 	.ops {
 		display: flex;
@@ -328,17 +337,17 @@
 		font: inherit;
 		font-size: var(--fs-12-5);
 		font-weight: 600;
-		border: 1px solid #c9c4b8;
-		background: #fff;
+		border: 1px solid var(--card-border);
+		background: var(--card-white);
 		border-radius: 6px;
 		padding: 5px 12px;
 		cursor: pointer;
-		color: #4d473c;
+		color: var(--ink-soft);
 		white-space: nowrap;
 	}
 	.ops button:hover:not(:disabled) {
-		border-color: #3b5bdb;
-		color: #3b5bdb;
+		border-color: var(--blue);
+		color: var(--blue);
 	}
 	.ops button:disabled {
 		opacity: 0.45;
@@ -346,8 +355,8 @@
 	}
 	.ops button.busy {
 		opacity: 1;
-		border-color: #3b5bdb;
-		color: #3b5bdb;
+		border-color: var(--blue);
+		color: var(--blue);
 		cursor: progress;
 		animation: busy-pulse 1.2s ease-in-out infinite;
 	}
@@ -359,9 +368,14 @@
 			opacity: 0.55;
 		}
 	}
+	@media (prefers-reduced-motion: reduce) {
+		.ops button.busy {
+			animation: none;
+		}
+	}
 	.selection-hint {
 		font-size: var(--fs-11-5);
-		color: #8a8375;
+		color: var(--ink-quiet);
 		flex: 1 1 auto;
 		min-width: 0;
 		white-space: nowrap;
@@ -378,12 +392,12 @@
 	.export {
 		font: inherit;
 		font-size: var(--fs-12);
-		border: 1px solid #d5d0c4;
-		background: #fff;
+		border: 1px solid var(--control-border);
+		background: var(--card-white);
 		border-radius: 6px;
 		padding: 5px 10px;
 		cursor: pointer;
-		color: #4d473c;
+		color: var(--ink-soft);
 		white-space: nowrap;
 		text-decoration: none;
 		display: inline-flex;
@@ -394,9 +408,10 @@
 		opacity: 0.45;
 		cursor: not-allowed;
 	}
+	.right button:hover:not(:disabled):not(.active),
 	.export:hover {
-		border-color: #3b5bdb;
-		color: #3b5bdb;
+		border-color: var(--blue);
+		color: var(--blue);
 	}
 	/* The utilities lose their labels first; the view switcher, being navigation,
 	   keeps its own for one step longer. */
@@ -425,9 +440,9 @@
 		border-radius: 0 6px 6px 0;
 	}
 	.views button.active {
-		border-color: #3b5bdb;
-		background: #e9edfb;
-		color: #2c47b8;
+		border-color: var(--blue);
+		background: var(--blue-wash);
+		color: var(--blue-deep);
 		position: relative;
 		z-index: 1;
 	}
@@ -440,10 +455,10 @@
 		z-index: 100;
 		width: 250px;
 		padding: 6px;
-		background: #fffdf8;
-		border: 1px solid #d5d0c4;
+		background: var(--paper-raised);
+		border: 1px solid var(--control-border);
 		border-radius: 8px;
-		box-shadow: 0 6px 24px #382f201f;
+		box-shadow: var(--shadow-menu);
 		display: flex;
 		flex-direction: column;
 		gap: 2px;
@@ -474,21 +489,24 @@
 		white-space: normal;
 	}
 	.panel .item:hover:not(:disabled) {
-		background: #f2eee4;
+		background: var(--inset-fill);
 	}
 	.panel .item:disabled {
 		opacity: 0.45;
 		cursor: not-allowed;
 	}
 	.panel .item-label {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
 		font-size: var(--fs-12);
 		font-weight: 600;
-		color: #4d473c;
+		color: var(--ink-soft);
 	}
 	.panel .item-hint {
 		font-size: var(--fs-11);
 		line-height: 1.4;
-		color: #8a8375;
+		color: var(--ink-quiet);
 		/* The undo hint is a whole change-set summary; two lines of it is plenty. */
 		display: -webkit-box;
 		-webkit-box-orient: vertical;

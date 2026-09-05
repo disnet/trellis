@@ -1,5 +1,7 @@
 <script lang="ts">
+	import { dialogs } from '$lib/dialogs.svelte';
 	import { workspace } from '$lib/workspace.svelte';
+	import Icon from './Icon.svelte';
 
 	const ws = workspace;
 
@@ -19,16 +21,20 @@
 		select.value = ws.activeGraphId;
 	}
 
-	function create() {
-		const name = prompt('Name for the new graph:');
-		if (name === null) return;
+	async function create() {
+		const name = await dialogs.prompt(
+			'Name for the new graph — a separate, isolated knowledge base:',
+			'',
+			'Create graph'
+		);
+		if (name === null || name.trim() === '') return;
 		void run(() => ws.createGraph(name));
 	}
 
-	function rename() {
+	async function rename() {
 		const current = ws.graphs.find((g) => g.id === ws.activeGraphId);
 		if (!current) return;
-		const name = prompt('Rename this graph:', current.name);
+		const name = await dialogs.prompt('Rename this graph:', current.name, 'Rename');
 		if (name === null || name.trim() === '' || name.trim() === current.name) return;
 		void run(() => ws.renameGraph(current.id, name));
 	}
@@ -43,12 +49,14 @@
 			<option value={g.id}>{g.name}</option>
 		{/each}
 	</select>
-	<button title="Rename this graph" aria-label="Rename this graph" onclick={rename}>✎</button>
+	<button title="Rename this graph" aria-label="Rename this graph" onclick={rename}>
+		<Icon name="pencil" />
+	</button>
 	<button
 		title="New graph — a separate, isolated knowledge base"
 		aria-label="New graph"
 		onclick={create}
-	>＋</button>
+	><Icon name="plus" /></button>
 </div>
 
 <style>
@@ -61,9 +69,9 @@
 		font: inherit;
 		font-size: var(--fs-12);
 		font-weight: 600;
-		color: #4d473c;
-		background: #fff;
-		border: 1px solid #c9c4b8;
+		color: var(--ink-soft);
+		background: var(--card-white);
+		border: 1px solid var(--card-border);
 		border-radius: 6px;
 		padding: 4px 6px;
 		max-width: 160px;
@@ -73,21 +81,21 @@
 		max-width: 110px;
 	}
 	select:hover {
-		border-color: #3b5bdb;
+		border-color: var(--blue);
 	}
 	button {
 		font: inherit;
 		font-size: var(--fs-12);
-		border: 1px solid #d5d0c4;
-		background: #fff;
+		border: 1px solid var(--control-border);
+		background: var(--card-white);
 		border-radius: 6px;
 		padding: 4px 8px;
 		cursor: pointer;
-		color: #4d473c;
+		color: var(--ink-soft);
 		line-height: 1.2;
 	}
 	button:hover {
-		border-color: #3b5bdb;
-		color: #3b5bdb;
+		border-color: var(--blue);
+		color: var(--blue);
 	}
 </style>

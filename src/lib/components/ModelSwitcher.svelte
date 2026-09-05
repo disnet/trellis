@@ -1,6 +1,7 @@
 <script lang="ts">
 	import LocalAgentSetup from "./LocalAgentSetup.svelte";
 	let setup = $state(false);
+	import Icon from './Icon.svelte';
 	import { PROVIDERS, type AgentProvider } from '$lib/models';
 	import { workspace as ws } from '$lib/workspace.svelte';
 	/** Narrows the trigger to the provider alone when the toolbar is short of room. */
@@ -30,7 +31,7 @@
 	<button class="trigger" class:compact aria-expanded={open} aria-controls="model-options"
 		disabled={ws.loading || ws.invoking !== null} onclick={() => open = !open}
 		title="Choose the provider and model for agent operations">
-		{triggerLabel} <span aria-hidden="true">⌄</span>
+		{triggerLabel} <Icon name="chevron-down" size="0.9em" />
 	</button>
 	{#if open}
 		<div class="options" id="model-options">
@@ -84,15 +85,16 @@
 
 <style>
 	.switcher { position: relative; flex-shrink: 0; }
-	button, select, input { font: inherit; font-size: var(--fs-12); color: #4d473c; background: #fff; border: 1px solid #c9c4b8; border-radius: 6px; padding: 5px 8px; }
+	button, select, input { font: inherit; font-size: var(--fs-12); color: var(--ink-soft); background: var(--card-white); border: 1px solid var(--card-border); border-radius: 6px; padding: 5px 8px; }
 	button { cursor: pointer; }
-	button:disabled { opacity: .5; cursor: default; }
+	button:hover:not(:disabled) { border-color: var(--blue); color: var(--blue); }
+	button:disabled { opacity: .45; cursor: not-allowed; }
 	.trigger { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 	.trigger.compact { max-width: 120px; }
-	.options { position: absolute; top: calc(100% + 10px); left: 0; z-index: 100; width: min(340px, calc(100vw - 48px)); max-height: calc(100dvh - 160px); overflow-y: auto; padding: 16px; background: #fffdf8; border: 1px solid #d5d0c4; border-radius: 8px; box-shadow: 0 6px 24px #382f201f; }
+	.options { position: absolute; top: calc(100% + 10px); left: 0; z-index: 100; width: min(340px, calc(100vw - 48px)); max-height: calc(100dvh - 160px); overflow-y: auto; padding: 16px; background: var(--paper-raised); border: 1px solid var(--control-border); border-radius: 8px; box-shadow: var(--shadow-menu); }
 	label { display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-12); font-weight: 600; margin-bottom: 12px; }
 	.custom { display: flex; gap: 6px; }
 	input { min-width: 0; flex: 1; }
-	p { font-size: var(--fs-11-5); line-height: 1.5; color: #756d5f; }
+	p { font-size: var(--fs-11-5); line-height: 1.5; color: var(--ink-muted); }
 	.done { width: 100%; margin-top: 8px; }
 </style>
