@@ -168,6 +168,12 @@ class Workspace {
 		}
 	}
 
+	/** Replace the selection with `ids`, or union them in when additive. */
+	selectMany(ids: string[], additive = false) {
+		const valid = ids.filter((id) => id in this.thoughts);
+		this.selectedIds = additive ? [...new Set([...this.selectedIds, ...valid])] : valid;
+	}
+
 	clearSelection() {
 		this.selectedIds = [];
 	}

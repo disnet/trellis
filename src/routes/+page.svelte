@@ -29,13 +29,15 @@
 		}
 		previousPending = count;
 	});
-	// The inspector follows the selection: selecting a thought brings up its
-	// details without a second click, and clearing the selection dismisses them.
+	// The inspector follows a single selection: selecting one thought brings up
+	// its details without a second click; clearing the selection or growing it
+	// to several (a marquee sweep is about the group, not any one card)
+	// dismisses them.
 	let previousSelection: string[] = [];
 	$effect(() => {
 		const ids = ws.selectedIds;
 		if (ids !== previousSelection) {
-			if (ids.length > 0) {
+			if (ids.length === 1) {
 				rightPanel = 'inspector';
 				if (viewportWidth < 800) leftPanel = null;
 			} else if (rightPanel === 'inspector') {

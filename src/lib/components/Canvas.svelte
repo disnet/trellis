@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { appearance } from '$lib/appearance.svelte';
+	import { dialogs } from '$lib/dialogs.svelte';
 	import { workspace, CARD_W } from '$lib/workspace.svelte';
 	import { effectivePayload } from '$lib/types';
 	import ThoughtCard from './ThoughtCard.svelte';
@@ -20,7 +21,7 @@
 	const MIN_SCALE = 0.25;
 	const MAX_SCALE = 2.5;
 
-	// Visible window in surface coordinates, for off-screen card hints.
+	// Visible window in surface coordinates.
 	const view = $derived({
 		left: -cam.x / cam.scale,
 		top: -cam.y / cam.scale,
@@ -222,49 +223,19 @@
 	let connections = $state<'all' | 'selected' | 'none'>('all');
 	const results = $derived(items.filter(i => (i.title + ' ' + i.statement).toLowerCase().includes(query.trim().toLowerCase())));
 
-	// Edge markers for cards outside the visible window, pinned to the nearest edge.
-	interface OffscreenHint {
-		item: (typeof items)[number];
-		arrow: string;
-		/** Chip position in viewport (screen) coordinates. */
-		x: number;
-		y: number;
-	}
-	const offscreenHints = $derived.by((): OffscreenHint[] => {
-		if (vp.w === 0) return [];
-		const out: OffscreenHint[] = [];
-		// With a lens active, only its members (and any selection) earn chips —
-		// the rest of the graph is deliberately quiet.
-		const hinted = ws.lensActive
-			? items.filter(
-					(i) => i.kind !== 'card' || ws.inWorkingSet(i.id) || ws.selectedIds.includes(i.id)
-				)
-			: items;
-		for (const it of hinted) {
+	// How many cards sit outside the visible window, for the Find button's count.
+	const outside = $derived.by((): number => {
+		if (vp.w === 0) return 0;
+		let n = 0;
+		for (const it of items) {
 			const w = dimensions[it.id]?.width ?? cardW;
 			const h = dimensions[it.id]?.height ?? cardH;
 			const visible = it.x + w > view.left && it.x < view.left + view.w &&
 				it.y + h > view.top && it.y < view.top + view.h;
-			if (visible) continue;
-			const cx = it.x + w / 2;
-			const cy = it.y + h / 2;
-			const right = cx > view.left + view.w;
-			const left = cx < view.left;
-			const below = cy > view.top + view.h;
-			const above = cy < view.top;
-			const arrow = above ? (left ? '↖' : right ? '↗' : '↑')
-				: below ? (left ? '↙' : right ? '↘' : '↓')
-				: left ? '←' : '→';
-			out.push({
-				item: it,
-				arrow,
-				x: clamp(cx * cam.scale + cam.x, 80, vp.w - 80),
-				y: clamp(cy * cam.scale + cam.y, 140, Math.max(140, vp.h - 156))
-			});
+			if (!visible) n++;
 		}
-		return out;
+		return n;
 	});
-	const outside = $derived(offscreenHints.length);
 
 	// Bounding box of the current focus (lens members + ghosts when a lens is
 	// active, the whole canvas otherwise), in surface coordinates.
@@ -353,22 +324,32 @@
 			.join(' · ');
 	}
 
-	// Drag the background to pan; a motionless press still clears the selection.
+	// Pointer model: left-drag on the background draws a selection box (shift
+	// keeps the existing selection); right- or middle-drag pans from anywhere.
+	// A motionless left press on the background still clears the selection.
 	let panning = $state(false);
+	/** Active selection box in viewport (screen) coordinates, else null. */
+	let marquee = $state<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
 
-	function startPan(e: PointerEvent) {
-		if (e.button !== 0 || !viewportEl) return;
+	function onCanvasPointerDown(e: PointerEvent) {
+		if (!viewportEl) return;
+		if (e.button === 2 || e.button === 1) return startPan(e);
+		if (e.button !== 0) return;
 		const target = e.target as HTMLElement;
 		const isBackground =
 			target === viewportEl || target.classList.contains('canvas-surface');
 		if (!isBackground) return;
+		startMarquee(e);
+	}
+
+	function startPan(e: PointerEvent) {
 		e.preventDefault();
 		const startX = e.clientX;
 		const startY = e.clientY;
 		const startCamX = cam.x;
 		const startCamY = cam.y;
 		let moved = false;
-		const el = viewportEl;
+		const el = viewportEl!;
 		el.setPointerCapture(e.pointerId);
 
 		function move(ev: PointerEvent) {
@@ -386,10 +367,88 @@
 			el.removeEventListener('pointermove', move);
 			el.removeEventListener('pointerup', up);
 			panning = false;
-			if (!moved) ws.clearSelection();
 		}
 		el.addEventListener('pointermove', move);
 		el.addEventListener('pointerup', up);
+	}
+
+	function startMarquee(e: PointerEvent) {
+		e.preventDefault();
+		const el = viewportEl!;
+		const rect = el.getBoundingClientRect();
+		const x0 = e.clientX - rect.left;
+		const y0 = e.clientY - rect.top;
+		const additive = e.shiftKey;
+		// Shift extends this selection; a plain drag replaces it.
+		const base = additive ? [...ws.selectedIds] : [];
+		let moved = false;
+		el.setPointerCapture(e.pointerId);
+
+		function hits(box: { x0: number; y0: number; x1: number; y1: number }): string[] {
+			// Box corners into surface coordinates, then intersect with card rects.
+			const l = (Math.min(box.x0, box.x1) - cam.x) / cam.scale;
+			const t = (Math.min(box.y0, box.y1) - cam.y) / cam.scale;
+			const r = (Math.max(box.x0, box.x1) - cam.x) / cam.scale;
+			const b = (Math.max(box.y0, box.y1) - cam.y) / cam.scale;
+			return cards
+				.filter(({ t: thought, pos }) => {
+					const w = dimensions[thought.id]?.width ?? cardW;
+					const h = dimensions[thought.id]?.height ?? cardH;
+					return pos.x < r && pos.x + w > l && pos.y < b && pos.y + h > t;
+				})
+				.map(({ t: thought }) => thought.id);
+		}
+
+		function move(ev: PointerEvent) {
+			const x1 = ev.clientX - rect.left;
+			const y1 = ev.clientY - rect.top;
+			if (Math.abs(x1 - x0) + Math.abs(y1 - y0) > 4) moved = true;
+			if (!moved) return;
+			marquee = { x0, y0, x1, y1 };
+			// Selection tracks the box live so the effect of releasing is visible.
+			ws.selectMany([...base, ...hits(marquee)]);
+		}
+		function up() {
+			el.releasePointerCapture(e.pointerId);
+			el.removeEventListener('pointermove', move);
+			el.removeEventListener('pointerup', up);
+			marquee = null;
+			if (!moved && !additive) ws.clearSelection();
+		}
+		el.addEventListener('pointermove', move);
+		el.addEventListener('pointerup', up);
+	}
+
+	// Keyboard: Escape clears the selection; ⌘/Ctrl+A selects the focus (lens
+	// members when one is active, the whole canvas otherwise).
+	function onKeydown(e: KeyboardEvent) {
+		const t = e.target as HTMLElement;
+		if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable) return;
+		if (e.key === 'Escape' && ws.selectedIds.length) {
+			ws.clearSelection();
+		} else if (e.key === 'a' && (e.metaKey || e.ctrlKey)) {
+			e.preventDefault();
+			const all = cards.map(({ t: thought }) => thought.id);
+			ws.selectMany(ws.lensActive ? all.filter((id) => ws.inWorkingSet(id)) : all);
+		}
+	}
+
+	// --- working set from the current multi-selection ---
+
+	async function setFromSelection() {
+		const n = ws.selectedIds.length;
+		const name = await dialogs.prompt('Name the new working set:', `${n} thoughts`, 'Create set');
+		if (name === null) return;
+		const err = await ws.createSetFrom(name.trim() || `${n} thoughts`, [...ws.selectedIds]);
+		if (err) ws.notice = err;
+	}
+
+	/** Selected thoughts not already in the active working set. */
+	const stageable = $derived(ws.selectedIds.filter((id) => !ws.inWorkingSet(id)));
+	async function addSelectionToSet() {
+		const n = stageable.length;
+		const err = await ws.addToSet([...ws.selectedIds]);
+		ws.notice = err ?? `Added ${n} thought${n === 1 ? '' : 's'} to the working set.`;
 	}
 
 	function provenance(thoughtId: string) {
@@ -399,6 +458,8 @@
 			: ('human' as const);
 	}
 </script>
+
+<svelte:window onkeydown={onKeydown} />
 
 <div class="canvas-wrap">
 	<div class="canvas-tools" bind:clientHeight={toolbarHeight}>
@@ -422,13 +483,25 @@
 			</div>
 		</div>
 	{/if}
+	{#if ws.selectedIds.length > 1}
+		<div class="selection-bar" role="toolbar" aria-label="Selection actions">
+			<span class="selection-count">{ws.selectedIds.length} selected</span>
+			<button onclick={setFromSelection} title="Open a new working set holding the selected thoughts">New working set</button>
+			{#if ws.lensActive && stageable.length > 0}
+				<button onclick={addSelectionToSet} title="Add the selected thoughts to the active working set">Add {stageable.length} to set</button>
+			{/if}
+			<button class="quiet" onclick={() => ws.clearSelection()} title="Clear the selection (Esc)">Clear</button>
+		</div>
+	{/if}
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
 	class="canvas-viewport"
 	class:panning
+	class:selecting={marquee !== null}
 	class:gliding
 	bind:this={viewportEl}
-	onpointerdown={startPan}
+	onpointerdown={onCanvasPointerDown}
+	oncontextmenu={(e) => e.preventDefault()}
 	style="background-position: {cam.x}px {cam.y}px; background-size: {24 * cam.scale}px {24 * cam.scale}px;"
 >
 	<div class="canvas-surface" style="transform: translate({cam.x}px, {cam.y}px) scale({cam.scale});">
@@ -511,25 +584,19 @@
 		{/each}
 	</div>
 
+	{#if marquee}
+		<div
+			class="marquee"
+			style="left: {Math.min(marquee.x0, marquee.x1)}px; top: {Math.min(marquee.y0, marquee.y1)}px; width: {Math.abs(marquee.x1 - marquee.x0)}px; height: {Math.abs(marquee.y1 - marquee.y0)}px;"
+		></div>
+	{/if}
+
 	{#if items.length === 0}
 		<div class="canvas-empty">
 			<p><strong>Your canvas is empty.</strong></p>
 			<p>Write a thought, or paste something messy into Scratch and decompose it. Everything you keep lives here, spatially — working sets come later, when you want the agent focused.</p>
 		</div>
 	{/if}
-
-	{#each offscreenHints as h (h.item.id)}
-		<button
-			class="offscreen-hint {h.item.kind}"
-			style="left: {h.x}px; top: {h.y}px;"
-			title="Go to “{h.item.title}”"
-			onclick={() => locate(h.item)}
-		>
-			<span class="hint-arrow">{h.arrow}</span>
-			{#if h.item.kind === 'proposed'}<span class="hint-mark">◇</span>{/if}
-			<span class="hint-title">{h.item.title}</span>
-		</button>
-	{/each}
 </div>
 
 <div class="canvas-zoom">
@@ -551,6 +618,13 @@
 	.canvas-tools label { display: flex; align-items: center; gap: 8px; font-size: var(--fs-12); color: var(--ink-faded); }
 	.canvas-tools .find { margin-left: auto; }
 	.find span { color: var(--ink-muted); }
+	/* Floats top-center when several thoughts are selected: the moment a
+	   multi-selection exists, so does the way to make it a working set. */
+	.selection-bar { position: absolute; top: 12px; left: 0; right: 0; margin-inline: auto; z-index: 21; width: fit-content; max-width: calc(100% - 24px); display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--paper-raised); border: 1px solid var(--hairline); border-radius: 10px; box-shadow: var(--shadow-menu); }
+	.selection-count { font-size: var(--fs-12); font-weight: 600; color: var(--ink-soft); white-space: nowrap; }
+	.selection-bar button { font: inherit; font-size: var(--fs-12); color: var(--ink-soft); background: var(--card-white); border: 1px solid var(--card-border); border-radius: 6px; padding: 5px 10px; cursor: pointer; white-space: nowrap; }
+	.selection-bar button:hover { border-color: var(--blue); color: var(--blue); }
+	.selection-bar button.quiet { border-color: transparent; background: transparent; color: var(--ink-muted); }
 	.canvas-index { position: absolute; left: 0; right: 0; margin-inline: auto; width: min(360px, calc(100% - 24px)); max-height: calc(100% - 72px); display: flex; flex-direction: column; background: var(--paper-raised); border: 1px solid var(--card-border); border-radius: 8px; padding: 12px; box-sizing: border-box; z-index: 20; box-shadow: var(--shadow-menu); }
 	.canvas-index input { font: inherit; font-size: var(--fs-13); padding: 6px 8px; border: 1px solid var(--control-border); border-radius: 6px; min-width: 0; background: var(--paper-raised); color: var(--ink); }
 	.canvas-index input:focus { outline: 2px solid var(--focus-glow); border-color: var(--blue); }
@@ -572,12 +646,23 @@
 		background: var(--paper);
 		background-image: radial-gradient(circle, var(--dot-grid) 1px, transparent 1px);
 		background-size: 24px 24px;
-		cursor: grab;
+		/* Left-drag selects; right-drag pans. */
+		cursor: crosshair;
 		touch-action: none;
 	}
 	.canvas-viewport.panning {
 		cursor: grabbing;
 		user-select: none;
+	}
+	.canvas-viewport.selecting {
+		user-select: none;
+	}
+	.marquee {
+		position: absolute;
+		border: 1px dashed var(--blue);
+		background: var(--focus-glow);
+		pointer-events: none;
+		z-index: 15;
 	}
 	.canvas-viewport.gliding {
 		transition: background-position 0.35s ease, background-size 0.35s ease;
@@ -597,34 +682,6 @@
 		left: 0;
 		overflow: visible;
 		pointer-events: none;
-	}
-	.offscreen-hint {
-		position: absolute;
-		transform: translate(-50%, -50%);
-		display: flex;
-		align-items: center;
-		gap: 4px;
-		max-width: 180px;
-		border: 1px solid var(--card-border);
-		background: var(--card-white);
-		color: var(--ink-soft);
-		border-radius: 999px;
-		padding: 3px 10px;
-		font: inherit;
-		font-size: var(--fs-11);
-		cursor: pointer;
-		box-shadow: var(--shadow-menu);
-		z-index: 20;
-	}
-	.offscreen-hint:hover {
-		border-color: var(--blue);
-		color: var(--blue);
-	}
-	.offscreen-hint.proposed {
-		border: 1.5px dashed var(--gold);
-		background: var(--parchment);
-		color: var(--gold-ink);
-		font-weight: 600;
 	}
 	.canvas-empty {
 		position: absolute;
@@ -648,17 +705,6 @@
 	.canvas-empty strong {
 		color: var(--ink-muted);
 	}
-	.hint-arrow {
-		font-size: var(--fs-12);
-	}
-	.hint-mark {
-		font-weight: 700;
-	}
-	.hint-title {
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
 	.canvas-zoom {
 		position: absolute;
 		right: 16px;
@@ -671,7 +717,6 @@
 		border: 1px solid var(--hairline);
 		border-radius: 10px;
 		box-shadow: var(--shadow-menu);
-		/* Above the offscreen-hint chips, which clamp into the same corner. */
 		z-index: 25;
 	}
 	.canvas-zoom button {
