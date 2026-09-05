@@ -54,10 +54,10 @@ export function makeCodexCliAdapter(model?: string): ModelAdapter {
 				await runCodex(process.env.TRELLIS_CODEX_BIN ?? 'codex', [
 					'exec', '--ignore-user-config', '--ephemeral', '--skip-git-repo-check',
 					'--sandbox', 'read-only', '-c', 'approval_policy="never"',
-					'-c', 'features.shell_tool=false', '-c', 'web_search="disabled"',
+					'-c', 'features.shell_tool=false', '-c', 'web_search="live"',
 					'--output-schema', schema, '--output-last-message', output,
 					...(model ? ['--model', model] : []), '-'
-				], directory, `${SYSTEM_PROMPT}\n\nUse only the supplied context. Do not use tools. For revised thoughts, use null for unchanged fields.\n\n${request}`);
+				], directory, `${SYSTEM_PROMPT}\n\nUse only the supplied context, plus the web search tool to fetch URLs from the context or find sources that would ground evidence; use no other tools. For revised thoughts, use null for unchanged fields.\n\n${request}`);
 				const raw = await readFile(output, 'utf8');
 				let proposal: unknown;
 				try {

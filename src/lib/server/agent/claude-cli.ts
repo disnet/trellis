@@ -94,8 +94,12 @@ export function makeClaudeCliAdapter(model = 'sonnet'): ModelAdapter {
 					'json',
 					'--model',
 					model,
+					// Web tools only: -p auto-denies tools that lack permission, so
+					// they must be both in the tool set and pre-approved.
 					'--tools',
-					'',
+					'WebFetch,WebSearch',
+					'--allowed-tools',
+					'WebFetch,WebSearch',
 					'--setting-sources',
 					'',
 					'--strict-mcp-config',

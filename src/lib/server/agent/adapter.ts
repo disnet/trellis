@@ -62,9 +62,27 @@ export function makeFixtureAdapter(deps: FixtureDeps): ModelAdapter {
 	};
 }
 
+// Server-side web tools: search finds sources the context lacks; fetch
+// retrieves URLs already present in the prompt (evidence sources, scratch
+// text) — the API refuses any other URL. Fable/Opus/Sonnet 4.6+ generations
+// support the dynamic-filtering variants; Haiku and older only the basic ones.
+function serverTools(model: string): Anthropic.ToolUnion[] {
+	const dynamicFiltering = /^claude-(fable-5|opus-5|opus-4-[678]|sonnet-5|sonnet-4-6)/.test(model);
+	return dynamicFiltering
+		? [
+				{ type: 'web_search_20260318', name: 'web_search', max_uses: 3 },
+				{ type: 'web_fetch_20260318', name: 'web_fetch', max_uses: 5 }
+			]
+		: [
+				{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 },
+				{ type: 'web_fetch_20250910', name: 'web_fetch', max_uses: 5, max_content_tokens: 50_000 }
+			];
+}
+
 export function makeLiveAdapter(model = 'claude-sonnet-5'): ModelAdapter {
-	// Localhost tool: fail visibly after two minutes rather than hanging the UI.
-	const client = new Anthropic({ timeout: 120_000 });
+	// Localhost tool: fail visibly after three minutes (matching the CLI
+	// adapters — web fetches add latency) rather than hanging the UI.
+	const client = new Anthropic({ timeout: 180_000 });
 
 	return {
 		name: 'live',
@@ -89,6 +107,7 @@ export function makeLiveAdapter(model = 'claude-sonnet-5'): ModelAdapter {
 				max_tokens: 16000,
 				system: SYSTEM_PROMPT,
 				messages,
+				tools: serverTools(model),
 				output_config: { format: zodOutputFormat(proposalSchema) }
 			});
 
