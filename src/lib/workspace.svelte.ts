@@ -229,7 +229,7 @@ class Workspace {
 				[near.x + 2 * stepX, near.y]
 			];
 			for (const [x, y] of candidates) {
-				if (x >= 0 && y >= 0 && !collides(x, y)) return { x, y };
+				if (!collides(x, y)) return { x, y };
 			}
 		}
 		for (let row = 0; row < 12; row++) {

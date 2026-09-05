@@ -15,6 +15,8 @@
 		/** Evidence only. */
 		source?: string;
 		zoom: 'overview' | 'reading';
+		/** Canvas zoom factor; pointer deltas are divided by it so drags track the cursor. */
+		scale?: number;
 		selected?: boolean;
 		/** Marked as a per-graph landmark (Phase 6). */
 		pinned?: boolean;
@@ -42,6 +44,7 @@
 		confidence,
 		source,
 		zoom,
+		scale = 1,
 		selected = false,
 		pinned = false,
 		ghost = null,
@@ -82,7 +85,7 @@
 			if (Math.abs(dx) + Math.abs(dy) > 4) moved = true;
 			if (moved && onmove) {
 				dragging = true;
-				onmove(Math.max(0, origX + dx), Math.max(0, origY + dy));
+				onmove(origX + dx / scale, origY + dy / scale);
 			}
 		}
 		function up(ev: PointerEvent) {

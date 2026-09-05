@@ -3,6 +3,7 @@
 	import { workspace, CARD_W } from '$lib/workspace.svelte';
 	import { effectivePayload } from '$lib/types';
 	import ThoughtCard from './ThoughtCard.svelte';
+	import Icon from './Icon.svelte';
 	import { tick, untrack } from 'svelte';
 	import { layoutCanvas } from '$lib/canvas-layout';
 
@@ -11,27 +12,78 @@
 	const cardW = $derived(ws.zoom === 'reading' ? 290 : CARD_W);
 	const cardH = $derived(ws.zoom === 'reading' ? 190 : 92);
 
-	// Visible scroll window of the canvas, for off-screen card hints.
+	// Camera for the infinite canvas: a surface point renders at surface * scale + (x, y).
+	// Pan is unbounded in every direction; recenter() snaps back to the working set.
 	let viewportEl = $state<HTMLDivElement>();
-	let view = $state({ left: 0, top: 0, w: 0, h: 0 });
+	let cam = $state({ x: 0, y: 0, scale: 1 });
+	let vp = $state({ w: 0, h: 0 });
+	const MIN_SCALE = 0.25;
+	const MAX_SCALE = 2.5;
 
-	function syncView() {
-		if (!viewportEl) return;
-		view = {
-			left: viewportEl.scrollLeft,
-			top: viewportEl.scrollTop,
-			w: viewportEl.clientWidth,
-			h: viewportEl.clientHeight
-		};
+	// Visible window in surface coordinates, for off-screen card hints.
+	const view = $derived({
+		left: -cam.x / cam.scale,
+		top: -cam.y / cam.scale,
+		w: vp.w / cam.scale,
+		h: vp.h / cam.scale
+	});
+
+	function clamp(v: number, lo: number, hi: number): number {
+		return Math.min(Math.max(v, lo), hi);
 	}
 
 	$effect(() => {
 		if (!viewportEl) return;
-		syncView();
-		const ro = new ResizeObserver(syncView);
-		ro.observe(viewportEl);
+		const el = viewportEl;
+		const sync = () => (vp = { w: el.clientWidth, h: el.clientHeight });
+		sync();
+		const ro = new ResizeObserver(sync);
+		ro.observe(el);
 		return () => ro.disconnect();
 	});
+
+	// Trackpad scroll pans; ctrl/cmd+wheel (and pinch, which browsers report as
+	// ctrl+wheel) zooms about the cursor. Needs a non-passive listener to preventDefault.
+	$effect(() => {
+		if (!viewportEl) return;
+		const el = viewportEl;
+		function onWheel(e: WheelEvent) {
+			e.preventDefault();
+			if (e.ctrlKey || e.metaKey) {
+				// Pinch reports small pixel deltas; a mouse-wheel notch reports ~±100px
+				// (or lines). Clamp so one notch is a gentle step, not a 2.7x jump.
+				const d = clamp(e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY, -24, 24);
+				const rect = el.getBoundingClientRect();
+				zoomAt(e.clientX - rect.left, e.clientY - rect.top, Math.exp(-d * 0.01));
+			} else {
+				cam.x -= e.deltaX;
+				cam.y -= e.deltaY;
+			}
+		}
+		el.addEventListener('wheel', onWheel, { passive: false });
+		return () => el.removeEventListener('wheel', onWheel);
+	});
+
+	function zoomAt(px: number, py: number, factor: number) {
+		const scale = clamp(cam.scale * factor, MIN_SCALE, MAX_SCALE);
+		const f = scale / cam.scale;
+		cam = { x: px - (px - cam.x) * f, y: py - (py - cam.y) * f, scale };
+	}
+	function zoomStep(factor: number) {
+		glide(() => zoomAt(vp.w / 2, vp.h / 2, factor));
+	}
+
+	// Animated camera moves; instant when the user prefers reduced motion.
+	let gliding = $state(false);
+	let glideTimer: ReturnType<typeof setTimeout>;
+	function glide(move: () => void) {
+		if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+			gliding = true;
+			clearTimeout(glideTimer);
+			glideTimer = setTimeout(() => (gliding = false), 380);
+		}
+		move();
+	}
 
 	interface Pt {
 		x: number;
@@ -159,8 +211,6 @@
 			statement: ws.thoughts[w.thoughtId]?.statement ?? '', kind: 'card', x: w.x, y: w.y })),
 		...ghosts.map(g => ({ id: g.key, title: g.title, statement: g.statement, kind: g.kind, ...g.pos }))
 	]);
-	const surfaceW = $derived(Math.max(view.w, ...items.map(i => i.x + (dimensions[i.id]?.width ?? cardW) + 96)));
-	const surfaceH = $derived(Math.max(view.h, ...items.map(i => i.y + (dimensions[i.id]?.height ?? cardH) + 96)));
 	let searchEl = $state<HTMLInputElement>();
 	let toolbarHeight = $state(48);
 	let query = $state('');
@@ -168,18 +218,82 @@
 	$effect(() => { if (showIndex) searchEl?.focus(); });
 	let connections = $state<'all' | 'selected' | 'none'>('all');
 	const results = $derived(items.filter(i => (i.title + ' ' + i.statement).toLowerCase().includes(query.trim().toLowerCase())));
-	const outside = $derived(items.filter(i => i.x + (dimensions[i.id]?.width ?? cardW) <= view.left || i.x >= view.left + view.w ||
-		i.y + (dimensions[i.id]?.height ?? cardH) <= view.top || i.y >= view.top + view.h).length);
+
+	// Edge markers for cards outside the visible window, pinned to the nearest edge.
+	interface OffscreenHint {
+		item: (typeof items)[number];
+		arrow: string;
+		/** Chip position in viewport (screen) coordinates. */
+		x: number;
+		y: number;
+	}
+	const offscreenHints = $derived.by((): OffscreenHint[] => {
+		if (vp.w === 0) return [];
+		const out: OffscreenHint[] = [];
+		for (const it of items) {
+			const w = dimensions[it.id]?.width ?? cardW;
+			const h = dimensions[it.id]?.height ?? cardH;
+			const visible = it.x + w > view.left && it.x < view.left + view.w &&
+				it.y + h > view.top && it.y < view.top + view.h;
+			if (visible) continue;
+			const cx = it.x + w / 2;
+			const cy = it.y + h / 2;
+			const right = cx > view.left + view.w;
+			const left = cx < view.left;
+			const below = cy > view.top + view.h;
+			const above = cy < view.top;
+			const arrow = above ? (left ? '↖' : right ? '↗' : '↑')
+				: below ? (left ? '↙' : right ? '↘' : '↓')
+				: left ? '←' : '→';
+			out.push({
+				item: it,
+				arrow,
+				x: clamp(cx * cam.scale + cam.x, 80, vp.w - 80),
+				y: clamp(cy * cam.scale + cam.y, 22, vp.h - 22)
+			});
+		}
+		return out;
+	});
+	const outside = $derived(offscreenHints.length);
+
+	// Bounding box of everything on the canvas, in surface coordinates.
+	const bounds = $derived.by(() => {
+		if (!items.length) return null;
+		let l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
+		for (const i of items) {
+			l = Math.min(l, i.x); t = Math.min(t, i.y);
+			r = Math.max(r, i.x + (dimensions[i.id]?.width ?? cardW));
+			b = Math.max(b, i.y + (dimensions[i.id]?.height ?? cardH));
+		}
+		return { l, t, r, b };
+	});
+
+	/** Snap back to the working set: center it, zooming out just enough to fit. */
+	function recenter() {
+		glide(() => {
+			if (!bounds) { cam = { x: 0, y: 0, scale: 1 }; return; }
+			const w = bounds.r - bounds.l;
+			const h = bounds.b - bounds.t;
+			const scale = clamp(Math.min((vp.w - 96) / w, (vp.h - 96) / h), MIN_SCALE, 1);
+			cam = {
+				x: vp.w / 2 - (bounds.l + w / 2) * scale,
+				y: vp.h / 2 - (bounds.t + h / 2) * scale,
+				scale
+			};
+		});
+	}
+
 	let previous = $state<{ id: string; x: number; y: number; kind: string }[] | null>(null);
 	$effect(() => {
 		ws.activeGraphId; ws.activeWorkingSetId;
-		untrack(() => { previous = null; query = ''; showIndex = false; viewportEl?.scrollTo(0, 0); });
+		untrack(() => { previous = null; query = ''; showIndex = false; cam = { x: 0, y: 0, scale: 1 }; });
 	});
 	function locate(item: typeof items[number]) {
 		if (item.kind === 'card') ws.select(item.id);
-		viewportEl?.scrollTo({ left: Math.max(0, item.x + (dimensions[item.id]?.width ?? cardW) / 2 - view.w / 2),
-			top: Math.max(0, item.y + (dimensions[item.id]?.height ?? cardH) / 2 - view.h / 2),
-			behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
+		glide(() => {
+			cam.x = vp.w / 2 - (item.x + (dimensions[item.id]?.width ?? cardW) / 2) * cam.scale;
+			cam.y = vp.h / 2 - (item.y + (dimensions[item.id]?.height ?? cardH) / 2) * cam.scale;
+		});
 		showIndex = false;
 	}
 	function place(id: string, kind: string, x: number, y: number) {
@@ -196,7 +310,7 @@
 		}
 		const positions = layoutCanvas(items.map(i => ({ id: i.id, ...(dimensions[i.id] ?? { width: cardW, height: cardH }) })), links, view.w);
 		for (const item of items) { const p = positions.get(item.id)!; place(item.id, item.kind, p.x, p.y); }
-		await tick(); viewportEl?.scrollTo(0, 0);
+		await tick(); recenter();
 	}
 	function undoArrange() {
 		for (const p of previous ?? []) place(p.id, p.kind, p.x, p.y);
@@ -229,8 +343,8 @@
 		e.preventDefault();
 		const startX = e.clientX;
 		const startY = e.clientY;
-		const startLeft = viewportEl.scrollLeft;
-		const startTop = viewportEl.scrollTop;
+		const startCamX = cam.x;
+		const startCamY = cam.y;
 		let moved = false;
 		const el = viewportEl;
 		el.setPointerCapture(e.pointerId);
@@ -241,7 +355,8 @@
 			if (Math.abs(dx) + Math.abs(dy) > 4) moved = true;
 			if (moved) {
 				panning = true;
-				el.scrollTo({ left: startLeft - dx, top: startTop - dy });
+				cam.x = startCamX + dx;
+				cam.y = startCamY + dy;
 			}
 		}
 		function up() {
@@ -289,12 +404,13 @@
 <div
 	class="canvas-viewport"
 	class:panning
+	class:gliding
 	bind:this={viewportEl}
-	onscroll={syncView}
 	onpointerdown={startPan}
+	style="background-position: {cam.x}px {cam.y}px; background-size: {24 * cam.scale}px {24 * cam.scale}px;"
 >
-	<div class="canvas-surface" style="width: {surfaceW}px; height: {surfaceH}px;">
-		<svg class="edges" width={surfaceW} height={surfaceH}>
+	<div class="canvas-surface" style="transform: translate({cam.x}px, {cam.y}px) scale({cam.scale});">
+		<svg class="edges" width="1" height="1">
 			{#each edges as e (e.id)}
 				<line
 					x1={e.a.x}
@@ -336,6 +452,7 @@
 					confidence={t.confidence}
 					source={t.source}
 					zoom={ws.zoom}
+					scale={cam.scale}
 					selected={ws.selectedIds.includes(t.id)}
 					pinned={ws.isPinned(t.id)}
 					provenance={provenance(t.id)}
@@ -363,6 +480,7 @@
 				confidence={g.confidence}
 				source={g.source}
 				zoom={ws.zoom}
+				scale={cam.scale}
 				ghost={g.kind}
 				provenance="agent"
 				onmove={(x, y) => ws.moveGhost(g.key, x, y)}
@@ -376,6 +494,26 @@
 			/>
 		{/each}
 	</div>
+
+	{#each offscreenHints as h (h.item.id)}
+		<button
+			class="offscreen-hint {h.item.kind}"
+			style="left: {h.x}px; top: {h.y}px;"
+			title="Go to “{h.item.title}”"
+			onclick={() => locate(h.item)}
+		>
+			<span class="hint-arrow">{h.arrow}</span>
+			{#if h.item.kind === 'proposed'}<span class="hint-mark">◇</span>{/if}
+			<span class="hint-title">{h.item.title}</span>
+		</button>
+	{/each}
+</div>
+
+<div class="canvas-zoom">
+	<button title="Zoom out" aria-label="Zoom out" onclick={() => zoomStep(1 / 1.25)}><Icon name="zoom-out" /></button>
+	<button class="zoom-level" title="Reset zoom to 100%" onclick={() => glide(() => zoomAt(vp.w / 2, vp.h / 2, 1 / cam.scale))}>{Math.round(cam.scale * 100)}%</button>
+	<button title="Zoom in" aria-label="Zoom in" onclick={() => zoomStep(1.25)}><Icon name="zoom-in" /></button>
+	<button title="Center on your thoughts" aria-label="Center on your thoughts" onclick={recenter}><Icon name="recenter" /></button>
 </div>
 
 </div>
@@ -403,25 +541,112 @@
 		overflow: hidden;
 	}
 	.canvas-viewport {
-		overflow: auto;
+		position: relative;
+		overflow: hidden;
 		flex: 1; min-height: 0;
 		background: var(--paper);
 		background-image: radial-gradient(circle, var(--dot-grid) 1px, transparent 1px);
 		background-size: 24px 24px;
 		cursor: grab;
+		touch-action: none;
 	}
 	.canvas-viewport.panning {
 		cursor: grabbing;
 		user-select: none;
 	}
+	.canvas-viewport.gliding {
+		transition: background-position 0.35s ease, background-size 0.35s ease;
+	}
+	.canvas-viewport.gliding .canvas-surface {
+		transition: transform 0.35s ease;
+	}
 	.canvas-surface {
-		position: relative;
-
+		position: absolute;
+		top: 0;
+		left: 0;
+		transform-origin: 0 0;
 	}
 	.edges {
 		position: absolute;
-		inset: 0;
+		top: 0;
+		left: 0;
+		overflow: visible;
 		pointer-events: none;
+	}
+	.offscreen-hint {
+		position: absolute;
+		transform: translate(-50%, -50%);
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		max-width: 180px;
+		border: 1px solid var(--card-border);
+		background: var(--card-white);
+		color: var(--ink-soft);
+		border-radius: 999px;
+		padding: 3px 10px;
+		font: inherit;
+		font-size: var(--fs-11);
+		cursor: pointer;
+		box-shadow: var(--shadow-menu);
+		z-index: 20;
+	}
+	.offscreen-hint:hover {
+		border-color: var(--blue);
+		color: var(--blue);
+	}
+	.offscreen-hint.proposed {
+		border: 1.5px dashed var(--gold);
+		background: var(--parchment);
+		color: var(--gold-ink);
+		font-weight: 600;
+	}
+	.offscreen-hint.surfaced {
+		border: 1.5px dotted var(--surfaced-slate);
+		background: var(--surfaced-fill);
+		color: var(--slate-ink);
+	}
+	.hint-arrow {
+		font-size: var(--fs-12);
+	}
+	.hint-mark {
+		font-weight: 700;
+	}
+	.hint-title {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.canvas-zoom {
+		position: absolute;
+		right: 12px;
+		bottom: 12px;
+		display: flex;
+		gap: 4px;
+		/* Above the offscreen-hint chips, which clamp into the same corner. */
+		z-index: 25;
+	}
+	.canvas-zoom button {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font: inherit;
+		font-size: var(--fs-12);
+		color: var(--ink-soft);
+		background: var(--card-white);
+		border: 1px solid var(--card-border);
+		border-radius: 6px;
+		padding: 5px 8px;
+		cursor: pointer;
+		box-shadow: var(--shadow-rest);
+	}
+	.canvas-zoom button:hover {
+		border-color: var(--blue);
+		color: var(--blue);
+	}
+	.canvas-zoom .zoom-level {
+		min-width: 46px;
+		font-variant-numeric: tabular-nums;
 	}
 	.edge {
 		stroke: var(--edge-ink);
