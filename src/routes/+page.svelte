@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
+	import Browse from '$lib/components/Browse.svelte';
 	import Canvas from '$lib/components/Canvas.svelte';
 	import GraphSwitcher from '$lib/components/GraphSwitcher.svelte';
 	import ModelSwitcher from '$lib/components/ModelSwitcher.svelte';
@@ -134,13 +135,32 @@
 			{/if}
 		</span>
 		<div class="right">
-			<button
-				title="Switch projection — same working set, same selection, nothing changes"
-				aria-pressed={ws.view === 'outline'}
-				onclick={() => (ws.view = ws.view === 'canvas' ? 'outline' : 'canvas')}
-			>
-				{ws.view === 'canvas' ? '☰ Outline' : '▦ Canvas'}
-			</button>
+			<div class="views" role="group" aria-label="Center view">
+				<button
+					class:active={ws.view === 'canvas'}
+					title="Spatial projection of the working set"
+					aria-pressed={ws.view === 'canvas'}
+					onclick={() => (ws.view = 'canvas')}
+				>
+					▦ Canvas
+				</button>
+				<button
+					class:active={ws.view === 'outline'}
+					title="Outline projection — same working set, same selection"
+					aria-pressed={ws.view === 'outline'}
+					onclick={() => (ws.view = 'outline')}
+				>
+					☰ Outline
+				</button>
+				<button
+					class:active={ws.view === 'browse'}
+					title="Sort and filter every thought in the graph, then stage them onto the canvas"
+					aria-pressed={ws.view === 'browse'}
+					onclick={() => (ws.view = 'browse')}
+				>
+					▤ Browse
+				</button>
+			</div>
 			<button
 				class="zoom"
 				onclick={() => (ws.zoom = ws.zoom === 'overview' ? 'reading' : 'overview')}
@@ -188,8 +208,10 @@
 			<div class="canvas-pane">
 				{#if ws.view === 'canvas'}
 					<Canvas />
-				{:else}
+				{:else if ws.view === 'outline'}
 					<Outline />
+				{:else}
+					<Browse />
 				{/if}
 			</div>
 		{/if}
@@ -314,6 +336,27 @@
 	.right button:disabled {
 		opacity: 0.45;
 		cursor: not-allowed;
+	}
+	.views {
+		display: flex;
+	}
+	.views button {
+		border-radius: 0;
+		margin-left: -1px;
+	}
+	.views button:first-child {
+		border-radius: 6px 0 0 6px;
+		margin-left: 0;
+	}
+	.views button:last-child {
+		border-radius: 0 6px 6px 0;
+	}
+	.views button.active {
+		border-color: #3b5bdb;
+		background: #e9edfb;
+		color: #2c47b8;
+		position: relative;
+		z-index: 1;
 	}
 	.export {
 		font-size: 12px;

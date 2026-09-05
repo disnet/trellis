@@ -59,8 +59,9 @@ class Workspace {
 
 	selectedIds = $state<string[]>([]);
 	zoom = $state<'overview' | 'reading'>('overview');
-	/** Which projection of the working set is shown. View-only, never persisted. */
-	view = $state<'canvas' | 'outline'>('canvas');
+	/** What the center pane shows: two projections of the working set, plus a
+	 *  graph-wide browse table. View-only, never persisted. */
+	view = $state<'canvas' | 'outline' | 'browse'>('canvas');
 	/** Preview positions for proposed cards, keyed `${changeSetId}:${ref}`. View-only, not persisted. */
 	ghostPositions = $state<Record<string, GhostPosition>>({});
 	notice = $state<string | null>(null);
@@ -266,6 +267,19 @@ class Workspace {
 	async createSet(name?: string): Promise<string | null> {
 		const err = await this.post('/api/workingset', { action: 'create', name });
 		if (!err) this.selectedIds = [];
+		return err;
+	}
+
+	/** Promote a set of existing thoughts (e.g. a browse filter's results) into
+	 *  a new working set and make it active. Membership only — graph untouched. */
+	async createSetFrom(name: string, thoughtIds: string[]): Promise<string | null> {
+		const ids = thoughtIds.filter((id) => id in this.thoughts);
+		if (ids.length === 0) return 'Nothing to promote — the filter matched no thoughts.';
+		const err = await this.post('/api/workingset', { action: 'create', name, thoughtIds: ids });
+		if (!err) {
+			this.selectedIds = [];
+			this.notice = `Opened ${ids.length} thought${ids.length === 1 ? '' : 's'} in the new working set “${name}”.`;
+		}
 		return err;
 	}
 

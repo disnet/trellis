@@ -867,7 +867,9 @@ export function setPinned(thoughtId: string, pinned: boolean): string | null {
 
 const SET_NAME_LIMIT = 40;
 
-export function createWorkingSet(name?: string): string | null {
+/** Create a working set and make it active, optionally seeded with existing
+ *  thoughts laid out on a grid (used to promote a browse filter to a set). */
+export function createWorkingSet(name?: string, thoughtIds?: string[]): string | null {
 	const graphId = activeGraphId();
 	const count = (
 		db.prepare('SELECT COUNT(*) AS n FROM working_sets WHERE graph_id = ?').get(graphId) as {
@@ -875,9 +877,13 @@ export function createWorkingSet(name?: string): string | null {
 		}
 	).n;
 	const trimmed = typeof name === 'string' ? name.trim() : '';
-	const finalName = trimmed || `Set ${count + 1}`;
-	if (finalName.length > SET_NAME_LIMIT)
-		return `Name is longer than ${SET_NAME_LIMIT} characters.`;
+	let finalName = trimmed || `Set ${count + 1}`;
+	if (finalName.length > SET_NAME_LIMIT) finalName = `${finalName.slice(0, SET_NAME_LIMIT - 1)}…`;
+	const seeds = [...new Set(Array.isArray(thoughtIds) ? thoughtIds : [])];
+	const exists = db.prepare('SELECT 1 FROM thoughts WHERE id = ? AND graph_id = ?');
+	for (const tid of seeds) {
+		if (typeof tid !== 'string' || !exists.get(tid, graphId)) return `Unknown thought: ${tid}`;
+	}
 	const wsId = id('ws');
 	db.transaction(() => {
 		db.prepare('INSERT INTO working_sets (id, name, graph_id, created_at) VALUES (?, ?, ?, ?)').run(
@@ -886,6 +892,11 @@ export function createWorkingSet(name?: string): string | null {
 			graphId,
 			Date.now()
 		);
+		const insert = db.prepare(
+			'INSERT INTO working_set_items (working_set_id, thought_id, x, y) VALUES (?, ?, ?, ?)'
+		);
+		// Same grid the client uses for auto-placement (7 columns of card slots).
+		seeds.forEach((tid, i) => insert.run(wsId, tid, 80 + (i % 7) * 320, 60 + Math.floor(i / 7) * 148));
 		setMeta(`active_working_set:${graphId}`, wsId);
 	})();
 	return null;

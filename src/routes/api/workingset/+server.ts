@@ -18,7 +18,8 @@ import type { RequestHandler } from './$types';
 //   { action: 'add', items }           → add thoughts to the active set
 //   { action: 'remove', thoughtId }    → drop one thought from the active set
 //   { action: 'clear' }                → start fresh with an empty active set
-//   { action: 'create', name? }        → new working set, made active
+//   { action: 'create', name?, thoughtIds? } → new working set, made active,
+//                                              optionally seeded with thoughts
 //   { action: 'switch', workingSetId } → change which set is active
 //   { action: 'rename', workingSetId, name }
 //   { action: 'delete', workingSetId } → delete a set (membership only)
@@ -44,7 +45,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		return json({ state: getState() });
 	}
 	if (body?.action === 'create') {
-		const error = createWorkingSet(body.name);
+		const error = createWorkingSet(body.name, body.thoughtIds);
 		if (error) return json({ error }, { status: 400 });
 		return json({ state: getState() });
 	}
