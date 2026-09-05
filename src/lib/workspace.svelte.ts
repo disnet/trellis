@@ -8,6 +8,7 @@ import {
 	effectivePayload,
 	type AgentAction,
 	type ChangeSet,
+	type Confidence,
 	type GraphInfo,
 	type OperationDecision,
 	type OperationPayload,
@@ -573,11 +574,29 @@ class Workspace {
 
 	async reviseThought(
 		id: string,
-		fields: { title: string; statement: string; status: ThoughtStatus }
+		fields: {
+			title: string;
+			statement: string;
+			status: ThoughtStatus;
+			/** undefined = unchanged, null = clear. */
+			confidence?: Confidence | null;
+			source?: string | null;
+		}
 	): Promise<string | null> {
 		const t = this.thoughts[id];
 		if (!t) return null;
-		if (t.title === fields.title && t.statement === fields.statement && t.status === fields.status)
+		const sameConfidence =
+			fields.confidence === undefined ||
+			JSON.stringify(fields.confidence) === JSON.stringify(t.confidence ?? null);
+		const sameSource =
+			fields.source === undefined || (fields.source ?? null) === (t.source ?? null);
+		if (
+			t.title === fields.title &&
+			t.statement === fields.statement &&
+			t.status === fields.status &&
+			sameConfidence &&
+			sameSource
+		)
 			return null;
 		return this.post(`/api/thoughts/${id}/revise`, fields);
 	}

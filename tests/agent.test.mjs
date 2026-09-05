@@ -58,7 +58,7 @@ process.stdin.on('end', () => {
   fs.writeFileSync(${JSON.stringify(join(directory, 'cwd'))}, process.cwd());
   fs.writeFileSync(flag('--output-last-message'), JSON.stringify({ summary: 'Refined the claim.', operations: [{
     op: 'revise_thought', client_ref: 'r1', depends_on: [], evidence_refs: ['t1'], rationale: 'Clarify.',
-    thought_id: 't1', thought: { title: 'Better title', type: null, status: null, statement: null }
+    thought_id: 't1', thought: { title: 'Better title', type: null, status: null, statement: null, confidence: null, source: null }
   }] }));
 });
 `, { mode: 0o755 });
@@ -95,7 +95,7 @@ test('malformed Codex output gets corrective retry and logs selected model witho
 	const counter = join(directory, 'attempt');
 	const valid = { summary: 'Refined the claim.', operations: [{
 		op: 'revise_thought', client_ref: 'r1', depends_on: [], evidence_refs: [thoughtId], rationale: 'Clarify.',
-		thought_id: thoughtId, thought: { title: 'Clearer title', type: null, status: null, statement: null }
+		thought_id: thoughtId, thought: { title: 'Clearer title', type: null, status: null, statement: null, confidence: null, source: null }
 	}] };
 	await writeFile(bin, `#!/usr/bin/env node
 const fs = require('node:fs');

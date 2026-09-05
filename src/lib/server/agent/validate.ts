@@ -7,15 +7,20 @@
 // stray evidence refs, duplicate relations); substantive problems are returned
 // as errors, which the caller feeds back to the model for one retry.
 
+import { validateConfidence } from '$lib/types';
 import {
 	MAX_OPERATIONS,
+	SOURCE_LIMIT,
 	STATEMENT_LIMIT,
 	SUMMARY_LIMIT,
 	RATIONALE_LIMIT,
 	TITLE_LIMIT,
 	proposalSchema,
+	wireConfidenceToInternal,
 	type AgentProposal,
-	type WireOperation
+	type WireCreateThought,
+	type WireOperation,
+	type WireReviseThought
 } from './wire';
 
 export interface ValidationDeps {
@@ -61,6 +66,30 @@ export function validateProposal(raw: unknown, deps: ValidationDeps): Validation
 	);
 	const isEndpoint = (ref: string) => createRefs.has(ref) || deps.thoughtExists(ref);
 
+	// Null-valued optional fields (the codex adapter's "absent") and empty
+	// confidence objects are mechanical noise: normalize them away in place.
+	const cleanExtras = (t: WireCreateThought['thought'] | WireReviseThought['thought']) => {
+		if (t.source != null && !t.source.trim()) t.source = null;
+		if (t.source == null) delete t.source;
+		if (t.confidence != null && !wireConfidenceToInternal(t.confidence)) t.confidence = null;
+		if (t.confidence == null) delete t.confidence;
+	};
+
+	const checkExtras = (
+		label: string,
+		t: WireCreateThought['thought'] | WireReviseThought['thought']
+	) => {
+		cleanExtras(t);
+		if (t.source !== undefined && t.source!.length > SOURCE_LIMIT)
+			errors.push(`${label}: source exceeds ${SOURCE_LIMIT} characters.`);
+		if (t.confidence !== undefined) {
+			if (t.type !== undefined && t.type !== 'prediction')
+				errors.push(`${label}: confidence is only valid on a prediction.`);
+			const err = validateConfidence(wireConfidenceToInternal(t.confidence));
+			if (err) errors.push(`${label}: ${err}`);
+		}
+	};
+
 	const checkText = (label: string, title?: string, statement?: string) => {
 		if (title !== undefined) {
 			if (!title.trim()) errors.push(`${label}: title must not be empty.`);
@@ -88,13 +117,21 @@ export function validateProposal(raw: unknown, deps: ValidationDeps): Validation
 
 		if (op.op === 'create_thought') {
 			checkText(label, op.thought.title, op.thought.statement);
+			checkExtras(label, op.thought);
 		} else if (op.op === 'revise_thought') {
 			if (!deps.thoughtExists(op.thought_id))
 				errors.push(`${label}: revises unknown thought "${op.thought_id}".`);
 			if (createRefs.has(op.thought_id))
 				errors.push(`${label}: cannot revise a thought being created in the same change set.`);
 			const t = op.thought;
-			if (t.title === undefined && t.statement === undefined && t.status === undefined)
+			checkExtras(label, t);
+			if (
+				t.title === undefined &&
+				t.statement === undefined &&
+				t.status === undefined &&
+				t.confidence === undefined &&
+				t.source === undefined
+			)
 				errors.push(`${label}: the revision changes nothing.`);
 			checkText(label, t.title, t.statement);
 		} else {

@@ -9,20 +9,27 @@ import { generateProposal, linkCallToChangeSet } from './agent';
 import type { ModelSelection } from '$lib/models';
 import {
 	RELATION_TYPES,
+	SOURCE_LIMIT,
 	STATEMENT_LIMIT,
 	THOUGHT_STATUSES,
 	THOUGHT_TYPES,
 	TITLE_LIMIT,
-	type WireOperation
+	wireConfidenceToInternal,
+	type WireCreateThought,
+	type WireOperation,
+	type WireReviseThought
 } from './agent/wire';
 import {
 	effectivePayload,
+	validateConfidence,
 	type ActorType,
+	type Confidence,
 	type AgentAction,
 	type ChangeSet,
 	type OperationDecision,
 	type OperationPayload,
 	type ProposedOperation,
+	type ProposedThoughtFields,
 	type ReentrySummary,
 	type Relation,
 	type ScratchNote,
@@ -62,6 +69,8 @@ function rowToRevision(r: any): ThoughtRevision {
 		title: r.title,
 		statement: r.statement,
 		status: r.status,
+		confidence: r.confidence ? JSON.parse(r.confidence) : undefined,
+		source: r.source ?? undefined,
 		actorType: r.actor_type,
 		sourceChangeSetId: r.source_change_set_id ?? undefined,
 		editedFromProposal: r.edited_from_proposal ? true : undefined,
@@ -76,6 +85,8 @@ function rowToThought(r: any, revisions: ThoughtRevision[]): Thought {
 		status: r.status,
 		title: r.title,
 		statement: r.statement,
+		confidence: r.confidence ? JSON.parse(r.confidence) : undefined,
+		source: r.source ?? undefined,
 		createdAt: r.created_at,
 		updatedAt: r.updated_at,
 		revisions
@@ -282,7 +293,7 @@ export function reentrySummary(): ReentrySummary {
 		}));
 
 	const central = inWorkingSet
-		.filter((t) => t.type === 'claim' || t.type === 'question')
+		.filter((t) => t.type === 'claim' || t.type === 'question' || t.type === 'prediction')
 		.map((t) => ({ ...ref(t), degree: degree.get(t.id) ?? 0 }))
 		.sort((a, b) => b.degree - a.degree)
 		.slice(0, 3);
@@ -320,10 +331,26 @@ export function reentrySummary(): ReentrySummary {
 
 // --- invoking agent operations ---
 
+// Wire thought fields → internal form: nulls dropped, confidence camelCased.
+function wireThoughtToInternal(
+	t: WireCreateThought['thought'] | WireReviseThought['thought']
+): Partial<ProposedThoughtFields> {
+	const out: Partial<ProposedThoughtFields> = {};
+	if (t.type != null) out.type = t.type;
+	if (t.status != null) out.status = t.status;
+	if (t.title != null) out.title = t.title;
+	if (t.statement != null) out.statement = t.statement;
+	const confidence = wireConfidenceToInternal(t.confidence);
+	if (confidence) out.confidence = confidence;
+	if (t.source != null) out.source = t.source;
+	return out;
+}
+
 function wireToPayload(op: WireOperation): OperationPayload {
-	if (op.op === 'create_thought') return { op: 'create_thought', thought: op.thought };
+	if (op.op === 'create_thought')
+		return { op: 'create_thought', thought: wireThoughtToInternal(op.thought) as ProposedThoughtFields };
 	if (op.op === 'revise_thought')
-		return { op: 'revise_thought', thoughtId: op.thought_id, thought: op.thought };
+		return { op: 'revise_thought', thoughtId: op.thought_id, thought: wireThoughtToInternal(op.thought) };
 	return { op: 'add_relation', from: op.from, to: op.to, relationType: op.relation_type };
 }
 
@@ -488,6 +515,17 @@ function validateEditedPayload(original: OperationPayload, edited: any): string 
 			return `Title is longer than ${TITLE_LIMIT} characters.`;
 		if (typeof t.statement === 'string' && t.statement.length > STATEMENT_LIMIT)
 			return `Statement is longer than ${STATEMENT_LIMIT} characters.`;
+		if (t.confidence !== undefined && t.confidence !== null) {
+			if (edited.op === 'create_thought' && t.type !== 'prediction')
+				return 'Confidence is only valid on a prediction.';
+			const err = validateConfidence(t.confidence);
+			if (err) return err;
+		}
+		if (t.source !== undefined && t.source !== null) {
+			if (typeof t.source !== 'string') return 'Invalid source.';
+			if (t.source.length > SOURCE_LIMIT)
+				return `Source is longer than ${SOURCE_LIMIT} characters.`;
+		}
 	} else if (edited.op === 'add_relation') {
 		if (!RELATION_TYPES.includes(edited.relationType)) return 'Invalid relation type.';
 		if (edited.from !== (original as any).from || edited.to !== (original as any).to)
@@ -559,8 +597,8 @@ export function applyChangeSet(
 	);
 	const insertRevision = db.prepare(
 		`INSERT INTO thought_revisions
-		   (id, thought_id, title, statement, status, actor_type, source_change_set_id, edited_from_proposal, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		   (id, thought_id, title, statement, status, confidence, source, actor_type, source_change_set_id, edited_from_proposal, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	);
 
 	let fallbackY = 80;
@@ -583,16 +621,20 @@ export function applyChangeSet(
 				if (p.op === 'create_thought') {
 					const tid = id('t');
 					refToId[op.clientRef] = tid;
+					const confidence = p.thought.confidence ? JSON.stringify(p.thought.confidence) : null;
+					const source = p.thought.source ?? null;
 					db.prepare(
-						`INSERT INTO thoughts (id, type, status, title, statement, graph_id, created_at, updated_at)
-						 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-					).run(tid, p.thought.type, p.thought.status, p.thought.title, p.thought.statement, graphId, now, now);
+						`INSERT INTO thoughts (id, type, status, title, statement, confidence, source, graph_id, created_at, updated_at)
+						 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+					).run(tid, p.thought.type, p.thought.status, p.thought.title, p.thought.statement, confidence, source, graphId, now, now);
 					insertRevision.run(
 						id('rev'),
 						tid,
 						p.thought.title,
 						p.thought.statement,
 						p.thought.status,
+						confidence,
+						source,
 						actor,
 						cs.id,
 						edited ? 1 : 0,
@@ -608,17 +650,23 @@ export function applyChangeSet(
 					const fields = {
 						title: p.thought.title ?? row.title,
 						statement: p.thought.statement ?? row.statement,
-						status: p.thought.status ?? row.status
+						status: p.thought.status ?? row.status,
+						confidence: p.thought.confidence
+							? JSON.stringify(p.thought.confidence)
+							: (row.confidence ?? null),
+						source: p.thought.source ?? row.source ?? null
 					};
 					db.prepare(
-						'UPDATE thoughts SET title = ?, statement = ?, status = ?, updated_at = ? WHERE id = ?'
-					).run(fields.title, fields.statement, fields.status, now, p.thoughtId);
+						'UPDATE thoughts SET title = ?, statement = ?, status = ?, confidence = ?, source = ?, updated_at = ? WHERE id = ?'
+					).run(fields.title, fields.statement, fields.status, fields.confidence, fields.source, now, p.thoughtId);
 					insertRevision.run(
 						id('rev'),
 						p.thoughtId,
 						fields.title,
 						fields.statement,
 						fields.status,
+						fields.confidence,
+						fields.source,
 						actor,
 						cs.id,
 						edited ? 1 : 0,
@@ -685,7 +733,14 @@ export function undoLastApply(): string | null {
 
 export function reviseThought(
 	thoughtId: string,
-	fields: { title: string; statement: string; status: ThoughtStatus }
+	fields: {
+		title: string;
+		statement: string;
+		status: ThoughtStatus;
+		/** undefined = unchanged, null = clear. */
+		confidence?: Confidence | null;
+		source?: string | null;
+	}
 ): string | null {
 	const row = db
 		.prepare('SELECT * FROM thoughts WHERE id = ? AND graph_id = ?')
@@ -698,19 +753,46 @@ export function reviseThought(
 	if (fields.title.length > TITLE_LIMIT) return `Title is longer than ${TITLE_LIMIT} characters.`;
 	if (fields.statement.length > STATEMENT_LIMIT)
 		return `Statement is longer than ${STATEMENT_LIMIT} characters.`;
-	if (row.title === fields.title && row.statement === fields.statement && row.status === fields.status)
+
+	const confidence =
+		fields.confidence === undefined
+			? (row.confidence as string | null)
+			: fields.confidence === null
+				? null
+				: JSON.stringify(fields.confidence);
+	if (fields.confidence != null) {
+		if (row.type !== 'prediction') return 'Confidence is only valid on a prediction.';
+		const err = validateConfidence(fields.confidence);
+		if (err) return err;
+	}
+	let source =
+		fields.source === undefined ? ((row.source as string | null) ?? null) : fields.source;
+	if (source !== null) {
+		if (typeof source !== 'string') return 'Invalid source.';
+		source = source.trim() || null;
+		if (source && source.length > SOURCE_LIMIT)
+			return `Source is longer than ${SOURCE_LIMIT} characters.`;
+	}
+
+	if (
+		row.title === fields.title &&
+		row.statement === fields.statement &&
+		row.status === fields.status &&
+		(row.confidence ?? null) === confidence &&
+		(row.source ?? null) === source
+	)
 		return null;
 
 	const now = Date.now();
 	db.transaction(() => {
 		db.prepare(
-			'UPDATE thoughts SET title = ?, statement = ?, status = ?, updated_at = ? WHERE id = ?'
-		).run(fields.title, fields.statement, fields.status, now, thoughtId);
+			'UPDATE thoughts SET title = ?, statement = ?, status = ?, confidence = ?, source = ?, updated_at = ? WHERE id = ?'
+		).run(fields.title, fields.statement, fields.status, confidence, source, now, thoughtId);
 		db.prepare(
 			`INSERT INTO thought_revisions
-			   (id, thought_id, title, statement, status, actor_type, source_change_set_id, edited_from_proposal, created_at)
-			 VALUES (?, ?, ?, ?, ?, 'human', NULL, 0, ?)`
-		).run(id('rev'), thoughtId, fields.title, fields.statement, fields.status, now);
+			   (id, thought_id, title, statement, status, confidence, source, actor_type, source_change_set_id, edited_from_proposal, created_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, 'human', NULL, 0, ?)`
+		).run(id('rev'), thoughtId, fields.title, fields.statement, fields.status, confidence, source, now);
 	})();
 	return null;
 }

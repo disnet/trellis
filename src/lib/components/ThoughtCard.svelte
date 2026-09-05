@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { ActorType, ThoughtStatus, ThoughtType } from '$lib/types';
+	import { formatConfidence, type ActorType, type Confidence, type ThoughtStatus, type ThoughtType } from '$lib/types';
 
 	interface Props {
 		x: number;
@@ -9,6 +9,10 @@
 		status: ThoughtStatus;
 		title: string;
 		statement: string;
+		/** Predictions only. */
+		confidence?: Confidence;
+		/** Evidence only. */
+		source?: string;
 		zoom: 'overview' | 'reading';
 		selected?: boolean;
 		/** Marked as a per-graph landmark (Phase 6). */
@@ -34,6 +38,8 @@
 		status,
 		title,
 		statement,
+		confidence,
+		source,
 		zoom,
 		selected = false,
 		pinned = false,
@@ -130,12 +136,18 @@
 	<div class="title">{title}</div>
 	{#if zoom === 'reading'}
 		<p class="statement">{statement}</p>
+		{#if source}
+			<div class="source" title="Source">{source}</div>
+		{/if}
 		{#if relationSummary}
 			<div class="relsum">{relationSummary}</div>
 		{/if}
 	{/if}
 	<div class="foot">
 		<span class="status">{status}</span>
+		{#if confidence}
+			<span class="confidence" title="Confidence">{formatConfidence(confidence)}</span>
+		{/if}
 		{#if ghost === 'surfaced' && onadd}
 			<button
 				class="add-to-set"
@@ -201,6 +213,8 @@
 	.type-question { background: #e5e1f2; color: #4a4174; }
 	.type-concept { background: #dfe9ef; color: #35586b; }
 	.type-example { background: #f2e6df; color: #6b4a35; }
+	.type-prediction { background: #f2dfe7; color: #6b3550; }
+	.type-evidence { background: #ece5c8; color: #635417; }
 	.badge {
 		font-size: 10px;
 		white-space: nowrap;
@@ -277,5 +291,23 @@
 		padding: 1px 7px;
 		color: #5a523f;
 		background: #faf7f0;
+	}
+	.confidence {
+		font-size: 10px;
+		font-weight: 700;
+		border: 1px solid #ddb8c8;
+		border-radius: 999px;
+		padding: 1px 7px;
+		color: #6b3550;
+		background: #faf2f6;
+		white-space: nowrap;
+	}
+	.source {
+		margin-top: 6px;
+		font-size: 11px;
+		color: #635417;
+		border-top: 1px solid #eae5d9;
+		padding-top: 4px;
+		word-break: break-word;
 	}
 </style>

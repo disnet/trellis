@@ -5,7 +5,7 @@
 // identical graph state always produces an identical request.
 
 import { activeGraphId, activeWorkingSetId, db } from '../db';
-import type { RelationType, ThoughtStatus, ThoughtType } from '$lib/types';
+import type { Confidence, RelationType, ThoughtStatus, ThoughtType } from '$lib/types';
 
 export interface ContextThought {
 	id: string;
@@ -13,6 +13,8 @@ export interface ContextThought {
 	status: ThoughtStatus;
 	title: string;
 	statement: string;
+	confidence?: Confidence;
+	source?: string;
 	inWorkingSet: boolean;
 	selected: boolean;
 }
@@ -72,6 +74,8 @@ export function buildContext(
 			status: r.status,
 			title: r.title,
 			statement: r.statement,
+			confidence: r.confidence ? JSON.parse(r.confidence) : undefined,
+			source: r.source ?? undefined,
 			inWorkingSet: workingIds.has(r.id),
 			selected: selected.has(r.id)
 		}));

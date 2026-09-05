@@ -5,8 +5,16 @@
 // the model, so generation is constrained to this shape.
 
 import { z } from 'zod';
+import type { Confidence } from '$lib/types';
 
-export const THOUGHT_TYPES = ['claim', 'question', 'concept', 'example'] as const;
+export const THOUGHT_TYPES = [
+	'claim',
+	'question',
+	'concept',
+	'example',
+	'prediction',
+	'evidence'
+] as const;
 export const THOUGHT_STATUSES = [
 	'tentative',
 	'developing',
@@ -27,14 +35,61 @@ export const TITLE_LIMIT = 300;
 export const STATEMENT_LIMIT = 4000;
 export const SUMMARY_LIMIT = 500;
 export const RATIONALE_LIMIT = 1000;
+export const SOURCE_LIMIT = 500;
 export const MAX_OPERATIONS = 20;
+
+const confidenceSchema = z.object({
+	probability: z
+		.number()
+		.min(0)
+		.max(1)
+		.nullish()
+		.describe('Binary predictions: probability the statement resolves true, 0–1.'),
+	low: z
+		.number()
+		.nullish()
+		.describe('Quantitative predictions: lower bound of the confidence interval.'),
+	high: z.number().nullish().describe('Upper bound of the confidence interval.'),
+	unit: z.string().nullish().describe('Unit for low/high, e.g. "ms" or "users".'),
+	resolve_by: z
+		.string()
+		.nullish()
+		.describe('ISO date (YYYY-MM-DD) when the prediction should be resolvable, if one exists.')
+});
 
 const thoughtFields = z.object({
 	type: z.enum(THOUGHT_TYPES),
 	status: z.enum(THOUGHT_STATUSES),
 	title: z.string().describe(`One-line resolution, at most ${TITLE_LIMIT} characters.`),
-	statement: z.string().describe(`Full resolution, at most ${STATEMENT_LIMIT} characters.`)
+	statement: z.string().describe(`Full resolution, at most ${STATEMENT_LIMIT} characters.`),
+	confidence: confidenceSchema
+		.nullish()
+		.describe(
+			'Only for type "prediction": a probability for a binary outcome, or a low/high interval (with unit) for a quantitative one.'
+		),
+	source: z
+		.string()
+		.nullish()
+		.describe(
+			`Only for type "evidence": where it comes from — citation, URL, or dataset. At most ${SOURCE_LIMIT} characters.`
+		)
 });
+
+export type WireConfidence = z.infer<typeof confidenceSchema>;
+
+/** Wire confidence → internal camelCase form, dropping nulls; undefined when empty. */
+export function wireConfidenceToInternal(
+	c: WireConfidence | null | undefined
+): Confidence | undefined {
+	if (!c) return undefined;
+	const out: Confidence = {};
+	if (c.probability != null) out.probability = c.probability;
+	if (c.low != null) out.low = c.low;
+	if (c.high != null) out.high = c.high;
+	if (c.unit != null) out.unit = c.unit;
+	if (c.resolve_by != null) out.resolveBy = c.resolve_by;
+	return Object.keys(out).length > 0 ? out : undefined;
+}
 
 const opBase = {
 	client_ref: z
@@ -95,15 +150,36 @@ export type WireAddRelation = z.infer<typeof addRelation>;
 export type WireOperation = z.infer<typeof wireOperationSchema>;
 export type AgentProposal = z.infer<typeof proposalSchema>;
 
-// OpenAI strict schemas require every property; null means an unchanged field.
+// OpenAI strict schemas require every property; null means an absent (create)
+// or unchanged (revise) field.
+const strictConfidence = z.object({
+	probability: z.number().min(0).max(1).nullable(),
+	low: z.number().nullable(),
+	high: z.number().nullable(),
+	unit: z.string().nullable(),
+	resolve_by: z.string().nullable()
+});
+const strictExtras = {
+	confidence: strictConfidence
+		.nullable()
+		.describe('Only for type "prediction"; null otherwise.'),
+	source: z.string().nullable().describe('Only for type "evidence"; null otherwise.')
+};
 export const codexProposalSchema = proposalSchema.extend({
 	operations: z.array(z.union([
-		createThought,
+		createThought.extend({ thought: z.object({
+			type: thoughtFields.shape.type,
+			status: thoughtFields.shape.status,
+			title: thoughtFields.shape.title,
+			statement: thoughtFields.shape.statement,
+			...strictExtras
+		}) }),
 		reviseThought.extend({ thought: z.object({
 			type: thoughtFields.shape.type.nullable(),
 			status: thoughtFields.shape.status.nullable(),
 			title: thoughtFields.shape.title.nullable(),
-			statement: thoughtFields.shape.statement.nullable()
+			statement: thoughtFields.shape.statement.nullable(),
+			...strictExtras
 		}) }),
 		addRelation
 	]))

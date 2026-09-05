@@ -2,7 +2,62 @@
 // "Agent contract". Shared between the client store and the server, which
 // persists everything in SQLite (Phase 1).
 
-export type ThoughtType = 'claim' | 'question' | 'concept' | 'example';
+export type ThoughtType = 'claim' | 'question' | 'concept' | 'example' | 'prediction' | 'evidence';
+
+/** Calibrated confidence attached to a prediction: a probability for a binary
+ *  outcome, or a low/high interval (in `unit`) for a quantitative one. */
+export interface Confidence {
+	/** Probability the prediction resolves true, 0–1. */
+	probability?: number;
+	/** Interval bounds for a quantitative prediction, in `unit`. */
+	low?: number;
+	high?: number;
+	unit?: string;
+	/** ISO date (YYYY-MM-DD) when the prediction should be resolvable. */
+	resolveBy?: string;
+}
+
+/** Shape-check a confidence value (client edits arrive as arbitrary JSON). */
+export function validateConfidence(c: unknown): string | null {
+	if (typeof c !== 'object' || c === null || Array.isArray(c)) return 'Invalid confidence.';
+	const o = c as Record<string, unknown>;
+	for (const k of Object.keys(o)) {
+		if (!['probability', 'low', 'high', 'unit', 'resolveBy'].includes(k))
+			return `Unknown confidence field "${k}".`;
+	}
+	if (
+		o.probability !== undefined &&
+		(typeof o.probability !== 'number' ||
+			!Number.isFinite(o.probability) ||
+			o.probability < 0 ||
+			o.probability > 1)
+	)
+		return 'Confidence probability must be a number between 0 and 1.';
+	for (const k of ['low', 'high'] as const) {
+		if (o[k] !== undefined && (typeof o[k] !== 'number' || !Number.isFinite(o[k])))
+			return `Confidence ${k} must be a number.`;
+	}
+	if ((o.low === undefined) !== (o.high === undefined))
+		return 'A confidence interval needs both low and high.';
+	if (typeof o.low === 'number' && typeof o.high === 'number' && o.low > o.high)
+		return 'Confidence low must not exceed high.';
+	if (o.unit !== undefined && typeof o.unit !== 'string') return 'Confidence unit must be a string.';
+	if (o.resolveBy !== undefined && typeof o.resolveBy !== 'string')
+		return 'Confidence resolveBy must be a string.';
+	if (o.probability === undefined && o.low === undefined)
+		return 'Confidence needs a probability or a low/high interval.';
+	return null;
+}
+
+/** "70%" / "40–80 ms" / "70%, by 2027-01-01" — for cards, the outline, and prompts. */
+export function formatConfidence(c: Confidence): string {
+	const parts: string[] = [];
+	if (c.probability !== undefined) parts.push(`${Math.round(c.probability * 100)}%`);
+	if (c.low !== undefined && c.high !== undefined)
+		parts.push(`${c.low}–${c.high}${c.unit ? ` ${c.unit}` : ''}`);
+	if (c.resolveBy) parts.push(`by ${c.resolveBy}`);
+	return parts.join(', ');
+}
 
 export type ThoughtStatus = 'tentative' | 'developing' | 'believed' | 'contested' | 'retired';
 
@@ -21,6 +76,10 @@ export interface ThoughtRevision {
 	title: string;
 	statement: string;
 	status: ThoughtStatus;
+	/** Predictions only — revised as beliefs update, so history shows calibration. */
+	confidence?: Confidence;
+	/** Evidence: where it comes from — citation, URL, or dataset. */
+	source?: string;
 	actorType: ActorType;
 	/** Change set that produced this revision, if agent-proposed. */
 	sourceChangeSetId?: string;
@@ -35,6 +94,10 @@ export interface Thought {
 	status: ThoughtStatus;
 	title: string;
 	statement: string;
+	/** Predictions only. */
+	confidence?: Confidence;
+	/** Evidence: where it comes from — citation, URL, or dataset. */
+	source?: string;
 	createdAt: number;
 	updatedAt: number;
 	/** Oldest first; the last entry always matches the current fields. */
@@ -90,6 +153,10 @@ export interface ProposedThoughtFields {
 	status: ThoughtStatus;
 	title: string;
 	statement: string;
+	/** Predictions only. */
+	confidence?: Confidence;
+	/** Evidence only: citation, URL, or dataset. */
+	source?: string;
 }
 
 export interface CreateThoughtPayload {

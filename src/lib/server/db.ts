@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS thoughts (
   status TEXT NOT NULL,
   title TEXT NOT NULL,
   statement TEXT NOT NULL,
+  confidence TEXT,
+  source TEXT,
   graph_id TEXT NOT NULL REFERENCES graphs(id),
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
@@ -31,6 +33,8 @@ CREATE TABLE IF NOT EXISTS thought_revisions (
   title TEXT NOT NULL,
   statement TEXT NOT NULL,
   status TEXT NOT NULL,
+  confidence TEXT,
+  source TEXT,
   actor_type TEXT NOT NULL,
   source_change_set_id TEXT,
   edited_from_proposal INTEGER NOT NULL DEFAULT 0,
@@ -143,8 +147,22 @@ function open(): Database.Database {
 	db.exec(SCHEMA);
 	migrateToMultipleWorkingSets(db);
 	migrateToMultipleGraphs(db);
+	migrateToPredictionEvidence(db);
 	seedIfEmpty(db);
 	return db;
+}
+
+// Databases created before the prediction/evidence thought types lack the
+// confidence and source columns (JSON and plain text; NULL for the four
+// original types). Old undo snapshots simply restore rows without them.
+function migrateToPredictionEvidence(db: Database.Database) {
+	for (const table of ['thoughts', 'thought_revisions']) {
+		const cols = db.pragma(`table_info(${table})`) as { name: string }[];
+		if (!cols.some((c) => c.name === 'confidence'))
+			db.exec(`ALTER TABLE ${table} ADD COLUMN confidence TEXT`);
+		if (!cols.some((c) => c.name === 'source'))
+			db.exec(`ALTER TABLE ${table} ADD COLUMN source TEXT`);
+	}
 }
 
 // Databases created before working sets were plural have a single-set

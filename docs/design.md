@@ -43,13 +43,15 @@ The core loop: messy input → agent-proposed structure → human ratification �
 
 | Primitive | What it is |
 |---|---|
-| **Thought** | Durable unit (claim / question / concept / example) with stable identity, status, and two resolutions (title, statement) |
+| **Thought** | Durable unit (claim / question / concept / example / prediction / evidence) with stable identity, status, and two resolutions (title, statement) |
 | **Relation** | Typed directional edge: `supports`, `contradicts`, `depends_on`, `example_of`, `supersedes`, `related_to` (explicit escape hatch) |
 | **Change set** | An agent-authored set of proposed operations with shared rationale, awaiting ratification |
 
 Meta-property on everything: **provenance** (author, time, source change set, revision history).
 
-**Thought** fields: id, type (`claim` / `question` / `concept` / `example`), status (`tentative` / `developing` / `believed` / `contested` / `retired`), title (one-line resolution), statement (full resolution), timestamps, revision history. A thought should usually express one idea that can be independently challenged, connected, or revised. The type system is intentionally small; the prototype should learn whether these distinctions earn their keep before expanding them.
+**Thought** fields: id, type (`claim` / `question` / `concept` / `example` / `prediction` / `evidence`), status (`tentative` / `developing` / `believed` / `contested` / `retired`), title (one-line resolution), statement (full resolution), timestamps, revision history. A thought should usually express one idea that can be independently challenged, connected, or revised. The type system is intentionally small; the prototype should learn whether these distinctions earn their keep before expanding them.
+
+Two types carry structured, revisioned fields. A **prediction** is a falsifiable expectation about a future or not-yet-observed outcome, with a **confidence**: a probability (0–1) for a binary outcome, or a low/high interval (with a unit) for a quantitative one, plus an optional resolve-by date. Confidence is part of the revision history, so updating a belief leaves a calibration trail. **Evidence** is a concrete observation, measurement, or sourced fact that bears on other thoughts (via `supports` / `contradicts`), with an optional **source** (citation, URL, or dataset) — the epistemic role stays a thought type; provenance stays a field, so the ontology doesn't grow a bookmark type.
 
 **Relation:** the agent may propose relation types, but the interface never requires the person to classify a connection during capture. `related_to` exists explicitly so we can measure how often the specific types fail.
 

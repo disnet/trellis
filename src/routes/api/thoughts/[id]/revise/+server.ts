@@ -7,7 +7,9 @@ export const POST: RequestHandler = async ({ params, request }) => {
 	const error = reviseThought(params.id, {
 		title: body?.title,
 		statement: body?.statement,
-		status: body?.status
+		status: body?.status,
+		confidence: body?.confidence,
+		source: body?.source
 	});
 	if (error) return json({ error }, { status: 400 });
 	return json({ state: getState() });

@@ -263,6 +263,8 @@
 	.type-question { background: #e5e1f2; color: #4a4174; }
 	.type-concept { background: #dfe9ef; color: #35586b; }
 	.type-example { background: #f2e6df; color: #6b4a35; }
+	.type-prediction { background: #f2dfe7; color: #6b3550; }
+	.type-evidence { background: #ece5c8; color: #635417; }
 	.result-actions {
 		display: flex;
 		gap: 8px;

@@ -97,6 +97,8 @@
 		status: import('$lib/types').ThoughtStatus;
 		title: string;
 		statement: string;
+		confidence?: import('$lib/types').Confidence;
+		source?: string;
 	}
 
 	const ghosts = $derived.by((): GhostCard[] => {
@@ -114,7 +116,9 @@
 						type: t.type,
 						status: t.status,
 						title: t.title,
-						statement: t.statement
+						statement: t.statement,
+						confidence: t.confidence,
+						source: t.source
 					});
 					continue;
 				}
@@ -129,7 +133,9 @@
 					type: p.thought.type,
 					status: p.thought.status,
 					title: p.thought.title,
-					statement: p.thought.statement
+					statement: p.thought.statement,
+					confidence: p.thought.confidence,
+					source: p.thought.source
 				});
 			}
 		}
@@ -319,6 +325,8 @@
 					status={t.status}
 					title={t.title}
 					statement={t.statement}
+					confidence={t.confidence}
+					source={t.source}
 					zoom={ws.zoom}
 					selected={ws.selectedIds.includes(t.id)}
 					pinned={ws.isPinned(t.id)}
@@ -344,6 +352,8 @@
 				status={g.status}
 				title={g.title}
 				statement={g.statement}
+				confidence={g.confidence}
+				source={g.source}
 				zoom={ws.zoom}
 				ghost={g.kind}
 				provenance="agent"

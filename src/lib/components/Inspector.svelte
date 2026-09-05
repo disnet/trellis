@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { workspace } from '$lib/workspace.svelte';
-	import type { ThoughtStatus } from '$lib/types';
+	import { formatConfidence, type Confidence, type ThoughtStatus } from '$lib/types';
 
 	const ws = workspace;
 
@@ -12,6 +12,13 @@
 	let editTitle = $state('');
 	let editStatement = $state('');
 	let editStatus = $state<ThoughtStatus>('tentative');
+	// Prediction confidence (probability entered as a percentage) and evidence source.
+	let editProbability = $state('');
+	let editLow = $state('');
+	let editHigh = $state('');
+	let editUnit = $state('');
+	let editResolveBy = $state('');
+	let editSource = $state('');
 
 	$effect(() => {
 		// Leaving edit mode whenever the selection changes.
@@ -24,15 +31,34 @@
 		editTitle = thought.title;
 		editStatement = thought.statement;
 		editStatus = thought.status;
+		const c = thought.confidence;
+		editProbability = c?.probability !== undefined ? String(Math.round(c.probability * 100)) : '';
+		editLow = c?.low !== undefined ? String(c.low) : '';
+		editHigh = c?.high !== undefined ? String(c.high) : '';
+		editUnit = c?.unit ?? '';
+		editResolveBy = c?.resolveBy ?? '';
+		editSource = thought.source ?? '';
 		editing = true;
 	}
 
 	async function saveEdit() {
 		if (!thought) return;
+		let confidence: Confidence | null | undefined;
+		if (thought.type === 'prediction') {
+			const c: Confidence = {};
+			if (editProbability.trim()) c.probability = Number(editProbability) / 100;
+			if (editLow.trim()) c.low = Number(editLow);
+			if (editHigh.trim()) c.high = Number(editHigh);
+			if (editUnit.trim()) c.unit = editUnit.trim();
+			if (editResolveBy.trim()) c.resolveBy = editResolveBy.trim();
+			confidence = Object.keys(c).length > 0 ? c : null;
+		}
 		const err = await ws.reviseThought(thought.id, {
 			title: editTitle,
 			statement: editStatement,
-			status: editStatus
+			status: editStatus,
+			confidence,
+			source: thought.type === 'evidence' ? editSource.trim() || null : undefined
 		});
 		if (err) {
 			ws.notice = err;
@@ -98,6 +124,38 @@
 						{/each}
 					</select>
 				</label>
+				{#if thought.type === 'prediction'}
+					<div class="row confidence-row">
+						<label>
+							Probability (%)
+							<input inputmode="numeric" bind:value={editProbability} placeholder="e.g. 70" />
+						</label>
+						<label>
+							Resolve by
+							<input type="date" bind:value={editResolveBy} />
+						</label>
+					</div>
+					<div class="row confidence-row">
+						<label>
+							Interval low
+							<input inputmode="decimal" bind:value={editLow} />
+						</label>
+						<label>
+							Interval high
+							<input inputmode="decimal" bind:value={editHigh} />
+						</label>
+						<label>
+							Unit
+							<input bind:value={editUnit} placeholder="e.g. ms" />
+						</label>
+					</div>
+				{/if}
+				{#if thought.type === 'evidence'}
+					<label>
+						Source
+						<input bind:value={editSource} placeholder="citation, URL, or dataset" />
+					</label>
+				{/if}
 				<div class="row">
 					<button class="primary" onclick={saveEdit}>Save revision</button>
 					<button onclick={() => (editing = false)}>Cancel</button>
@@ -107,10 +165,23 @@
 			<div class="head">
 				<span class="type">{thought.type}</span>
 				<span class="status">{thought.status}</span>
+				{#if thought.confidence}
+					<span class="confidence" title="Confidence">{formatConfidence(thought.confidence)}</span>
+				{/if}
 				{#if pinned}<span class="pin-mark" title="Pinned">⚑ pinned</span>{/if}
 			</div>
 			<h3>{thought.title}</h3>
 			<p class="statement">{thought.statement}</p>
+			{#if thought.source}
+				<p class="source">
+					source:
+					{#if /^https?:\/\//.test(thought.source)}
+						<a href={thought.source} target="_blank" rel="noopener noreferrer">{thought.source}</a>
+					{:else}
+						{thought.source}
+					{/if}
+				</p>
+			{/if}
 			<div class="actions">
 				<button onclick={startEdit}>Revise…</button>
 				<button
@@ -179,6 +250,9 @@
 						</span>
 					</div>
 					<div class="rev-title">{rev.title}</div>
+					{#if rev.confidence}
+						<div class="meta">confidence: {formatConfidence(rev.confidence)}</div>
+					{/if}
 					{#if i !== 0}
 						<div class="rev-statement">{rev.statement}</div>
 					{/if}
@@ -250,6 +324,32 @@
 		font-size: 13px;
 		line-height: 1.5;
 		color: #4d473c;
+	}
+	.confidence {
+		font-size: 10px;
+		font-weight: 700;
+		border: 1px solid #ddb8c8;
+		border-radius: 999px;
+		padding: 2px 7px;
+		color: #6b3550;
+		background: #faf2f6;
+		white-space: nowrap;
+	}
+	.source {
+		font-size: 12px;
+		color: #635417;
+		word-break: break-word;
+	}
+	.source a {
+		color: #3b5bdb;
+	}
+	.confidence-row label {
+		flex: 1;
+		min-width: 0;
+	}
+	.confidence-row input {
+		width: 100%;
+		box-sizing: border-box;
 	}
 	button {
 		font: inherit;

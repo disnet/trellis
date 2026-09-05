@@ -198,9 +198,11 @@
 
 	const TYPE_ORDER: { type: ThoughtType; label: string }[] = [
 		{ type: 'claim', label: 'Claims' },
+		{ type: 'prediction', label: 'Predictions' },
 		{ type: 'question', label: 'Questions' },
 		{ type: 'concept', label: 'Concepts' },
-		{ type: 'example', label: 'Examples' }
+		{ type: 'example', label: 'Examples' },
+		{ type: 'evidence', label: 'Evidence' }
 	];
 
 	// Accepted thoughts first (alphabetical), then proposals at the edge of the
@@ -354,6 +356,8 @@
 	.type-question { background: #e5e1f2; color: #4a4174; }
 	.type-concept { background: #dfe9ef; color: #35586b; }
 	.type-example { background: #f2e6df; color: #6b4a35; }
+	.type-prediction { background: #f2dfe7; color: #6b3550; }
+	.type-evidence { background: #ece5c8; color: #635417; }
 	.rows {
 		list-style: none;
 		margin: 0;

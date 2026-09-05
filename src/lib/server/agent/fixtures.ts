@@ -164,7 +164,7 @@ function connect(ctx: AgentContext, deps: FixtureDeps): AgentProposal {
 function develop(ctx: AgentContext): AgentProposal {
 	const target = ctx.selectedIds[0];
 	return {
-		summary: `Proposed 1 extension and 1 relation developing “${titleOf(ctx, target)}”.`,
+		summary: `Proposed 1 extension, 1 prediction, and 2 relations developing “${titleOf(ctx, target)}”.`,
 		operations: [
 			{
 				op: 'create_thought',
@@ -189,6 +189,31 @@ function develop(ctx: AgentContext): AgentProposal {
 				to: target,
 				relation_type: 'supports',
 				rationale: 'The implication, if it holds, reinforces the parent claim.'
+			},
+			{
+				op: 'create_thought',
+				client_ref: 'dev-2',
+				depends_on: [],
+				evidence_refs: [target],
+				thought: {
+					type: 'prediction',
+					status: 'tentative',
+					title: 'Most ratification sessions will use partial accepts',
+					statement:
+						'Within a month of real use, the majority of applied change sets will have at least one rejected or edited operation — if everything is always accepted wholesale, ratification is theater.',
+					confidence: { probability: 0.7, resolve_by: '2026-10-04' }
+				},
+				rationale: `A testable expectation implied by “${titleOf(ctx, target)}”: it stakes out what real engagement with review would look like.`
+			},
+			{
+				op: 'add_relation',
+				client_ref: 'dev-rel-2',
+				depends_on: ['dev-2'],
+				evidence_refs: ['dev-2', target],
+				from: 'dev-2',
+				to: target,
+				relation_type: 'depends_on',
+				rationale: 'The prediction only makes sense if the parent thought holds.'
 			}
 		]
 	};

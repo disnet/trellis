@@ -2,6 +2,7 @@
 	import { workspace } from '$lib/workspace.svelte';
 	import {
 		effectivePayload,
+		formatConfidence,
 		type ChangeSet,
 		type OperationPayload,
 		type ProposedOperation,
@@ -22,7 +23,14 @@
 	let eStatus = $state<ThoughtStatus>('tentative');
 	let eRelType = $state<RelationType>('related_to');
 
-	const thoughtTypes: ThoughtType[] = ['claim', 'question', 'concept', 'example'];
+	const thoughtTypes: ThoughtType[] = [
+		'claim',
+		'question',
+		'concept',
+		'example',
+		'prediction',
+		'evidence'
+	];
 	const thoughtStatuses: ThoughtStatus[] = ['tentative', 'developing', 'believed', 'contested', 'retired'];
 	const relationTypes: RelationType[] = [
 		'supports',
@@ -50,7 +58,19 @@
 		const p = effectivePayload(op);
 		let edited: OperationPayload;
 		if (p.op === 'create_thought') {
-			edited = { op: 'create_thought', thought: { type: eType, status: eStatus, title: eTitle, statement: eStatement } };
+			// Structured fields (confidence, source) are not editable here; carry
+			// them through unchanged so an edit never silently drops them.
+			edited = {
+				op: 'create_thought',
+				thought: {
+					type: eType,
+					status: eStatus,
+					title: eTitle,
+					statement: eStatement,
+					confidence: eType === 'prediction' ? p.thought.confidence : undefined,
+					source: p.thought.source
+				}
+			};
 		} else if (p.op === 'add_relation') {
 			edited = { ...p, relationType: eRelType };
 		} else {
@@ -170,6 +190,12 @@
 								<div class="op-label">{ws.opLabel(op)}</div>
 								{#if p.op === 'create_thought'}
 									<p class="op-statement">{p.thought.statement}</p>
+								{/if}
+								{#if (p.op === 'create_thought' || p.op === 'revise_thought') && p.thought.confidence}
+									<p class="op-extra">confidence: {formatConfidence(p.thought.confidence)}</p>
+								{/if}
+								{#if (p.op === 'create_thought' || p.op === 'revise_thought') && p.thought.source}
+									<p class="op-extra">source: {p.thought.source}</p>
 								{/if}
 								<p class="rationale">{op.rationale}</p>
 								{#if op.evidenceRefs.length > 0}
@@ -375,6 +401,13 @@
 		margin: 4px 0 0;
 		font-size: 11px;
 		color: #8a8375;
+	}
+	.op-extra {
+		margin: 4px 0 0;
+		font-size: 11px;
+		font-weight: 600;
+		color: #6b3550;
+		word-break: break-word;
 	}
 	.edited-note {
 		margin: 6px 0 0;
