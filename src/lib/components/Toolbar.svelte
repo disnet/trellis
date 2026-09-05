@@ -148,6 +148,14 @@
 	{/if}
 	{#if !ws.loading && !ws.loadError}
 		<GraphSwitcher compact={utilsInMenu} />
+		<button
+			class="new-thought"
+			title="Write a thought yourself — straight into the graph, no proposal"
+			aria-label="New thought"
+			onclick={() => (ws.composerOpen = true)}
+		>
+			<Icon name="plus" /><span class="label">New thought</span>
+		</button>
 	{/if}
 	<div class="ops" role="group" aria-label="Agent operations">
 		<ModelSwitcher compact={utilsInMenu} />
@@ -332,6 +340,29 @@
 	.ops {
 		display: flex;
 		gap: 6px;
+	}
+	.new-thought {
+		font: inherit;
+		font-size: var(--fs-12-5);
+		font-weight: 600;
+		border: 1px solid var(--card-border);
+		background: var(--card-white);
+		border-radius: 6px;
+		padding: 5px 12px;
+		cursor: pointer;
+		color: var(--ink-soft);
+		white-space: nowrap;
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+	}
+	.new-thought:hover {
+		border-color: var(--blue);
+		color: var(--blue);
+	}
+	/* Sheds its label alongside the view switcher's collapse step. */
+	.toolbar.icon-views .new-thought .label {
+		display: none;
 	}
 	.ops button {
 		font: inherit;

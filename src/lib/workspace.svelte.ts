@@ -18,6 +18,7 @@ import {
 	type ScratchNote,
 	type Thought,
 	type ThoughtStatus,
+	type ThoughtType,
 	type WorkingSetInfo,
 	type WorkingSetItem,
 	type WorkspaceState
@@ -72,6 +73,8 @@ class Workspace {
 	view = $state<'canvas' | 'outline' | 'browse'>('canvas');
 	/** Preview positions for proposed cards, keyed `${changeSetId}:${ref}`. View-only, not persisted. */
 	ghostPositions = $state<Record<string, GhostPosition>>({});
+	/** Whether the manual "new thought" composer is open. View-only. */
+	composerOpen = $state(false);
 	notice = $state<string | null>(null);
 
 	reentry = $state<ReentrySummary | null>(null);
@@ -592,6 +595,40 @@ class Workspace {
 				? 'Change set rejected — nothing entered the graph.'
 				: `Applied ${accepted} of ${cs.operations.length} operations.`;
 		return null;
+	}
+
+	// --- manual creation (from the composer) ---
+
+	/** Create a human-authored thought directly in the graph; it joins the
+	 *  working set at a free position and becomes the selection. */
+	async createThought(fields: {
+		type: ThoughtType;
+		status: ThoughtStatus;
+		title: string;
+		statement: string;
+		confidence?: Confidence | null;
+		source?: string | null;
+	}): Promise<string | null> {
+		const taken: GhostPosition[] = [
+			...this.workingSet.map((w) => ({ x: w.x, y: w.y })),
+			...Object.values(this.ghostPositions)
+		];
+		const pos = this.freePosition(taken);
+		await this.flushMoves();
+		try {
+			const res = await fetch('/api/thoughts', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ ...fields, ...pos })
+			});
+			const data = await res.json().catch(() => ({}));
+			if (!res.ok) return data.error ?? `Request failed (${res.status}).`;
+			if (data.state) this.applyState(data.state);
+			if (typeof data.thoughtId === 'string') this.selectedIds = [data.thoughtId];
+			return null;
+		} catch {
+			return 'Could not reach the Trellis server.';
+		}
 	}
 
 	// --- human revision (from the inspector) ---

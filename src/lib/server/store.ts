@@ -36,6 +36,7 @@ import {
 	type Thought,
 	type ThoughtRevision,
 	type ThoughtStatus,
+	type ThoughtType,
 	type WorkingSetItem,
 	type WorkspaceState
 } from '$lib/types';
@@ -727,6 +728,71 @@ export function undoLastApply(): string | null {
 	setMeta(`undo_snapshot:${graphId}`, null);
 	setMeta(`undo_label:${graphId}`, null);
 	return null;
+}
+
+// --- manual creation (from the composer) ---
+// The one write path that puts a thought into the graph without a change set:
+// human-authored from the start, so its initial revision carries actor_type
+// 'human' and no source change set. Not covered by undo-last-apply, which only
+// snapshots on change-set apply.
+
+export function createThought(fields: {
+	type: ThoughtType;
+	status: ThoughtStatus;
+	title: string;
+	statement: string;
+	confidence?: Confidence | null;
+	source?: string | null;
+	x?: number;
+	y?: number;
+}): { error: string } | { thoughtId: string } {
+	if (!THOUGHT_TYPES.includes(fields.type)) return { error: 'Invalid thought type.' };
+	if (!THOUGHT_STATUSES.includes(fields.status)) return { error: 'Invalid thought status.' };
+	if (typeof fields.title !== 'string' || !fields.title.trim())
+		return { error: 'Title is required.' };
+	if (typeof fields.statement !== 'string' || !fields.statement.trim())
+		return { error: 'Statement is required.' };
+	if (fields.title.length > TITLE_LIMIT)
+		return { error: `Title is longer than ${TITLE_LIMIT} characters.` };
+	if (fields.statement.length > STATEMENT_LIMIT)
+		return { error: `Statement is longer than ${STATEMENT_LIMIT} characters.` };
+
+	let confidence: string | null = null;
+	if (fields.confidence != null) {
+		if (fields.type !== 'prediction') return { error: 'Confidence is only valid on a prediction.' };
+		const err = validateConfidence(fields.confidence);
+		if (err) return { error: err };
+		confidence = JSON.stringify(fields.confidence);
+	}
+	let source: string | null = null;
+	if (fields.source != null) {
+		if (typeof fields.source !== 'string') return { error: 'Invalid source.' };
+		source = fields.source.trim() || null;
+		if (source && source.length > SOURCE_LIMIT)
+			return { error: `Source is longer than ${SOURCE_LIMIT} characters.` };
+	}
+
+	const graphId = activeGraphId();
+	const activeSet = activeWorkingSetId(graphId);
+	const now = Date.now();
+	const tid = id('t');
+	const x = Number.isFinite(fields.x) ? fields.x! : 80;
+	const y = Number.isFinite(fields.y) ? fields.y! : 80;
+	db.transaction(() => {
+		db.prepare(
+			`INSERT INTO thoughts (id, type, status, title, statement, confidence, source, graph_id, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		).run(tid, fields.type, fields.status, fields.title, fields.statement, confidence, source, graphId, now, now);
+		db.prepare(
+			`INSERT INTO thought_revisions
+			   (id, thought_id, title, statement, status, confidence, source, actor_type, source_change_set_id, edited_from_proposal, created_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, 'human', NULL, 0, ?)`
+		).run(id('rev'), tid, fields.title, fields.statement, fields.status, confidence, source, now);
+		db.prepare(
+			'INSERT INTO working_set_items (working_set_id, thought_id, x, y) VALUES (?, ?, ?, ?)'
+		).run(activeSet, tid, x, y);
+	})();
+	return { thoughtId: tid };
 }
 
 // --- human revision (from the inspector) ---
