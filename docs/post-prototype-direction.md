@@ -54,6 +54,8 @@ This requires distinguishing captured material from accepted interpretations. Sa
 
 The graph can connect these without flattening them into the same kind of state.
 
+Everyday capture also constrains the platform. The moments this loop depends on — a thought on a walk, the result of a phone call — mostly occur away from a desktop. The prototype's local-first, single-machine stack is right for testing its thesis, but the thinking and commitment ambition eventually forces multi-device capture and sync. That work is not part of the next experiment; the constraint is named here so that capture friction during the experiment is read as a platform limitation, not as evidence against the thesis.
+
 ### Commitments with their own lifecycle
 
 A task needs behavior beyond what the current thought model provides. Tasks can be completed, deferred, canceled, or blocked. Claims can be believed, contested, or retired.
@@ -67,6 +69,18 @@ The relationships are where Trellis could contribute something distinctive:
 - This observation changes the rationale for that plan.
 
 These are examples of useful semantics, not a proposed final ontology. The next experiment should establish which relationships earn their complexity.
+
+### Decisions built on the prediction machinery
+
+The prototype already gives predictions structured confidence and a calibration trail. Decisions are the natural consumer of that machinery. A decision is largely a bet on predictions — "I could keep my current job" — and a decision review is where calibration pays off: this choice rested on a prediction held at 80% that did not survive; what does that revise?
+
+A decision is also unlike a claim. It is dated, it chose among alternatives, and its rationale links to beliefs that can later change. If `decision` becomes a first-class object, it likely wants structured fields the way `prediction` did — links to its rationale, alternatives considered, a review-by date — rather than only a new entry in the thought type list.
+
+### The return leg needs an initiator
+
+The loop's most distinctive segment — observe → revise understanding — does not run on its own. "Months later, Trellis helps them recover why they chose something" assumes the person thought to come back. Without a trigger, the loop in practice is capture → decide → forget.
+
+Revision needs mechanisms that schedule it: a review-by date on a decision, staleness detection on commitments, and a proactive counterpart to the prototype's re-entry summary — "this decision's rationale rested on an assumption you have since contradicted." Which triggers earn their interruptions is itself an experimental question; a system that nags loses trust as quickly as one that stays silent. But some initiator must exist, or "does this plan still make sense?" is a question that never fires.
 
 ### Interfaces for different moments
 
@@ -83,9 +97,9 @@ The canvas is useful for exploring a question. Other situations call for other s
 
 Deliberate review remains valuable when an agent proposes a belief, revises a decision's rationale, or infers a commitment. These changes affect the person's account of what they think or intend.
 
-Direct human actions—writing a note, creating a task, checking it off—should apply immediately. The system should preserve authorship and provenance without turning routine use into a proposal-review queue.
+The leading hypothesis is that direct human actions—writing a note, creating a task, checking it off—apply immediately, with authorship and provenance preserved, so routine use never becomes a proposal-review queue. That is a hypothesis, not a settled rule: the prototype has not yet shown where ratification friction actually produces ownership, and dogfooding may complicate the boundary — a direct human edit can silently invalidate a relation the agent maintains.
 
-The post-prototype question is which kinds of agent changes require deliberate ratification, and which kinds of assistance can be made lightweight without weakening ownership. The prototype should still test its stricter review model before those rules are relaxed.
+The post-prototype questions are therefore two. First, which kinds of agent changes require deliberate ratification, and which assistance can be made lightweight without weakening ownership. Second, which changes the agent may *initiate*. The prototype's agent acts only when invoked on a selection; the return leg of the loop implies an agent that notices things unprompted, across time. That is a qualitatively different trust posture and should be introduced deliberately, not arrive as a side effect of adding triggers. The prototype should still test its stricter review model before any of these rules are relaxed.
 
 ### Context across life, with boundaries
 
@@ -94,6 +108,8 @@ The prototype's isolated graphs protect against irrelevant context. Broader use 
 Those bridges should remain visible and controllable. Opening a work project should not implicitly pull private journal entries into the agent's context. “Selection is context” could evolve into an explicit working context assembled from several spaces, with the person able to inspect and adjust its sources.
 
 Life-wide usefulness does not imply universal context on every operation.
+
+The stakes of the data change too, and that is a product problem, not a technical one. A thinking workspace holds work ideas; a thinking and commitment system holds journal entries about a marriage, a job, health. Two consequences follow. Privacy, durability, and longevity become trust prerequisites rather than infrastructure details — people will not journal into a system they are not confident will exist, and stay private, in five years. And agent-proposed interpretations of a person's life ("this suggests you have already decided to leave") carry different weight than proposed claims about a design document. Ratification helps, but the sensitivity of inference *within* a space deserves the same explicit attention as context boundaries *between* spaces.
 
 ## Scope options
 
@@ -114,9 +130,11 @@ After the prototype proves useful, use Trellis for one real project that require
 Add only enough capability to support that project:
 
 - Durable freeform notes, with links to thoughts extracted from them.
-- A way to record a decision and its rationale.
+- A way to record a decision and its rationale, linked to the predictions it rests on, with a review-by date.
 - A small action list linked to the relevant decisions, questions, or assumptions.
-- A review experience that brings actions and observations back into the person's understanding.
+- A review experience that brings actions and observations back into the person's understanding — scheduled by the system, not left to memory.
+
+Two cautions about the experiment's design. It will compete with the person's existing task manager and notes app, so a null result can measure switching costs rather than the thesis; the review should distinguish "the connections did not help" from "capture happened elsewhere out of habit." And the evidence below consists of one-off subjective events that will be unrecoverable at review time unless recorded when they happen — keep a lightweight log of loop events (a rationale revisited, a commitment invalidated by a note) during the experiment.
 
 The review should answer:
 
@@ -139,5 +157,7 @@ The experiment is about whether connecting these activities improves the next de
 - Review produces summaries without affecting decisions or actions.
 - Ordinary capture becomes slower because the system expects structure.
 - Building task and note features displaces improvements to the thinking loop without increasing its usefulness.
+
+The likely outcome is mixed evidence, so decide now what it resolves to: if the connections helped but maintaining them was an irritant, that argues for reducing the cost of maintenance and re-running the experiment — not for expanding as if the friction were absent, and not for abandoning the direction. Only clear evidence on both lists' terms should move the ambition in either direction.
 
 If the connections help the person make a better next move, the broader system has earned its next expansion. If they do not, Trellis can remain a valuable focused thinking workspace and connect to existing tools where useful.
