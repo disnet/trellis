@@ -8,7 +8,7 @@ design.
 ## Status: Phase 2 — live agent proposals
 
 The graph persists in SQLite (`data/trellis.db`), and agent operations call
-Claude live through a model adapter that can also serve the deterministic
+Claude or Codex live through model adapters that can also serve the deterministic
 Phase-0 fixtures. The complete capture-to-ratification scenario works
 end-to-end:
 
@@ -39,7 +39,18 @@ npm install
 npm run dev
 ```
 
-Live generation needs Anthropic credentials (`ANTHROPIC_API_KEY`, or an
+Use the model switcher beside the agent operations to choose Anthropic API,
+Claude Code, Codex, or offline fixtures. Choose a preset or enter a model ID;
+the selection applies to all operations and survives reloads in this browser.
+Environment settings supply the initial selection until you make a choice.
+
+Codex requires the `codex` CLI on PATH and a login (`codex login`). It runs
+ephemerally in a temporary directory with a read-only sandbox, shell tools
+and web search disabled, and user config excluded. Authentication still uses
+your Codex login; choose an explicit model to override the CLI default.
+Uses [Codex non-interactive mode](https://developers.openai.com/codex/noninteractive/).
+
+Anthropic API generation needs Anthropic credentials (`ANTHROPIC_API_KEY`, or an
 `ant auth login` profile). Environment knobs:
 
 - `TRELLIS_AGENT` — which adapter serves proposals:
@@ -52,9 +63,11 @@ Live generation needs Anthropic credentials (`ANTHROPIC_API_KEY`, or an
     products to ride claude.ai logins).
   - `fixture` — deterministic fixtures (full review flow, no network, no
     variance).
+  - `codex-cli` — local Codex CLI (`codex exec`), using its existing login.
 - `TRELLIS_MODEL` — model for generation (live default `claude-sonnet-5`;
-  claude-cli default `sonnet`, aliases accepted).
+  claude-cli default `sonnet`, aliases accepted; Codex uses its CLI default).
 - `TRELLIS_CLAUDE_BIN` — path to the `claude` binary if not on PATH.
+- `TRELLIS_CODEX_BIN` — path to the `codex` binary if not on PATH.
 - `TRELLIS_DB` — SQLite path (default `data/trellis.db`; `:memory:` works).
 
 If a live call fails (no credentials, network, invalid output after retry),

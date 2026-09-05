@@ -3,6 +3,7 @@
 // positions), and refreshes from the state payload every mutation returns.
 
 import { browser } from '$app/environment';
+import { isModelSelection, type ModelSelection } from './models';
 import {
 	effectivePayload,
 	type AgentAction,
@@ -32,6 +33,14 @@ export const CARD_H = 92;
 class Workspace {
 	loading = $state(true);
 	loadError = $state<string | null>(null);
+	modelSelection = $state<ModelSelection>({ provider: 'live', model: '' });
+	private selectionLoaded = false;
+
+	selectModel(selection: ModelSelection) {
+		if (this.invoking || !isModelSelection(selection)) return;
+		this.modelSelection = selection;
+		try { localStorage.setItem('trellis:model', JSON.stringify(selection)); } catch { /* Optional persistence. */ }
+	}
 
 	graphs = $state<GraphInfo[]>([]);
 	activeGraphId = $state('');
@@ -69,6 +78,14 @@ class Workspace {
 			const res = await fetch('/api/state');
 			if (!res.ok) throw new Error(`Server responded ${res.status}`);
 			const data = await res.json();
+			if (!this.selectionLoaded) {
+				if (isModelSelection(data.modelSelection)) this.modelSelection = data.modelSelection;
+				try {
+					const saved = JSON.parse(localStorage.getItem('trellis:model') ?? 'null');
+					if (isModelSelection(saved)) this.modelSelection = saved;
+				} catch { /* Use the server default. */ }
+				this.selectionLoaded = true;
+			}
 			this.applyState(data.state);
 			this.reentry = data.reentry;
 			// Structural summary instead of a replay — but only on an actual return visit.
@@ -454,7 +471,8 @@ class Workspace {
 			const err = await this.post('/api/invoke', {
 				action,
 				selectedIds: [...this.selectedIds],
-				scratchBody
+				scratchBody,
+				selection: { ...this.modelSelection }
 			});
 			if (!err && scratchBody) this.scratchDraft = '';
 			return err;

@@ -94,3 +94,17 @@ export type WireReviseThought = z.infer<typeof reviseThought>;
 export type WireAddRelation = z.infer<typeof addRelation>;
 export type WireOperation = z.infer<typeof wireOperationSchema>;
 export type AgentProposal = z.infer<typeof proposalSchema>;
+
+// OpenAI strict schemas require every property; null means an unchanged field.
+export const codexProposalSchema = proposalSchema.extend({
+	operations: z.array(z.union([
+		createThought,
+		reviseThought.extend({ thought: z.object({
+			type: thoughtFields.shape.type.nullable(),
+			status: thoughtFields.shape.status.nullable(),
+			title: thoughtFields.shape.title.nullable(),
+			statement: thoughtFields.shape.statement.nullable()
+		}) }),
+		addRelation
+	]))
+});

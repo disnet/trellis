@@ -6,6 +6,7 @@
 import crypto from 'node:crypto';
 import { activeGraphId, activeWorkingSetId, db } from './db';
 import { generateProposal, linkCallToChangeSet } from './agent';
+import type { ModelSelection } from '$lib/models';
 import {
 	RELATION_TYPES,
 	STATEMENT_LIMIT,
@@ -329,7 +330,8 @@ function wireToPayload(op: WireOperation): OperationPayload {
 export async function invoke(
 	action: AgentAction,
 	selectedIds: string[],
-	scratchBody?: string
+	scratchBody?: string,
+	selection?: ModelSelection
 ): Promise<{ error: string; generationFailed?: boolean } | { changeSetId: string }> {
 	const fromScratch = action === 'decompose' && !!scratchBody?.trim();
 	if (!fromScratch && selectedIds.length === 0) {
@@ -369,7 +371,7 @@ export async function invoke(
 		}
 	}
 
-	const outcome = await generateProposal(action, selectedIds, scratch);
+	const outcome = await generateProposal(action, selectedIds, scratch, selection);
 	if (!outcome.ok) return { error: outcome.error, generationFailed: true };
 
 	const now = Date.now();

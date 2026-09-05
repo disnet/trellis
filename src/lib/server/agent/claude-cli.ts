@@ -69,10 +69,9 @@ function parseResultJson(text: string): unknown {
 	return JSON.parse(stripped);
 }
 
-export function makeClaudeCliAdapter(): ModelAdapter {
+export function makeClaudeCliAdapter(model = 'sonnet'): ModelAdapter {
 	const bin = process.env.TRELLIS_CLAUDE_BIN ?? 'claude';
 	// The CLI accepts aliases (sonnet, opus, haiku) as well as full model ids.
-	const model = process.env.TRELLIS_MODEL ?? 'sonnet';
 
 	return {
 		name: 'claude-cli',

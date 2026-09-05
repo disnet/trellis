@@ -6,6 +6,7 @@
 // human-initiated transaction.
 
 import crypto from 'node:crypto';
+import type { ModelSelection } from '$lib/models';
 import { activeGraphId, db } from '../db';
 import type { AgentAction } from '$lib/types';
 import { buildContext } from './context';
@@ -69,7 +70,8 @@ export function linkCallToChangeSet(callId: string, changeSetId: string): void {
 export async function generateProposal(
 	action: AgentAction,
 	selectedIds: string[],
-	scratch?: { id: string; body: string }
+	scratch?: { id: string; body: string },
+	selection?: ModelSelection
 ): Promise<GenerateOutcome> {
 	// Validation predicates are graph-scoped: an id from another graph is
 	// "unknown" here, so a proposal can never link across the boundary.
@@ -84,7 +86,7 @@ export async function generateProposal(
 		scratchId: scratch?.id
 	};
 
-	const adapter = selectAdapter({ thoughtExists: validationDeps.thoughtExists });
+	const adapter = selectAdapter({ thoughtExists: validationDeps.thoughtExists }, selection);
 	const context = buildContext(selectedIds, scratch);
 	log(
 		`${action} via ${adapter.name} (${adapter.model}) — context: ${context.thoughts.length} thoughts, ` +

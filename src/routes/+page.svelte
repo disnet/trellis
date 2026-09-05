@@ -2,6 +2,7 @@
 	import { browser } from '$app/environment';
 	import Canvas from '$lib/components/Canvas.svelte';
 	import GraphSwitcher from '$lib/components/GraphSwitcher.svelte';
+	import ModelSwitcher from '$lib/components/ModelSwitcher.svelte';
 	import Inspector from '$lib/components/Inspector.svelte';
 	import Outline from '$lib/components/Outline.svelte';
 	import Library from '$lib/components/Library.svelte';
@@ -107,6 +108,7 @@
 			<GraphSwitcher />
 		{/if}
 		<div class="ops" role="group" aria-label="Agent operations">
+			<ModelSwitcher />
 			{#each operations as { action, label, hint } (action)}
 				<button
 					title={hint}
@@ -238,15 +240,17 @@
 			'toolbar toolbar toolbar'
 			'left center right';
 		grid-template-columns: var(--left-w) 1fr var(--right-w);
-		grid-template-rows: 48px 1fr;
+		grid-template-rows: auto minmax(0, 1fr);
 		height: 100vh;
 	}
 	.toolbar {
 		grid-area: toolbar;
 		display: flex;
+		flex-wrap: wrap;
+		min-height: 48px;
 		align-items: center;
 		gap: 16px;
-		padding: 0 14px;
+		padding: 8px 14px;
 		background: #fffdf8;
 		border-bottom: 1px solid #e0dbcf;
 	}

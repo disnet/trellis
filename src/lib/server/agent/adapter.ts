@@ -16,6 +16,9 @@ import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import type { AgentAction } from '$lib/types';
 import type { AgentContext } from './context';
 import { makeClaudeCliAdapter } from './claude-cli';
+import { makeCodexCliAdapter } from './codex-cli';
+import { defaultSelection } from './settings';
+import type { ModelSelection } from '$lib/models';
 import { runFixture, type FixtureDeps } from './fixtures';
 import { SYSTEM_PROMPT, buildUserPrompt } from './prompt';
 import { proposalSchema } from './wire';
@@ -59,8 +62,7 @@ export function makeFixtureAdapter(deps: FixtureDeps): ModelAdapter {
 	};
 }
 
-export function makeLiveAdapter(): ModelAdapter {
-	const model = process.env.TRELLIS_MODEL ?? 'claude-sonnet-5';
+export function makeLiveAdapter(model = 'claude-sonnet-5'): ModelAdapter {
 	// Localhost tool: fail visibly after two minutes rather than hanging the UI.
 	const client = new Anthropic({ timeout: 120_000 });
 
@@ -105,14 +107,16 @@ export function makeLiveAdapter(): ModelAdapter {
 	};
 }
 
-export function selectAdapter(deps: FixtureDeps): ModelAdapter {
-	switch (process.env.TRELLIS_AGENT) {
+export function selectAdapter(deps: FixtureDeps, selection: ModelSelection = defaultSelection()): ModelAdapter {
+	switch (selection.provider) {
 		case 'fixture':
 			return makeFixtureAdapter(deps);
 		case 'claude-cli':
-			return makeClaudeCliAdapter();
+			return makeClaudeCliAdapter(selection.model || undefined);
+		case 'codex-cli':
+			return makeCodexCliAdapter(selection.model || undefined);
 		default:
-			return makeLiveAdapter();
+			return makeLiveAdapter(selection.model || undefined);
 	}
 }
 
