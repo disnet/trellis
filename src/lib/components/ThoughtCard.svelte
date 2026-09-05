@@ -18,6 +18,7 @@
 		provenance: ActorType;
 		relationSummary?: string;
 		onmove?: (x: number, y: number) => void;
+		onsize?: (width: number, height: number) => void;
 		onselect?: (additive: boolean) => void;
 		/** Remove from the working set (shown on selected cards; the graph is untouched). */
 		onremove?: () => void;
@@ -40,12 +41,22 @@
 		provenance,
 		relationSummary,
 		onmove,
+		onsize,
 		onselect,
 		onremove,
 		onadd
 	}: Props = $props();
 
 	let dragging = $state(false);
+	let cardEl = $state<HTMLDivElement>();
+	$effect(() => {
+		if (!cardEl || !onsize) return;
+		const el = cardEl;
+		const report = onsize;
+		const observer = new ResizeObserver(() => report(el.offsetWidth, el.offsetHeight));
+		observer.observe(el);
+		return () => observer.disconnect();
+	});
 
 	function onpointerdown(e: PointerEvent) {
 		if (e.button !== 0) return;
@@ -81,6 +92,7 @@
 
 <div
 	class="card {ghost ?? ''}"
+	bind:this={cardEl}
 	class:selected
 	class:dragging
 	class:reading={zoom === 'reading'}

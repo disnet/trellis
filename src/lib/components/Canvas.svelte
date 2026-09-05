@@ -2,6 +2,8 @@
 	import { workspace, CARD_W } from '$lib/workspace.svelte';
 	import { effectivePayload } from '$lib/types';
 	import ThoughtCard from './ThoughtCard.svelte';
+	import { tick, untrack } from 'svelte';
+	import { layoutCanvas } from '$lib/canvas-layout';
 
 	const ws = workspace;
 
@@ -38,10 +40,10 @@
 	// Center point of any drawable node: working-set card or ghost preview card.
 	function center(csId: string | null, ref: string): Pt | null {
 		const item = ws.workingSet.find((w) => w.thoughtId === ref);
-		if (item) return { x: item.x + cardW / 2, y: item.y + cardH / 2 };
+		if (item) return { x: item.x + (dimensions[ref]?.width ?? cardW) / 2, y: item.y + (dimensions[ref]?.height ?? cardH) / 2 };
 		if (csId) {
 			const g = ws.ghostPositions[`${csId}:${ref}`];
-			if (g) return { x: g.x + cardW / 2, y: g.y + cardH / 2 };
+			if (g) return { x: g.x + (dimensions[`${csId}:${ref}`]?.width ?? cardW) / 2, y: g.y + (dimensions[`${csId}:${ref}`]?.height ?? cardH) / 2 };
 		}
 		return null;
 	}
@@ -57,6 +59,7 @@
 	const edges = $derived.by((): Edge[] => {
 		const out: Edge[] = [];
 		for (const r of ws.relations) {
+			if (connections === 'none' || (connections === 'selected' && !ws.selectedIds.includes(r.fromThoughtId) && !ws.selectedIds.includes(r.toThoughtId))) continue;
 			const a = center(null, r.fromThoughtId);
 			const b = center(null, r.toThoughtId);
 			if (a && b) out.push({ id: r.id, a, b, type: r.type, proposed: false });
@@ -71,6 +74,7 @@
 			for (const op of cs.operations) {
 				const p = effectivePayload(op);
 				if (p.op !== 'add_relation' || op.decision === 'rejected') continue;
+				if (connections === 'none' || (connections === 'selected' && !ws.selectedIds.includes(p.from) && !ws.selectedIds.includes(p.to))) continue;
 				if (hiddenRefs.has(p.from) || hiddenRefs.has(p.to)) continue;
 				const a = center(cs.id, p.from);
 				const b = center(cs.id, p.to);
@@ -132,91 +136,57 @@
 		return out;
 	});
 
-	// Edge hints for cards outside the visible scroll window.
-	interface OffscreenHint {
-		key: string;
-		title: string;
-		kind: 'card' | 'proposed' | 'surfaced';
-		/** Chip position within the viewport. */
-		x: number;
-		y: number;
-		arrow: string;
-		/** Card center on the canvas surface, for scroll-into-view. */
-		cx: number;
-		cy: number;
+	let dimensions = $state<Record<string, { width: number; height: number }>>({});
+	function measure(id: string, width: number, height: number) {
+		if (dimensions[id]?.width !== width || dimensions[id]?.height !== height) dimensions[id] = { width, height };
 	}
-
-	function clamp(v: number, lo: number, hi: number): number {
-		return Math.min(Math.max(v, lo), hi);
-	}
-
-	const offscreenHints = $derived.by((): OffscreenHint[] => {
-		if (view.w === 0) return [];
-		const items = [
-			...ws.workingSet.map((item) => ({
-				key: item.thoughtId,
-				title: ws.thoughts[item.thoughtId]?.title ?? '',
-				kind: 'card' as const,
-				x: item.x,
-				y: item.y
-			})),
-			...ghosts.map((g) => ({
-				key: g.key,
-				title: g.title,
-				kind: g.kind,
-				x: g.pos.x,
-				y: g.pos.y
-			}))
-		];
-		const out: OffscreenHint[] = [];
-		for (const it of items) {
-			const visible =
-				it.x + cardW > view.left &&
-				it.x < view.left + view.w &&
-				it.y + cardH > view.top &&
-				it.y < view.top + view.h;
-			if (visible) continue;
-			const cx = it.x + cardW / 2;
-			const cy = it.y + cardH / 2;
-			const right = cx > view.left + view.w;
-			const left = cx < view.left;
-			const below = cy > view.top + view.h;
-			const above = cy < view.top;
-			const arrow = above
-				? left
-					? '↖'
-					: right
-						? '↗'
-						: '↑'
-				: below
-					? left
-						? '↙'
-						: right
-							? '↘'
-							: '↓'
-					: left
-						? '←'
-						: '→';
-			out.push({
-				key: it.key,
-				title: it.title,
-				kind: it.kind,
-				x: clamp(cx - view.left, 80, view.w - 80),
-				y: clamp(cy - view.top, 22, view.h - 22),
-				arrow,
-				cx,
-				cy
-			});
-		}
-		return out;
+	const items = $derived([
+		...ws.workingSet.map(w => ({ id: w.thoughtId, title: ws.thoughts[w.thoughtId]?.title ?? '',
+			statement: ws.thoughts[w.thoughtId]?.statement ?? '', kind: 'card', x: w.x, y: w.y })),
+		...ghosts.map(g => ({ id: g.key, title: g.title, statement: g.statement, kind: g.kind, ...g.pos }))
+	]);
+	const surfaceW = $derived(Math.max(view.w, ...items.map(i => i.x + (dimensions[i.id]?.width ?? cardW) + 96)));
+	const surfaceH = $derived(Math.max(view.h, ...items.map(i => i.y + (dimensions[i.id]?.height ?? cardH) + 96)));
+	let searchEl = $state<HTMLInputElement>();
+	let toolbarHeight = $state(48);
+	let query = $state('');
+	let showIndex = $state(false);
+	$effect(() => { if (showIndex) searchEl?.focus(); });
+	let connections = $state<'all' | 'selected' | 'none'>('all');
+	const results = $derived(items.filter(i => (i.title + ' ' + i.statement).toLowerCase().includes(query.trim().toLowerCase())));
+	const outside = $derived(items.filter(i => i.x + (dimensions[i.id]?.width ?? cardW) <= view.left || i.x >= view.left + view.w ||
+		i.y + (dimensions[i.id]?.height ?? cardH) <= view.top || i.y >= view.top + view.h).length);
+	let previous = $state<{ id: string; x: number; y: number; kind: string }[] | null>(null);
+	$effect(() => {
+		ws.activeGraphId; ws.activeWorkingSetId;
+		untrack(() => { previous = null; query = ''; showIndex = false; viewportEl?.scrollTo(0, 0); });
 	});
-
-	function scrollToCard(h: OffscreenHint) {
-		viewportEl?.scrollTo({
-			left: h.cx - view.w / 2,
-			top: h.cy - view.h / 2,
-			behavior: 'smooth'
-		});
+	function locate(item: typeof items[number]) {
+		if (item.kind === 'card') ws.select(item.id);
+		viewportEl?.scrollTo({ left: Math.max(0, item.x + (dimensions[item.id]?.width ?? cardW) / 2 - view.w / 2),
+			top: Math.max(0, item.y + (dimensions[item.id]?.height ?? cardH) / 2 - view.h / 2),
+			behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
+		showIndex = false;
+	}
+	function place(id: string, kind: string, x: number, y: number) {
+		if (kind === 'card') ws.moveCard(id, x, y); else ws.moveGhost(id, x, y);
+	}
+	async function arrange() {
+		previous = items.map(({ id, x, y, kind }) => ({ id, x, y, kind }));
+		const links = ws.relations.map(r => ({ from: r.fromThoughtId, to: r.toThoughtId }));
+		for (const cs of ws.pendingChangeSets) for (const op of cs.operations) {
+			const p = effectivePayload(op);
+			if (p.op !== 'add_relation' || op.decision === 'rejected') continue;
+			const resolve = (ref: string) => ws.inWorkingSet(ref) ? ref : `${cs.id}:${ref}`;
+			links.push({ from: resolve(p.from), to: resolve(p.to) });
+		}
+		const positions = layoutCanvas(items.map(i => ({ id: i.id, ...(dimensions[i.id] ?? { width: cardW, height: cardH }) })), links, view.w);
+		for (const item of items) { const p = positions.get(item.id)!; place(item.id, item.kind, p.x, p.y); }
+		await tick(); viewportEl?.scrollTo(0, 0);
+	}
+	function undoArrange() {
+		for (const p of previous ?? []) place(p.id, p.kind, p.x, p.y);
+		previous = null;
 	}
 
 	function relationSummary(thoughtId: string): string | undefined {
@@ -280,6 +250,27 @@
 </script>
 
 <div class="canvas-wrap">
+	<div class="canvas-tools" bind:clientHeight={toolbarHeight}>
+		<button onclick={arrange} disabled={!items.length} title="Space connected groups using actual card sizes">Arrange groups</button>
+		{#if previous}<button onclick={undoArrange}>Undo arrangement</button>{/if}
+		<label>Connections <select bind:value={connections} aria-label="Visible connections">
+			<option value="all">All</option><option value="selected">Selected only</option><option value="none">Hidden</option>
+		</select></label>
+		<button class="find" aria-expanded={showIndex} onclick={() => showIndex = !showIndex}>Find on canvas · {items.length}{#if outside} <span>({outside} offscreen)</span>{/if}</button>
+	</div>
+	{#if showIndex}
+		<div class="canvas-index" style="top: {toolbarHeight + 8}px; max-height: calc(100% - {toolbarHeight + 24}px);">
+			<input bind:this={searchEl} aria-label="Find on canvas" placeholder="Find a title or phrase…" bind:value={query} onkeydown={e => {
+				if (e.key === 'Escape') showIndex = false;
+				if (e.key === 'Enter' && results.length) locate(results[0]);
+			}} />
+			<div class="index-results">
+				{#each results as item (item.id)}
+					<button onclick={() => locate(item)}><span>{item.title}</span><small>{item.kind === 'card' ? 'Thought' : item.kind === 'proposed' ? '◇ Proposed' : 'Existing preview'} →</small></button>
+				{:else}<p>{items.length ? 'No matching thoughts.' : 'Add thoughts from the library or scratch to get started.'}</p>{/each}
+			</div>
+		</div>
+	{/if}
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
 	class="canvas-viewport"
@@ -288,8 +279,8 @@
 	onscroll={syncView}
 	onpointerdown={startPan}
 >
-	<div class="canvas-surface">
-		<svg class="edges" width="2400" height="1600">
+	<div class="canvas-surface" style="width: {surfaceW}px; height: {surfaceH}px;">
+		<svg class="edges" width={surfaceW} height={surfaceH}>
 			{#each edges as e (e.id)}
 				<line
 					x1={e.a.x}
@@ -323,6 +314,7 @@
 					x={item.x}
 					y={item.y}
 					width={cardW}
+					onsize={(w, h) => measure(t.id, w, h)}
 					type={t.type}
 					status={t.status}
 					title={t.title}
@@ -347,6 +339,7 @@
 				x={g.pos.x}
 				y={g.pos.y}
 				width={cardW}
+				onsize={(w, h) => measure(g.key, w, h)}
 				type={g.type}
 				status={g.status}
 				title={g.title}
@@ -367,29 +360,31 @@
 	</div>
 </div>
 
-{#each offscreenHints as h (h.key)}
-	<button
-		class="offscreen-hint {h.kind}"
-		style="left: {h.x}px; top: {h.y}px;"
-		title="Scroll to “{h.title}”"
-		onclick={() => scrollToCard(h)}
-	>
-		<span class="hint-arrow">{h.arrow}</span>
-		{#if h.kind === 'proposed'}<span class="hint-mark">◇</span>{/if}
-		<span class="hint-title">{h.title}</span>
-	</button>
-{/each}
 </div>
 
 <style>
+	.canvas-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 12px; background: #f6f3ec; border-bottom: 1px solid #d5d0c4; }
+	.canvas-tools button, .canvas-tools select { font: inherit; font-size: 12px; color: #5a523f; background: #fffdf8; border: 1px solid #c9c4b8; border-radius: 4px; padding: 8px; cursor: pointer; }
+	.canvas-tools button:disabled { opacity: .5; cursor: default; }
+	.canvas-tools label { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #5a523f; }
+	.canvas-tools .find { margin-left: auto; }
+	.find span { color: #6d675c; }
+	.canvas-index { position: absolute; top: 56px; right: 12px; width: min(360px, calc(100% - 24px)); max-height: calc(100% - 72px); display: flex; flex-direction: column; background: #fffdf8; border: 1px solid #c9c4b8; border-radius: 8px; padding: 12px; box-sizing: border-box; z-index: 20; box-shadow: 0 4px 16px #3c321e20; }
+	.canvas-index input { font: inherit; font-size: 13px; padding: 8px; border: 1px solid #c9c4b8; border-radius: 4px; min-width: 0; background: #faf7f0; }
+	.index-results { overflow: auto; margin-top: 8px; }
+	.index-results button { display: flex; flex-direction: column; gap: 4px; width: 100%; text-align: left; font: inherit; font-size: 13px; padding: 12px 8px; border: 0; border-bottom: 1px solid #eae5d9; background: transparent; color: #2c2921; cursor: pointer; }
+	.index-results button:hover { background: #efeadf; }
+	.index-results small, .index-results p { color: #6d675c; font-size: 11px; }
+
 	.canvas-wrap {
 		position: relative;
 		height: 100%;
+		display: flex; flex-direction: column; min-height: 0;
 		overflow: hidden;
 	}
 	.canvas-viewport {
 		overflow: auto;
-		height: 100%;
+		flex: 1; min-height: 0;
 		background: #f6f3ec;
 		background-image: radial-gradient(circle, #ddd8cc 1px, transparent 1px);
 		background-size: 24px 24px;
@@ -399,54 +394,9 @@
 		cursor: grabbing;
 		user-select: none;
 	}
-	.offscreen-hint {
-		position: absolute;
-		transform: translate(-50%, -50%);
-		display: flex;
-		align-items: center;
-		gap: 4px;
-		max-width: 180px;
-		border: 1px solid #c9c4b8;
-		background: #fffdf8;
-		color: #5a523f;
-		border-radius: 999px;
-		padding: 3px 10px;
-		font: inherit;
-		font-size: 11px;
-		cursor: pointer;
-		box-shadow: 0 2px 6px rgba(60, 50, 30, 0.18);
-		z-index: 20;
-	}
-	.offscreen-hint:hover {
-		border-color: #3b5bdb;
-		color: #3b5bdb;
-	}
-	.offscreen-hint.proposed {
-		border: 1.5px dashed #b08a3e;
-		background: #fdf8ec;
-		color: #7a5c15;
-		font-weight: 600;
-	}
-	.offscreen-hint.surfaced {
-		border: 1.5px dotted #6b7f8a;
-		background: #f0f4f6;
-		color: #4a616f;
-	}
-	.hint-arrow {
-		font-size: 12px;
-	}
-	.hint-mark {
-		font-weight: 700;
-	}
-	.hint-title {
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
 	.canvas-surface {
 		position: relative;
-		width: 2400px;
-		height: 1600px;
+
 	}
 	.edges {
 		position: absolute;

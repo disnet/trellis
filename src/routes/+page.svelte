@@ -148,13 +148,6 @@
 				{ws.zoom === 'overview' ? '⊕ Reading view' : '⊖ Overview'}
 			</button>
 			<button
-				title="Re-lay out the canvas; related cards end up together"
-				disabled={ws.workingSet.length === 0 || ws.view === 'outline'}
-				onclick={() => ws.arrange()}
-			>
-				⌗ Arrange
-			</button>
-			<button
 				title="Empty the working set — the durable graph is untouched"
 				disabled={ws.workingSet.length === 0}
 				onclick={startFresh}

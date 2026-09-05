@@ -403,44 +403,6 @@ class Workspace {
 			});
 	}
 
-	/** Re-lay out the canvas as a grid, BFS-ordered so related cards sit together. */
-	arrange() {
-		const ids = this.workingSet.map((w) => w.thoughtId);
-		if (ids.length === 0) return;
-		const inSet = new Set(ids);
-		const adj = new Map<string, string[]>();
-		const degree = new Map<string, number>();
-		for (const r of this.relations) {
-			if (!inSet.has(r.fromThoughtId) || !inSet.has(r.toThoughtId)) continue;
-			adj.set(r.fromThoughtId, [...(adj.get(r.fromThoughtId) ?? []), r.toThoughtId]);
-			adj.set(r.toThoughtId, [...(adj.get(r.toThoughtId) ?? []), r.fromThoughtId]);
-			degree.set(r.fromThoughtId, (degree.get(r.fromThoughtId) ?? 0) + 1);
-			degree.set(r.toThoughtId, (degree.get(r.toThoughtId) ?? 0) + 1);
-		}
-		const order: string[] = [];
-		const seen = new Set<string>();
-		const byDegree = [...ids].sort((a, b) => (degree.get(b) ?? 0) - (degree.get(a) ?? 0));
-		for (const start of byDegree) {
-			if (seen.has(start)) continue;
-			seen.add(start);
-			const queue = [start];
-			while (queue.length > 0) {
-				const id = queue.shift()!;
-				order.push(id);
-				for (const n of adj.get(id) ?? []) {
-					if (!seen.has(n)) {
-						seen.add(n);
-						queue.push(n);
-					}
-				}
-			}
-		}
-		const cols = Math.max(2, Math.ceil(Math.sqrt(order.length)));
-		order.forEach((id, i) => {
-			this.moveCard(id, 80 + (i % cols) * (CARD_W + 80), 60 + Math.floor(i / cols) * (CARD_H + 72));
-		});
-		this.notice = 'Arranged the working set.';
-	}
 
 	moveGhost(key: string, x: number, y: number) {
 		if (this.ghostPositions[key]) this.ghostPositions[key] = { x, y };
