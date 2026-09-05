@@ -1,3 +1,4 @@
+import { resolveCli, cliEnvironment, trackCli, prepareCliEnvironment } from '../local-agents';
 import { spawn } from 'node:child_process';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -12,7 +13,7 @@ const MAX_OUTPUT = 2 * 1024 * 1024;
 
 function runCodex(bin: string, args: string[], cwd: string, prompt: string): Promise<void> {
 	return new Promise((resolve, reject) => {
-		const child = spawn(bin, args, { cwd, stdio: ['pipe', 'ignore', 'pipe'] });
+		const child = trackCli(spawn(bin, args, { cwd, env: cliEnvironment(), stdio: ['pipe', 'ignore', 'pipe'] }));
 		let stderr = '';
 		const timer = setTimeout(() => {
 			child.kill('SIGKILL');
@@ -44,6 +45,7 @@ export function makeCodexCliAdapter(model?: string): ModelAdapter {
 		name: 'codex-cli',
 		model: model ?? 'default',
 		async generate({ action, context, feedback }) {
+			await prepareCliEnvironment();
 			let request = buildUserPrompt(action, context);
 			if (feedback) request += `\n\nPrevious proposal:\n${feedback.raw}\nValidation errors:\n${feedback.errors.join('\n')}\nReturn a corrected change set.`;
 			const directory = await mkdtemp(join(tmpdir(), 'trellis-codex-'));
@@ -51,7 +53,7 @@ export function makeCodexCliAdapter(model?: string): ModelAdapter {
 				const schema = join(directory, 'schema.json');
 				const output = join(directory, 'proposal.json');
 				await writeFile(schema, JSON.stringify(z.toJSONSchema(codexProposalSchema)));
-				await runCodex(process.env.TRELLIS_CODEX_BIN ?? 'codex', [
+				await runCodex(resolveCli('codex-cli'), [
 					'exec', '--ignore-user-config', '--ephemeral', '--skip-git-repo-check',
 					'--sandbox', 'read-only', '-c', 'approval_policy="never"',
 					'-c', 'features.shell_tool=false', '-c', 'web_search="live"',

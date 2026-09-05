@@ -1,3 +1,4 @@
+import { resolveCli, cliEnvironment, trackCli, prepareCliEnvironment } from '../local-agents';
 // Subscription-billed adapter: shells out to the local Claude Code CLI in
 // headless print mode (`claude -p`) instead of calling the Messages API.
 // Select with TRELLIS_AGENT=claude-cli. Auth is whatever `claude` itself is
@@ -32,7 +33,7 @@ interface CliEnvelope {
 function runClaude(bin: string, args: string[], stdin: string): Promise<string> {
 	return new Promise((resolve, reject) => {
 		// Neutral cwd: the call must not pick up this (or any) project's context.
-		const child = spawn(bin, args, { cwd: os.tmpdir(), stdio: ['pipe', 'pipe', 'pipe'] });
+		const child = trackCli(spawn(bin, args, { cwd: os.tmpdir(), env: cliEnvironment(), stdio: ['pipe', 'pipe', 'pipe'] }));
 		let stdout = '';
 		let stderr = '';
 		const timer = setTimeout(() => {
@@ -70,13 +71,14 @@ function parseResultJson(text: string): unknown {
 }
 
 export function makeClaudeCliAdapter(model = 'sonnet'): ModelAdapter {
-	const bin = process.env.TRELLIS_CLAUDE_BIN ?? 'claude';
 	// The CLI accepts aliases (sonnet, opus, haiku) as well as full model ids.
 
 	return {
 		name: 'claude-cli',
 		model,
 		async generate({ action, context, feedback }) {
+			await prepareCliEnvironment();
+			const bin = resolveCli('claude-cli');
 			let userPrompt = buildUserPrompt(action, context);
 			if (feedback) {
 				// -p is single-turn; the corrective retry is folded into the prompt.

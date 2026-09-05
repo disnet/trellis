@@ -1,4 +1,6 @@
 <script lang="ts">
+	import LocalAgentSetup from "./LocalAgentSetup.svelte";
+	let setup = $state(false);
 	import { PROVIDERS, type AgentProvider } from '$lib/models';
 	import { workspace as ws } from '$lib/workspace.svelte';
 	/** Narrows the trigger to the provider alone when the toolbar is short of room. */
@@ -6,6 +8,10 @@
 	let open = $state(false);
 	let custom = $state('');
 	let invalid = $state(false);
+	let setupShown = $state(false);
+	$effect(() => {
+		if (!ws.loading && ws.needsAgentSetup && !setupShown) { open = true; setup = true; setupShown = true; }
+	});
 	const provider = $derived(PROVIDERS.find((p) => p.id === ws.modelSelection.provider)!);
 	const selectedPreset = $derived(provider.models.find((m) => m.id === ws.modelSelection.model));
 	const modelGroups = $derived([...new Set(provider.models.map((m) => m.group))]);
@@ -68,7 +74,9 @@
 			<p>{provider.id === 'codex-cli' ? 'Uses your Codex CLI login. Run codex login to connect.' :
 				provider.id === 'claude-cli' ? 'Uses your Claude Code login.' :
 				provider.id === 'live' ? 'Uses the server’s Anthropic API credentials.' : 'Deterministic proposals. No model calls.'}</p>
-			<p>Applies to all agent operations. Saved in this browser.</p>
+			<p>Applies to all agent operations. Your selection is remembered.</p>
+			<button class="done" aria-expanded={setup} onclick={() => setup = !setup}>{setup ? "Hide local agent setup" : "Set up local Claude / Codex"}</button>
+			{#if setup}<LocalAgentSetup />{/if}
 			<button class="done" onclick={() => open = false}>Done</button>
 		</div>
 	{/if}
@@ -81,10 +89,10 @@
 	button:disabled { opacity: .5; cursor: default; }
 	.trigger { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 	.trigger.compact { max-width: 120px; }
-	.options { position: absolute; top: calc(100% + 10px); left: 0; z-index: 100; width: 280px; padding: 16px; background: #fffdf8; border: 1px solid #d5d0c4; border-radius: 8px; box-shadow: 0 6px 24px #382f201f; }
+	.options { position: absolute; top: calc(100% + 10px); left: 0; z-index: 100; width: min(340px, calc(100vw - 48px)); max-height: calc(100dvh - 160px); overflow-y: auto; padding: 16px; background: #fffdf8; border: 1px solid #d5d0c4; border-radius: 8px; box-shadow: 0 6px 24px #382f201f; }
 	label { display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-12); font-weight: 600; margin-bottom: 12px; }
 	.custom { display: flex; gap: 6px; }
 	input { min-width: 0; flex: 1; }
 	p { font-size: var(--fs-11-5); line-height: 1.5; color: #756d5f; }
-	.done { width: 100%; }
+	.done { width: 100%; margin-top: 8px; }
 </style>

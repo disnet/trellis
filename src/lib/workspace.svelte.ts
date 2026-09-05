@@ -36,11 +36,19 @@ class Workspace {
 	loadError = $state<string | null>(null);
 	modelSelection = $state<ModelSelection>({ provider: 'live', model: '' });
 	private selectionLoaded = false;
+	private desktop = false;
+	needsAgentSetup = $state(false);
+	private selectionSave: Promise<unknown> = Promise.resolve();
 
 	selectModel(selection: ModelSelection) {
 		if (this.invoking || !isModelSelection(selection)) return;
 		this.modelSelection = selection;
+		this.needsAgentSetup = false;
 		try { localStorage.setItem('trellis:model', JSON.stringify(selection)); } catch { /* Optional persistence. */ }
+		if (this.desktop) this.selectionSave = this.selectionSave.then(async () => {
+			const error = await this.post('/api/local-agents', { action: 'selection', selection });
+			if (error) this.notice = error;
+		});
 	}
 
 	graphs = $state<GraphInfo[]>([]);
@@ -80,10 +88,12 @@ class Workspace {
 			const res = await fetch('/api/state');
 			if (!res.ok) throw new Error(`Server responded ${res.status}`);
 			const data = await res.json();
+			this.desktop = !!data.desktop;
 			if (!this.selectionLoaded) {
+				this.needsAgentSetup = !!data.needsAgentSetup;
 				if (isModelSelection(data.modelSelection)) this.modelSelection = data.modelSelection;
 				try {
-					const saved = JSON.parse(localStorage.getItem('trellis:model') ?? 'null');
+					const saved = data.desktop ? null : JSON.parse(localStorage.getItem('trellis:model') ?? 'null');
 					if (isModelSelection(saved)) this.modelSelection = saved;
 				} catch { /* Use the server default. */ }
 				this.selectionLoaded = true;

@@ -26,3 +26,8 @@ vite.config.ts.timestamp-*
 
 # Local SQLite database
 /data/
+
+# Desktop build output
+/src-tauri/target/
+/src-tauri/runtime/
+/src-tauri/gen/

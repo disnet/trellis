@@ -80,3 +80,78 @@ card → Connect → Challenge → revise the claim in the inspector → check i
 history.
 
 `npm run check` type-checks the project.
+
+## Desktop (Tauri 2, macOS 13.5+)
+
+The desktop app bundles the SvelteKit server, Node runtime, and native SQLite
+addon. End users do not need Node, npm, Rust, or a separately running server.
+Claude Code and Codex remain optional, separately installed CLIs.
+
+To develop or package on a Mac, install Rust and Xcode Command Line Tools, then:
+
+```sh
+npm install
+npm run desktop:dev      # Build the frontend and open the desktop app
+npm run desktop:build    # Create the .app and .dmg for this Mac's architecture
+npm run desktop:build -- --bundles app  # App bundle only
+```
+
+Artifacts land in `src-tauri/target/release/bundle/`. Desktop development uses
+a production frontend build; restart `desktop:dev` to pick up frontend changes.
+Use `npm run dev` for browser development with hot reload.
+
+On first launch, the model menu opens local agent setup. You can reopen it at
+**model menu → Set up local Claude / Codex**:
+
+1. Install either CLI using its linked official instructions.
+2. Sign in from Terminal (`claude auth login` or `codex login`).
+3. Choose **Check again**, then **Use Claude Code** or **Use Codex**.
+4. Choose a model in the same menu, or keep the provider default.
+
+Setup discovers CLIs on PATH and in common local, Homebrew, Volta, npm-global,
+and nvm locations, including when launched from Finder. On macOS, it also
+loads the login shell’s CLI paths and authentication settings (including
+`CLAUDE_CODE_OAUTH_TOKEN` and `CLAUDE_CONFIG_DIR`). These values stay in memory,
+are shared by status checks and generation, and are never written to Trellis
+settings or returned to the UI. **Check again** refreshes the shell settings. Expand **Executable
+path** to save an absolute path (paths containing spaces are supported).
+Checks only run version and authentication-status commands; they do not make
+model calls. Login credentials stay managed by the CLI. Offline fixtures are
+the initial desktop default, so you can explore the app before connecting.
+A successful sign-in check confirms local credentials; model access and expired
+credentials can still cause an actual operation to fail.
+
+Desktop data lives in `~/Library/Application Support/com.trellis.desktop/`:
+`trellis.db` holds the graph and `settings.json` holds executable paths and the
+selected provider/model. These survive app upgrades and changing local ports.
+Browser development continues to use `data/`. To bring an existing development
+graph into desktop, stop both apps and use SQLite's backup command to copy it
+to the desktop data directory before launching; preserve any existing desktop
+database first. Never copy a live database without its WAL or a SQLite backup.
+Appearance and panel sizes currently use webview local storage, so they can
+reset when the desktop server receives a different port.
+
+The backend binds only to `127.0.0.1` on an OS-assigned port and requires a
+random per-launch HttpOnly session cookie. It rejects foreign origins and
+stops when the desktop process exits. External links open in the default
+browser. No general-purpose Tauri shell commands are exposed to the page.
+
+```sh
+npm run check
+npm test
+npm run test:desktop     # Build + localhost boot/auth/persistence/shutdown check
+```
+
+The packaging script copies the current Node executable and installed native
+addons, so build on the target architecture using a self-contained Node
+installation (the official Node distribution is suitable). Its LICENSE file
+is included; set `TRELLIS_NODE_LICENSE` if it lives outside the Node installation.
+Cross-compilation
+and Windows/Linux installers are not configured. The default macOS artifacts
+are for local use; distribution requires Apple signing and notarization,
+including the bundled Node executable and native addons.
+
+References: [Tauri Node sidecars](https://v2.tauri.app/learn/sidecar-nodejs/),
+[SvelteKit Node adapter](https://svelte.dev/docs/kit/adapter-node),
+[Codex login](https://developers.openai.com/codex/cli/reference/#codex-login),
+[Claude CLI authentication](https://code.claude.com/docs/en/cli-reference).
