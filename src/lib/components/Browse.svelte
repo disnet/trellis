@@ -361,7 +361,8 @@
 		height: 100%;
 		display: flex;
 		flex-direction: column;
-		background: var(--paper);
+		/* The floating center sheet paints the panel ground. */
+		background: transparent;
 	}
 	.controls {
 		display: flex;

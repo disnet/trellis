@@ -91,7 +91,7 @@
 	button:disabled { opacity: .45; cursor: not-allowed; }
 	.trigger { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 	.trigger.compact { max-width: 120px; }
-	.options { position: absolute; top: calc(100% + 10px); left: 0; z-index: 100; width: min(340px, calc(100vw - 48px)); max-height: calc(100dvh - 160px); overflow-y: auto; padding: 16px; background: var(--paper-raised); border: 1px solid var(--control-border); border-radius: 8px; box-shadow: var(--shadow-menu); }
+	.options { position: absolute; bottom: calc(100% + 10px); left: 0; z-index: 100; width: min(340px, calc(100vw - 48px)); max-height: calc(100dvh - 160px); overflow-y: auto; padding: 16px; background: var(--paper-raised); border: 1px solid var(--control-border); border-radius: 8px; box-shadow: var(--shadow-menu); }
 	label { display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-12); font-weight: 600; margin-bottom: 12px; }
 	.custom { display: flex; gap: 6px; }
 	input { min-width: 0; flex: 1; }

@@ -15,7 +15,7 @@
 	// Camera for the infinite canvas: a surface point renders at surface * scale + (x, y).
 	// Pan is unbounded in every direction; recenter() snaps back to the working set.
 	let viewportEl = $state<HTMLDivElement>();
-	let cam = $state({ x: 0, y: 0, scale: 1 });
+	let cam = $state({ x: 48, y: 136, scale: 1 });
 	let vp = $state({ w: 0, h: 0 });
 	const MIN_SCALE = 0.25;
 	const MAX_SCALE = 2.5;
@@ -249,7 +249,7 @@
 				item: it,
 				arrow,
 				x: clamp(cx * cam.scale + cam.x, 80, vp.w - 80),
-				y: clamp(cy * cam.scale + cam.y, 22, vp.h - 22)
+				y: clamp(cy * cam.scale + cam.y, 140, Math.max(140, vp.h - 156))
 			});
 		}
 		return out;
@@ -271,10 +271,10 @@
 	/** Snap back to the working set: center it, zooming out just enough to fit. */
 	function recenter() {
 		glide(() => {
-			if (!bounds) { cam = { x: 0, y: 0, scale: 1 }; return; }
+			if (!bounds) { cam = { x: 48, y: 136, scale: 1 }; return; }
 			const w = bounds.r - bounds.l;
 			const h = bounds.b - bounds.t;
-			const scale = clamp(Math.min((vp.w - 96) / w, (vp.h - 96) / h), MIN_SCALE, 1);
+			const scale = clamp(Math.min((vp.w - 96) / w, (vp.h - 300) / h), MIN_SCALE, 1);
 			cam = {
 				x: vp.w / 2 - (bounds.l + w / 2) * scale,
 				y: vp.h / 2 - (bounds.t + h / 2) * scale,
@@ -286,7 +286,7 @@
 	let previous = $state<{ id: string; x: number; y: number; kind: string }[] | null>(null);
 	$effect(() => {
 		ws.activeGraphId; ws.activeWorkingSetId;
-		untrack(() => { previous = null; query = ''; showIndex = false; cam = { x: 0, y: 0, scale: 1 }; });
+		untrack(() => { previous = null; query = ''; showIndex = false; cam = { x: 48, y: 136, scale: 1 }; });
 	});
 	function locate(item: typeof items[number]) {
 		if (item.kind === 'card') ws.select(item.id);
@@ -388,7 +388,7 @@
 		<button class="find" aria-expanded={showIndex} onclick={() => showIndex = !showIndex}>Find on canvas · {items.length}{#if outside} <span>({outside} offscreen)</span>{/if}</button>
 	</div>
 	{#if showIndex}
-		<div class="canvas-index" style="top: {toolbarHeight + 8}px; max-height: calc(100% - {toolbarHeight + 24}px);">
+		<div class="canvas-index" style="bottom: {toolbarHeight + 88}px; max-height: calc(100% - {toolbarHeight + 180}px);">
 			<input bind:this={searchEl} aria-label="Find on canvas" placeholder="Find a title or phrase…" bind:value={query} onkeydown={e => {
 				if (e.key === 'Escape') showIndex = false;
 				if (e.key === 'Enter' && results.length) locate(results[0]);
@@ -519,14 +519,16 @@
 </div>
 
 <style>
-	.canvas-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 12px; background: var(--paper); border-bottom: 1px solid var(--hairline); }
+	/* Canvas controls sit on one baseline 16px above the dock: the arrange bar
+	   centered over it, the zoom cluster in the corner beside it. */
+	.canvas-tools { position: absolute; bottom: 80px; left: 0; right: 0; margin-inline: auto; z-index: 21; width: fit-content; max-width: calc(100% - 380px); border-radius: 10px; box-shadow: var(--shadow-menu); display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 12px; background: var(--paper-raised); border: 1px solid var(--hairline); }
 	.canvas-tools button, .canvas-tools select { font: inherit; font-size: var(--fs-12); color: var(--ink-soft); background: var(--card-white); border: 1px solid var(--card-border); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
 	.canvas-tools button:hover:not(:disabled), .canvas-tools select:hover { border-color: var(--blue); color: var(--blue); }
 	.canvas-tools button:disabled { opacity: .45; cursor: not-allowed; }
 	.canvas-tools label { display: flex; align-items: center; gap: 8px; font-size: var(--fs-12); color: var(--ink-faded); }
 	.canvas-tools .find { margin-left: auto; }
 	.find span { color: var(--ink-muted); }
-	.canvas-index { position: absolute; top: 56px; right: 12px; width: min(360px, calc(100% - 24px)); max-height: calc(100% - 72px); display: flex; flex-direction: column; background: var(--paper-raised); border: 1px solid var(--card-border); border-radius: 8px; padding: 12px; box-sizing: border-box; z-index: 20; box-shadow: var(--shadow-menu); }
+	.canvas-index { position: absolute; left: 0; right: 0; margin-inline: auto; width: min(360px, calc(100% - 24px)); max-height: calc(100% - 72px); display: flex; flex-direction: column; background: var(--paper-raised); border: 1px solid var(--card-border); border-radius: 8px; padding: 12px; box-sizing: border-box; z-index: 20; box-shadow: var(--shadow-menu); }
 	.canvas-index input { font: inherit; font-size: var(--fs-13); padding: 6px 8px; border: 1px solid var(--control-border); border-radius: 6px; min-width: 0; background: var(--paper-raised); color: var(--ink); }
 	.canvas-index input:focus { outline: 2px solid var(--focus-glow); border-color: var(--blue); }
 	.index-results { overflow: auto; margin-top: 8px; }
@@ -619,10 +621,16 @@
 	}
 	.canvas-zoom {
 		position: absolute;
-		right: 12px;
-		bottom: 12px;
+		right: 16px;
+		bottom: 80px;
 		display: flex;
+		align-items: center;
 		gap: 4px;
+		padding: 8px;
+		background: var(--paper-raised);
+		border: 1px solid var(--hairline);
+		border-radius: 10px;
+		box-shadow: var(--shadow-menu);
 		/* Above the offscreen-hint chips, which clamp into the same corner. */
 		z-index: 25;
 	}
@@ -638,7 +646,6 @@
 		border-radius: 6px;
 		padding: 5px 8px;
 		cursor: pointer;
-		box-shadow: var(--shadow-rest);
 	}
 	.canvas-zoom button:hover {
 		border-color: var(--blue);
@@ -676,5 +683,10 @@
 	}
 	.edge-label.proposed {
 		fill: var(--gold-deep);
+	}
+	@media (max-width: 600px) {
+		.canvas-tools { bottom: 160px; left: 16px; right: 16px; max-width: calc(100% - 32px); }
+		.canvas-zoom { bottom: 108px; }
+		.canvas-index { bottom: 256px !important; max-height: calc(100% - 380px) !important; }
 	}
 </style>

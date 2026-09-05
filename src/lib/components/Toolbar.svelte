@@ -2,7 +2,6 @@
 	import { appearance } from '$lib/appearance.svelte';
 	import { dialogs } from '$lib/dialogs.svelte';
 	import AppearanceMenu from './AppearanceMenu.svelte';
-	import GraphSwitcher from './GraphSwitcher.svelte';
 	import Icon from './Icon.svelte';
 	import ModelSwitcher from './ModelSwitcher.svelte';
 	import { workspace } from '$lib/workspace.svelte';
@@ -60,10 +59,9 @@
 	// threshold from flapping between two steps.
 	let needed = $state<number[]>([]);
 
-	const hideHint = $derived(step >= 1);
+	const hideHint = true;
 	const iconUtils = $derived(step >= 2);
 	const iconViews = $derived(step >= 3);
-	const hideLogo = $derived(step >= 4);
 	const utilsInMenu = $derived(step >= 5);
 	const opsInMenu = $derived(step >= 6);
 
@@ -143,11 +141,7 @@
 	class:icon-views={iconViews}
 	bind:this={toolbarEl}
 >
-	{#if !hideLogo}
-		<span class="logo">Trellis</span>
-	{/if}
 	{#if !ws.loading && !ws.loadError}
-		<GraphSwitcher compact={utilsInMenu} />
 		<button
 			class="new-thought"
 			title="Write a thought yourself — straight into the graph, no proposal"
@@ -316,7 +310,10 @@
 
 <style>
 	.toolbar {
-		grid-area: toolbar;
+		box-sizing: border-box;
+		max-width: calc(100vw - 32px);
+		border-radius: 14px;
+		box-shadow: var(--shadow-menu);
 		display: flex;
 		flex-wrap: nowrap;
 		min-height: 48px;
@@ -324,18 +321,12 @@
 		gap: 16px;
 		padding: 8px 14px;
 		background: var(--paper-raised);
-		border-bottom: 1px solid var(--hairline);
+		border: 1px solid var(--hairline);
 	}
 	/* Nothing but the hint may shrink: squeezed controls would hide the overflow
 	   that the collapse steps exist to detect. */
 	.toolbar > :global(*) {
 		flex: 0 0 auto;
-	}
-	.logo {
-		font-weight: 800;
-		letter-spacing: 0.02em;
-		font-size: var(--fs-16);
-		color: var(--moss-ink);
 	}
 	.ops {
 		display: flex;
@@ -482,7 +473,7 @@
 	}
 	.panel {
 		position: absolute;
-		top: calc(100% + 10px);
+		bottom: calc(100% + 10px);
 		z-index: 100;
 		width: 250px;
 		padding: 6px;
@@ -544,5 +535,9 @@
 		-webkit-line-clamp: 2;
 		line-clamp: 2;
 		overflow: hidden;
+	}
+	@media (max-width: 600px) {
+		.toolbar { flex-wrap: wrap; justify-content: center; gap: 8px; padding: 8px; max-width: calc(100vw - 16px); }
+		.right { margin-left: 0; justify-content: center; }
 	}
 </style>

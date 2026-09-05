@@ -50,7 +50,7 @@
 	button:disabled { opacity: .45; cursor: not-allowed; }
 	button:hover:not(:disabled) { border-color: var(--blue); color: var(--blue); }
 	.pct { margin-left: 5px; font-variant-numeric: tabular-nums; color: var(--ink-muted); }
-	.options { position: absolute; top: calc(100% + 10px); right: 0; z-index: 100; width: 230px; padding: 14px; background: var(--paper-raised); border: 1px solid var(--control-border); border-radius: 8px; box-shadow: var(--shadow-menu); text-align: left; }
+	.options { position: absolute; bottom: calc(100% + 10px); right: 0; z-index: 100; width: 230px; padding: 14px; background: var(--paper-raised); border: 1px solid var(--control-border); border-radius: 8px; box-shadow: var(--shadow-menu); text-align: left; }
 	.row { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: var(--fs-12); font-weight: 600; }
 	.stepper { display: flex; align-items: center; gap: 6px; }
 	.stepper button { padding: 3px 8px; line-height: 1.2; }

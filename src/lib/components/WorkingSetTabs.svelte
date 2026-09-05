@@ -96,11 +96,11 @@
 <style>
 	.tabs {
 		display: flex;
-		align-items: flex-end;
+		align-items: center;
 		gap: 4px;
-		padding: 6px 10px 0;
-		background: var(--divider);
-		border-bottom: 1px solid var(--hairline);
+		padding: 4px;
+		background: transparent;
+		border-bottom: none;
 		overflow-x: auto;
 		flex-shrink: 0;
 	}
@@ -108,17 +108,14 @@
 		display: flex;
 		align-items: center;
 		border: 1px solid var(--control-border);
-		border-bottom: none;
-		border-radius: 7px 7px 0 0;
+		border-radius: 6px;
 		background: var(--inset-fill);
 		max-width: 220px;
 	}
 	.tab.active {
 		background: var(--paper);
 		border-color: var(--card-border);
-		/* Blend into the canvas below. */
-		margin-bottom: -1px;
-		padding-bottom: 1px;
+
 	}
 	.tab-name {
 		font: inherit;
@@ -179,8 +176,7 @@
 		color: var(--ink-muted);
 		background: none;
 		border: 1px dashed var(--card-border);
-		border-bottom: none;
-		border-radius: 7px 7px 0 0;
+		border-radius: 6px;
 		padding: 5px 10px;
 		cursor: pointer;
 		white-space: nowrap;

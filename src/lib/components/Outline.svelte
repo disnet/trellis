@@ -312,7 +312,8 @@
 	.outline {
 		height: 100%;
 		overflow-y: auto;
-		background: var(--paper);
+		/* The floating center sheet paints the panel ground. */
+		background: transparent;
 	}
 	.inner {
 		max-width: 720px;

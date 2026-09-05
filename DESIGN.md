@@ -123,7 +123,7 @@ Density is compact but breathable: small system type on a resizable scale, hairl
 - Muted two-tone chips encode the six thought types; gold encodes "proposed."
 - Border *style* (solid / dashed / dotted) encodes epistemic state, never color alone.
 - Small, quiet, uppercase micro-labels for all metadata.
-- A dot-grid canvas as the field of work; panels as the desk around it.
+- A full-window dot-grid canvas as the field of work; controls and optional panels float above it.
 
 ## Colors
 
@@ -179,9 +179,11 @@ Every font-size in the app is a `--fs-*` token (`--fs-9` … `--fs-17`, base px 
 
 ## Layout
 
-A fixed desk: a full-height three-column grid (`left | center | right`) under a single toolbar row (min-height 48px). Left panel holds Scratch over Library (55/45), right panel holds the Proposal Tray over the Inspector (58/42); both are user-resizable via pane resizers and sit on Paper Panel with hairline borders. The center is the canvas — a pannable dot-grid field where cards carry absolute positions belonging to the working set, never to the knowledge model.
+A continuous, full-window canvas is the base surface. Workspace identity and a working-set menu float at the upper left; Scratch, Library, Proposals, and Inspector toggles float at the upper right. Creation, agent operations, view switching, and utilities live in a bottom dock. Canvas arrangement, search, and zoom controls float just above the dock.
 
-Spacing rhythm is a tight 4/6/8/10/12/16px scale; panel padding 12px, toolbar padding 8px 14px, card padding 8px 10px. Density is compact: this is an Operate surface for daily work, not a showcase. The toolbar degrades responsively by shedding labels (utilities first, view switcher last) rather than wrapping.
+Scratch and Library share a collapsible left panel; Proposals and Inspector share a collapsible right panel. Both retain independent resize controls. Opening a panel never resizes or shifts the canvas. Panels begin closed, with new pending change sets opening Proposals for explicit review. On narrow windows, opening one panel closes the other. Drafts and inspector edits survive hiding their panels.
+
+Keep the existing small, scalable system typography, warm paper palette, and semantic proposal styling. Floating chrome uses restrained warm shadows and 12–14px corners, with air between each surface and the window edge. Outline and Browse retain reading space below the workspace controls and above the dock.
 
 ## Elevation & Depth
 
