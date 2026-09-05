@@ -378,7 +378,7 @@
 	}
 	.chip {
 		font: inherit;
-		font-size: 11.5px;
+		font-size: var(--fs-11-5);
 		font-weight: 600;
 		border: 1px solid #d5d0c4;
 		background: #fff;
@@ -407,7 +407,7 @@
 		border-radius: 6px;
 		padding: 5px 8px;
 		font: inherit;
-		font-size: 13px;
+		font-size: var(--fs-13);
 		background: #fffdf8;
 	}
 	input[type='search']:focus {
@@ -421,7 +421,7 @@
 	}
 	.facets select {
 		font: inherit;
-		font-size: 11.5px;
+		font-size: var(--fs-11-5);
 		border: 1px solid #d5d0c4;
 		border-radius: 6px;
 		padding: 3px 6px;
@@ -429,14 +429,14 @@
 		color: #4d473c;
 	}
 	.count {
-		font-size: 11.5px;
+		font-size: var(--fs-11-5);
 		color: #8a8375;
 		margin-left: auto;
 		white-space: nowrap;
 	}
 	.action {
 		font: inherit;
-		font-size: 12px;
+		font-size: var(--fs-12);
 		font-weight: 600;
 		border: 1px solid #c9c4b8;
 		background: #fff;
@@ -469,7 +469,7 @@
 		align-items: center;
 		justify-content: center;
 		color: #8a8375;
-		font-size: 13px;
+		font-size: var(--fs-13);
 	}
 	.table-wrap {
 		flex: 1;
@@ -479,7 +479,7 @@
 	table {
 		width: 100%;
 		border-collapse: collapse;
-		font-size: 12.5px;
+		font-size: var(--fs-12-5);
 	}
 	thead th {
 		position: sticky;
@@ -492,7 +492,7 @@
 	}
 	.sort {
 		font: inherit;
-		font-size: 11px;
+		font-size: var(--fs-11);
 		font-weight: 700;
 		text-transform: uppercase;
 		letter-spacing: 0.07em;
@@ -509,7 +509,7 @@
 		color: #3b5bdb;
 	}
 	.dir {
-		font-size: 9px;
+		font-size: var(--fs-9);
 	}
 	tbody tr {
 		background: #fffdf8;
@@ -542,10 +542,10 @@
 	}
 	.col-updated {
 		color: #8a8375;
-		font-size: 11.5px;
+		font-size: var(--fs-11-5);
 	}
 	.type {
-		font-size: 9px;
+		font-size: var(--fs-9);
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
 		font-weight: 700;
@@ -567,7 +567,7 @@
 		line-height: 1.3;
 	}
 	.pin {
-		font-size: 11px;
+		font-size: var(--fs-11);
 		color: #8a6a1f;
 	}
 	.revision {
@@ -579,11 +579,11 @@
 		color: #4d473c;
 		font-weight: 400;
 		line-height: 1.4;
-		font-size: 12px;
+		font-size: var(--fs-12);
 		max-width: 72ch;
 	}
 	.status {
-		font-size: 10px;
+		font-size: var(--fs-10);
 		border: 1px solid #d5d0c4;
 		border-radius: 999px;
 		padding: 1px 7px;
@@ -591,7 +591,7 @@
 		background: #faf7f0;
 	}
 	.in-set {
-		font-size: 10px;
+		font-size: var(--fs-10);
 		color: #3d5537;
 		background: #e3ecdf;
 		border-radius: 999px;
@@ -600,7 +600,7 @@
 	}
 	.add {
 		font: inherit;
-		font-size: 11px;
+		font-size: var(--fs-11);
 		font-weight: 600;
 		border: 1px solid #c9c4b8;
 		background: #fff;

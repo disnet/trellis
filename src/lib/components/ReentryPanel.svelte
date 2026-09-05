@@ -149,30 +149,30 @@
 	}
 	h2 {
 		margin: 0;
-		font-size: 17px;
+		font-size: var(--fs-17);
 		color: #2c2921;
 	}
 	h3 {
 		margin: 16px 0 6px;
-		font-size: 11px;
+		font-size: var(--fs-11);
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
 		color: #8a8375;
 	}
 	.meta {
-		font-size: 11px;
+		font-size: var(--fs-11);
 		color: #8a8375;
 		white-space: nowrap;
 	}
 	.changes {
 		margin: 10px 0 0;
-		font-size: 13px;
+		font-size: var(--fs-13);
 		color: #4d473c;
 		line-height: 1.45;
 	}
 	.pending {
 		margin: 8px 0 0;
-		font-size: 13px;
+		font-size: var(--fs-13);
 		font-weight: 600;
 		color: #7a5c15;
 		background: #fdf8ec;
@@ -192,10 +192,10 @@
 		display: flex;
 		align-items: baseline;
 		gap: 8px;
-		font-size: 13px;
+		font-size: var(--fs-13);
 	}
 	.chip {
-		font-size: 10px;
+		font-size: var(--fs-10);
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 		border-radius: 4px;
@@ -237,7 +237,7 @@
 	}
 	button.primary {
 		font: inherit;
-		font-size: 13px;
+		font-size: var(--fs-13);
 		font-weight: 600;
 		background: #3b5bdb;
 		border: 1px solid #3b5bdb;

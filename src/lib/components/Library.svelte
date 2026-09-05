@@ -109,19 +109,19 @@
 	}
 	h2 {
 		margin: 0;
-		font-size: 13px;
+		font-size: var(--fs-13);
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
 		color: #6d675c;
 	}
 	.hint {
 		margin: 0;
-		font-size: 12px;
+		font-size: var(--fs-12);
 		color: #8a8375;
 		line-height: 1.4;
 	}
 	.hint.small {
-		font-size: 11px;
+		font-size: var(--fs-11);
 	}
 	input {
 		width: 100%;
@@ -130,7 +130,7 @@
 		border-radius: 6px;
 		padding: 6px 8px;
 		font: inherit;
-		font-size: 13px;
+		font-size: var(--fs-13);
 		background: #fffdf8;
 	}
 	input:focus {
@@ -145,7 +145,7 @@
 	}
 	.pinned-rail h3 {
 		margin: 0 0 4px;
-		font-size: 10px;
+		font-size: var(--fs-10);
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
 		color: #8a6a1f;
@@ -170,7 +170,7 @@
 		background: none;
 		padding: 0;
 		font: inherit;
-		font-size: 12px;
+		font-size: var(--fs-12);
 		font-weight: 600;
 		color: #4d473c;
 		text-align: left;
@@ -187,7 +187,7 @@
 	}
 	.pin-open {
 		font: inherit;
-		font-size: 10px;
+		font-size: var(--fs-10);
 		font-weight: 600;
 		border: 1px solid #c9c4b8;
 		background: #fff;
@@ -205,7 +205,7 @@
 		border: none;
 		background: none;
 		padding: 0 2px;
-		font-size: 10px;
+		font-size: var(--fs-10);
 		color: #a89f8d;
 		cursor: pointer;
 		line-height: 1;
@@ -214,7 +214,7 @@
 		color: #8a3a2a;
 	}
 	.pin-mark {
-		font-size: 11px;
+		font-size: var(--fs-11);
 		color: #8a6a1f;
 	}
 	.results {
@@ -243,13 +243,13 @@
 		align-items: baseline;
 	}
 	.title {
-		font-size: 12px;
+		font-size: var(--fs-12);
 		font-weight: 600;
 		color: #2c2921;
 		line-height: 1.3;
 	}
 	.type {
-		font-size: 9px;
+		font-size: var(--fs-9);
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
 		font-weight: 700;
@@ -271,12 +271,12 @@
 		align-items: baseline;
 	}
 	.status {
-		font-size: 10px;
+		font-size: var(--fs-10);
 		color: #8a8375;
 		flex: 1;
 	}
 	.in-set {
-		font-size: 10px;
+		font-size: var(--fs-10);
 		color: #3d5537;
 		background: #e3ecdf;
 		border-radius: 999px;
@@ -285,7 +285,7 @@
 	}
 	button.add {
 		font: inherit;
-		font-size: 11px;
+		font-size: var(--fs-11);
 		font-weight: 600;
 		border: 1px solid #c9c4b8;
 		background: #fff;
@@ -304,7 +304,7 @@
 		background: none;
 		padding: 0;
 		font: inherit;
-		font-size: 11px;
+		font-size: var(--fs-11);
 		color: #3b5bdb;
 		cursor: pointer;
 	}

@@ -169,7 +169,7 @@
 		box-shadow: 0 1px 3px rgba(60, 50, 30, 0.12);
 		cursor: grab;
 		user-select: none;
-		font-size: 13px;
+		font-size: var(--fs-13);
 		touch-action: none;
 	}
 	.card.dragging {
@@ -200,7 +200,7 @@
 		margin-bottom: 4px;
 	}
 	.type {
-		font-size: 10px;
+		font-size: var(--fs-10);
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
 		font-weight: 700;
@@ -216,12 +216,12 @@
 	.type-prediction { background: #f2dfe7; color: #6b3550; }
 	.type-evidence { background: #ece5c8; color: #635417; }
 	.badge {
-		font-size: 10px;
+		font-size: var(--fs-10);
 		white-space: nowrap;
 		color: #6d675c;
 	}
 	.pin {
-		font-size: 11px;
+		font-size: var(--fs-11);
 		color: #8a6a1f;
 	}
 	.proposed-badge { color: #8a6a1f; font-weight: 700; }
@@ -235,11 +235,11 @@
 		margin: 6px 0 0;
 		color: #4d473c;
 		line-height: 1.4;
-		font-size: 12px;
+		font-size: var(--fs-12);
 	}
 	.relsum {
 		margin-top: 6px;
-		font-size: 11px;
+		font-size: var(--fs-11);
 		color: #6d675c;
 		border-top: 1px solid #eae5d9;
 		padding-top: 4px;
@@ -255,7 +255,7 @@
 		border: none;
 		background: none;
 		padding: 0 2px;
-		font-size: 11px;
+		font-size: var(--fs-11);
 		color: #8a8375;
 		cursor: pointer;
 		line-height: 1;
@@ -270,7 +270,7 @@
 	}
 	.add-to-set {
 		font: inherit;
-		font-size: 10px;
+		font-size: var(--fs-10);
 		font-weight: 600;
 		border: 1px solid #6b7f8a;
 		background: #fff;
@@ -285,7 +285,7 @@
 		color: #3b5bdb;
 	}
 	.status {
-		font-size: 10px;
+		font-size: var(--fs-10);
 		border: 1px solid #d5d0c4;
 		border-radius: 999px;
 		padding: 1px 7px;
@@ -293,7 +293,7 @@
 		background: #faf7f0;
 	}
 	.confidence {
-		font-size: 10px;
+		font-size: var(--fs-10);
 		font-weight: 700;
 		border: 1px solid #ddb8c8;
 		border-radius: 999px;
@@ -304,7 +304,7 @@
 	}
 	.source {
 		margin-top: 6px;
-		font-size: 11px;
+		font-size: var(--fs-11);
 		color: #635417;
 		border-top: 1px solid #eae5d9;
 		padding-top: 4px;

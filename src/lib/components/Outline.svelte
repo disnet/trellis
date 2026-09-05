@@ -328,21 +328,21 @@
 		align-items: center;
 		justify-content: center;
 		color: #8a8375;
-		font-size: 13px;
+		font-size: var(--fs-13);
 	}
 	h2 {
 		display: flex;
 		align-items: baseline;
 		gap: 8px;
 		margin: 0 0 8px;
-		font-size: 13px;
+		font-size: var(--fs-13);
 		font-weight: 700;
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
 		color: #6d675c;
 	}
 	.count {
-		font-size: 11px;
+		font-size: var(--fs-11);
 		font-weight: 600;
 		color: #8a8375;
 	}
@@ -371,7 +371,7 @@
 		border: 1.5px solid #c9c4b8;
 		border-radius: 8px;
 		padding: 8px 10px;
-		font-size: 13px;
+		font-size: var(--fs-13);
 	}
 	.row.selectable {
 		cursor: pointer;
@@ -406,7 +406,7 @@
 		flex: 1;
 	}
 	.badge {
-		font-size: 10px;
+		font-size: var(--fs-10);
 		white-space: nowrap;
 		color: #6d675c;
 	}
@@ -414,11 +414,11 @@
 	.surfaced-badge { color: #4a616f; font-weight: 600; }
 	.revision-badge { color: #8a6a1f; font-weight: 700; }
 	.pin {
-		font-size: 11px;
+		font-size: var(--fs-11);
 		color: #8a6a1f;
 	}
 	.status {
-		font-size: 10px;
+		font-size: var(--fs-10);
 		border: 1px solid #d5d0c4;
 		border-radius: 999px;
 		padding: 1px 7px;
@@ -430,7 +430,7 @@
 		margin: 6px 0 0;
 		color: #4d473c;
 		line-height: 1.4;
-		font-size: 12px;
+		font-size: var(--fs-12);
 	}
 	.refs {
 		list-style: none;
@@ -445,14 +445,14 @@
 		display: flex;
 		align-items: baseline;
 		gap: 5px;
-		font-size: 11px;
+		font-size: var(--fs-11);
 		color: #6d675c;
 	}
 	.ref.proposed {
 		color: #7a5c15;
 	}
 	.dir {
-		font-size: 11px;
+		font-size: var(--fs-11);
 	}
 	.reltype {
 		font-style: italic;

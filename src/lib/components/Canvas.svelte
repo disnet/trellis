@@ -374,17 +374,17 @@
 
 <style>
 	.canvas-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 12px; background: #f6f3ec; border-bottom: 1px solid #d5d0c4; }
-	.canvas-tools button, .canvas-tools select { font: inherit; font-size: 12px; color: #5a523f; background: #fffdf8; border: 1px solid #c9c4b8; border-radius: 4px; padding: 8px; cursor: pointer; }
+	.canvas-tools button, .canvas-tools select { font: inherit; font-size: var(--fs-12); color: #5a523f; background: #fffdf8; border: 1px solid #c9c4b8; border-radius: 4px; padding: 8px; cursor: pointer; }
 	.canvas-tools button:disabled { opacity: .5; cursor: default; }
-	.canvas-tools label { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #5a523f; }
+	.canvas-tools label { display: flex; align-items: center; gap: 8px; font-size: var(--fs-12); color: #5a523f; }
 	.canvas-tools .find { margin-left: auto; }
 	.find span { color: #6d675c; }
 	.canvas-index { position: absolute; top: 56px; right: 12px; width: min(360px, calc(100% - 24px)); max-height: calc(100% - 72px); display: flex; flex-direction: column; background: #fffdf8; border: 1px solid #c9c4b8; border-radius: 8px; padding: 12px; box-sizing: border-box; z-index: 20; box-shadow: 0 4px 16px #3c321e20; }
-	.canvas-index input { font: inherit; font-size: 13px; padding: 8px; border: 1px solid #c9c4b8; border-radius: 4px; min-width: 0; background: #faf7f0; }
+	.canvas-index input { font: inherit; font-size: var(--fs-13); padding: 8px; border: 1px solid #c9c4b8; border-radius: 4px; min-width: 0; background: #faf7f0; }
 	.index-results { overflow: auto; margin-top: 8px; }
-	.index-results button { display: flex; flex-direction: column; gap: 4px; width: 100%; text-align: left; font: inherit; font-size: 13px; padding: 12px 8px; border: 0; border-bottom: 1px solid #eae5d9; background: transparent; color: #2c2921; cursor: pointer; }
+	.index-results button { display: flex; flex-direction: column; gap: 4px; width: 100%; text-align: left; font: inherit; font-size: var(--fs-13); padding: 12px 8px; border: 0; border-bottom: 1px solid #eae5d9; background: transparent; color: #2c2921; cursor: pointer; }
 	.index-results button:hover { background: #efeadf; }
-	.index-results small, .index-results p { color: #6d675c; font-size: 11px; }
+	.index-results small, .index-results p { color: #6d675c; font-size: var(--fs-11); }
 
 	.canvas-wrap {
 		position: relative;
@@ -431,7 +431,7 @@
 		stroke: #c9a860;
 	}
 	.edge-label {
-		font-size: 9px;
+		font-size: var(--fs-9);
 		fill: #5a523f;
 		text-anchor: middle;
 		font-family: inherit;

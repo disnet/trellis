@@ -3,6 +3,9 @@
 
 	const ws = workspace;
 
+	/** Narrows the graph name when the toolbar is short of room. */
+	let { compact = false }: { compact?: boolean } = $props();
+
 	async function run(fn: () => Promise<string | null>) {
 		const err = await fn();
 		if (err) ws.notice = err;
@@ -35,7 +38,7 @@
 	class="graph-switcher"
 	title="Graphs are isolated knowledge bases — search, Connect, and agent context never cross between them"
 >
-	<select aria-label="Active graph" value={ws.activeGraphId} onchange={onSelect}>
+	<select class:compact aria-label="Active graph" value={ws.activeGraphId} onchange={onSelect}>
 		{#each ws.graphs as g (g.id)}
 			<option value={g.id}>{g.name}</option>
 		{/each}
@@ -56,7 +59,7 @@
 	}
 	select {
 		font: inherit;
-		font-size: 12px;
+		font-size: var(--fs-12);
 		font-weight: 600;
 		color: #4d473c;
 		background: #fff;
@@ -66,12 +69,15 @@
 		max-width: 160px;
 		cursor: pointer;
 	}
+	select.compact {
+		max-width: 110px;
+	}
 	select:hover {
 		border-color: #3b5bdb;
 	}
 	button {
 		font: inherit;
-		font-size: 12px;
+		font-size: var(--fs-12);
 		border: 1px solid #d5d0c4;
 		background: #fff;
 		border-radius: 6px;

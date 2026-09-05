@@ -116,7 +116,7 @@
 	}
 	.tab-name {
 		font: inherit;
-		font-size: 12px;
+		font-size: var(--fs-12);
 		color: #6d675c;
 		background: none;
 		border: none;
@@ -134,7 +134,7 @@
 		font-weight: 600;
 	}
 	.count {
-		font-size: 10px;
+		font-size: var(--fs-10);
 		font-weight: 400;
 		color: #8a8375;
 		background: #e7e2d5;
@@ -147,7 +147,7 @@
 	.close {
 		border: none;
 		background: none;
-		font-size: 10px;
+		font-size: var(--fs-10);
 		color: #8a8375;
 		cursor: pointer;
 		padding: 2px 8px 2px 0;
@@ -162,7 +162,7 @@
 	}
 	.tab.renaming input {
 		font: inherit;
-		font-size: 12px;
+		font-size: var(--fs-12);
 		border: 1px solid #3b5bdb;
 		border-radius: 4px;
 		padding: 2px 6px;
@@ -172,7 +172,7 @@
 	}
 	.new-tab {
 		font: inherit;
-		font-size: 11.5px;
+		font-size: var(--fs-11-5);
 		color: #6d675c;
 		background: none;
 		border: 1px dashed #c9c4b8;

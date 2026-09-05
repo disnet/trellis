@@ -274,25 +274,25 @@
 	}
 	h2 {
 		margin: 0 0 8px;
-		font-size: 13px;
+		font-size: var(--fs-13);
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
 		color: #6d675c;
 	}
 	h3 {
 		margin: 6px 0;
-		font-size: 15px;
+		font-size: var(--fs-15);
 		color: #2c2921;
 	}
 	h4 {
 		margin: 16px 0 6px;
-		font-size: 11px;
+		font-size: var(--fs-11);
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
 		color: #8a8375;
 	}
 	.hint {
-		font-size: 12px;
+		font-size: var(--fs-12);
 		color: #8a8375;
 	}
 	.head {
@@ -301,7 +301,7 @@
 		align-items: baseline;
 	}
 	.pin-mark {
-		font-size: 10px;
+		font-size: var(--fs-10);
 		font-weight: 700;
 		color: #8a6a1f;
 	}
@@ -312,7 +312,7 @@
 	}
 	.type,
 	.status {
-		font-size: 10px;
+		font-size: var(--fs-10);
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 		border-radius: 4px;
@@ -321,12 +321,12 @@
 		color: #5a523f;
 	}
 	.statement {
-		font-size: 13px;
+		font-size: var(--fs-13);
 		line-height: 1.5;
 		color: #4d473c;
 	}
 	.confidence {
-		font-size: 10px;
+		font-size: var(--fs-10);
 		font-weight: 700;
 		border: 1px solid #ddb8c8;
 		border-radius: 999px;
@@ -336,7 +336,7 @@
 		white-space: nowrap;
 	}
 	.source {
-		font-size: 12px;
+		font-size: var(--fs-12);
 		color: #635417;
 		word-break: break-word;
 	}
@@ -353,7 +353,7 @@
 	}
 	button {
 		font: inherit;
-		font-size: 12px;
+		font-size: var(--fs-12);
 		border: 1px solid #d5d0c4;
 		background: #fff;
 		border-radius: 6px;
@@ -383,7 +383,7 @@
 		gap: 8px;
 	}
 	.relation {
-		font-size: 12px;
+		font-size: var(--fs-12);
 		display: flex;
 		flex-wrap: wrap;
 		gap: 4px 8px;
@@ -395,13 +395,13 @@
 		white-space: nowrap;
 	}
 	.meta {
-		font-size: 11px;
+		font-size: var(--fs-11);
 		color: #8a8375;
 	}
 	.revision {
 		border-left: 2px solid #e0dbcf;
 		padding-left: 8px;
-		font-size: 12px;
+		font-size: var(--fs-12);
 	}
 	.rev-title {
 		font-weight: 600;
@@ -420,7 +420,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 3px;
-		font-size: 11px;
+		font-size: var(--fs-11);
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 		color: #8a8375;
@@ -429,7 +429,7 @@
 	.edit-form textarea,
 	.edit-form select {
 		font: inherit;
-		font-size: 13px;
+		font-size: var(--fs-13);
 		border: 1px solid #d5d0c4;
 		border-radius: 6px;
 		padding: 6px 8px;
@@ -451,7 +451,7 @@
 		cursor: not-allowed;
 	}
 	.off-canvas {
-		font-size: 11px;
+		font-size: var(--fs-11);
 		color: #8a8375;
 	}
 </style>

@@ -56,24 +56,24 @@
 	}
 	h2 {
 		margin: 0;
-		font-size: 13px;
+		font-size: var(--fs-13);
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
 		color: #6d675c;
 	}
 	h3 {
 		margin: 10px 0 0;
-		font-size: 12px;
+		font-size: var(--fs-12);
 		color: #6d675c;
 	}
 	.hint {
 		margin: 0;
-		font-size: 12px;
+		font-size: var(--fs-12);
 		color: #8a8375;
 		line-height: 1.4;
 	}
 	.hint.small {
-		font-size: 11px;
+		font-size: var(--fs-11);
 	}
 	textarea {
 		width: 100%;
@@ -83,7 +83,7 @@
 		border-radius: 6px;
 		padding: 8px;
 		font: inherit;
-		font-size: 13px;
+		font-size: var(--fs-13);
 		background: #fffdf8;
 	}
 	textarea:focus {
@@ -114,7 +114,7 @@
 		gap: 6px;
 	}
 	.notes li {
-		font-size: 12px;
+		font-size: var(--fs-12);
 		color: #5a523f;
 		background: #f2eee4;
 		border-radius: 6px;
@@ -125,7 +125,7 @@
 		align-items: baseline;
 	}
 	.distilled {
-		font-size: 10px;
+		font-size: var(--fs-10);
 		color: #3d5537;
 		background: #e3ecdf;
 		border-radius: 999px;

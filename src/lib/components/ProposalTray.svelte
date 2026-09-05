@@ -284,20 +284,20 @@
 	}
 	h2 {
 		margin: 0;
-		font-size: 13px;
+		font-size: var(--fs-13);
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
 		color: #6d675c;
 	}
 	h3 {
 		margin: 8px 0 0;
-		font-size: 11px;
+		font-size: var(--fs-11);
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
 		color: #8a8375;
 	}
 	.hint {
-		font-size: 12px;
+		font-size: var(--fs-12);
 		color: #8a8375;
 		line-height: 1.4;
 	}
@@ -311,7 +311,7 @@
 		margin-bottom: 8px;
 	}
 	.action {
-		font-size: 10px;
+		font-size: var(--fs-10);
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
 		font-weight: 700;
@@ -321,19 +321,19 @@
 		padding: 2px 7px;
 	}
 	.action.small {
-		font-size: 9px;
+		font-size: var(--fs-9);
 		padding: 1px 5px;
 	}
 	.summary {
 		margin: 6px 0 0;
-		font-size: 13px;
+		font-size: var(--fs-13);
 		font-weight: 600;
 		color: #4d473c;
 		line-height: 1.35;
 	}
 	.using {
 		margin: 4px 0 0;
-		font-size: 11px;
+		font-size: var(--fs-11);
 		color: #8a8375;
 	}
 	.ops {
@@ -349,7 +349,7 @@
 		border: 1px solid #e2dccc;
 		border-radius: 6px;
 		padding: 8px;
-		font-size: 12px;
+		font-size: var(--fs-12);
 	}
 	.op.decision-accepted {
 		border-color: #7fa876;
@@ -368,10 +368,10 @@
 	.op-kind {
 		font-weight: 700;
 		color: #5a523f;
-		font-size: 11px;
+		font-size: var(--fs-11);
 	}
 	.op-decision {
-		font-size: 11px;
+		font-size: var(--fs-11);
 		color: #6d675c;
 		font-weight: 600;
 	}
@@ -399,19 +399,19 @@
 	}
 	.evidence {
 		margin: 4px 0 0;
-		font-size: 11px;
+		font-size: var(--fs-11);
 		color: #8a8375;
 	}
 	.op-extra {
 		margin: 4px 0 0;
-		font-size: 11px;
+		font-size: var(--fs-11);
 		font-weight: 600;
 		color: #6b3550;
 		word-break: break-word;
 	}
 	.edited-note {
 		margin: 6px 0 0;
-		font-size: 11px;
+		font-size: var(--fs-11);
 		color: #3d5537;
 	}
 	.original {
@@ -422,7 +422,7 @@
 	}
 	.blocked {
 		margin: 6px 0 0;
-		font-size: 11px;
+		font-size: var(--fs-11);
 		color: #8a3a2a;
 		background: #f8ece8;
 		border-radius: 4px;
@@ -438,7 +438,7 @@
 	}
 	button {
 		font: inherit;
-		font-size: 12px;
+		font-size: var(--fs-12);
 		border: 1px solid #d5d0c4;
 		background: #fff;
 		border-radius: 6px;
@@ -474,7 +474,7 @@
 		padding: 0;
 		color: #3b5bdb;
 		cursor: pointer;
-		font-size: 11px;
+		font-size: var(--fs-11);
 	}
 	.edit-form {
 		display: flex;
@@ -486,7 +486,7 @@
 	.edit-form textarea,
 	.edit-form select {
 		font: inherit;
-		font-size: 12px;
+		font-size: var(--fs-12);
 		border: 1px solid #d5d0c4;
 		border-radius: 6px;
 		padding: 5px 7px;
@@ -498,7 +498,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 3px;
-		font-size: 11px;
+		font-size: var(--fs-11);
 		color: #8a8375;
 	}
 	.changeset footer {
@@ -509,7 +509,7 @@
 		gap: 8px;
 	}
 	.tally {
-		font-size: 11px;
+		font-size: var(--fs-11);
 		color: #6d675c;
 	}
 	.history {
@@ -521,7 +521,7 @@
 		gap: 6px;
 	}
 	.history li {
-		font-size: 11px;
+		font-size: var(--fs-11);
 		color: #6d675c;
 		display: flex;
 		gap: 6px;

@@ -1,12 +1,16 @@
 <script lang="ts">
 	import { PROVIDERS, type AgentProvider } from '$lib/models';
 	import { workspace as ws } from '$lib/workspace.svelte';
+	/** Narrows the trigger to the provider alone when the toolbar is short of room. */
+	let { compact = false }: { compact?: boolean } = $props();
 	let open = $state(false);
 	let custom = $state('');
 	let invalid = $state(false);
 	const provider = $derived(PROVIDERS.find((p) => p.id === ws.modelSelection.provider)!);
 	const selectedPreset = $derived(provider.models.find((m) => m.id === ws.modelSelection.model));
 	const modelGroups = $derived([...new Set(provider.models.map((m) => m.group))]);
+	const modelLabel = $derived(selectedPreset?.label ?? (ws.modelSelection.model || 'Default'));
+	const triggerLabel = $derived(compact ? provider.label : `${provider.label} · ${modelLabel}`);
 	function changeProvider(value: string) {
 		ws.selectModel({ provider: value as AgentProvider, model: '' });
 		custom = '';
@@ -17,10 +21,10 @@
 <svelte:window onkeydown={(event) => { if (event.key === 'Escape') open = false; }} />
 
 <div class="switcher">
-	<button class="trigger" aria-expanded={open} aria-controls="model-options"
+	<button class="trigger" class:compact aria-expanded={open} aria-controls="model-options"
 		disabled={ws.loading || ws.invoking !== null} onclick={() => open = !open}
 		title="Choose the provider and model for agent operations">
-		{provider.label} · {selectedPreset?.label ?? (ws.modelSelection.model || 'Default')} <span aria-hidden="true">⌄</span>
+		{triggerLabel} <span aria-hidden="true">⌄</span>
 	</button>
 	{#if open}
 		<div class="options" id="model-options">
@@ -72,14 +76,15 @@
 
 <style>
 	.switcher { position: relative; flex-shrink: 0; }
-	button, select, input { font: inherit; font-size: 12px; color: #4d473c; background: #fff; border: 1px solid #c9c4b8; border-radius: 6px; padding: 5px 8px; }
+	button, select, input { font: inherit; font-size: var(--fs-12); color: #4d473c; background: #fff; border: 1px solid #c9c4b8; border-radius: 6px; padding: 5px 8px; }
 	button { cursor: pointer; }
 	button:disabled { opacity: .5; cursor: default; }
 	.trigger { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.trigger.compact { max-width: 120px; }
 	.options { position: absolute; top: calc(100% + 10px); left: 0; z-index: 100; width: 280px; padding: 16px; background: #fffdf8; border: 1px solid #d5d0c4; border-radius: 8px; box-shadow: 0 6px 24px #382f201f; }
-	label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; font-weight: 600; margin-bottom: 12px; }
+	label { display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-12); font-weight: 600; margin-bottom: 12px; }
 	.custom { display: flex; gap: 6px; }
 	input { min-width: 0; flex: 1; }
-	p { font-size: 11.5px; line-height: 1.5; color: #756d5f; }
+	p { font-size: var(--fs-11-5); line-height: 1.5; color: #756d5f; }
 	.done { width: 100%; }
 </style>
