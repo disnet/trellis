@@ -259,13 +259,21 @@
 					{/each}
 				</ul>
 
+				{#if cs.operations.some(op => op.decision === 'accepted' && effectivePayload(op).op === 'create_thought')}
+					<div class="placement">
+						<button disabled={c.p > 0 || ws.applying} onclick={() => ws.layoutPreview?.csId === cs.id ? ws.cancelLayoutPreview() : ws.previewPlacement(cs)}>
+							{ws.layoutPreview?.csId === cs.id ? 'Cancel placement preview' : 'Preview placement'}
+						</button>
+						<p>{ws.layoutPreview?.csId === cs.id ? `${ws.layoutPreview.moved} existing thoughts will move. Nothing is saved until you apply.` : 'Applying makes room near connected thoughts. Undo last apply also restores their positions.'}</p>
+					</div>
+				{/if}
 				<footer>
 					<span class="tally">
 						{c.a} accepted · {c.r} rejected{c.p > 0 ? ` · ${c.p} to review` : ''}
 					</span>
 					<button
 						class="primary"
-						disabled={c.p > 0}
+						disabled={c.p > 0 || ws.applying}
 						title={c.p > 0 ? 'Decide every operation before applying' : ''}
 						onclick={() => apply(cs)}
 					>
@@ -580,6 +588,8 @@
 		font-size: var(--fs-11);
 		color: var(--ink-quiet);
 	}
+	.placement { margin-top: 12px; }
+	.placement p { font-size: var(--fs-11); color: var(--ink-muted); line-height: 1.5; margin: 6px 0 0; }
 	.changeset footer {
 		margin-top: 10px;
 		display: flex;

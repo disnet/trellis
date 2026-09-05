@@ -3,6 +3,9 @@
 // positions), and refreshes from the state payload every mutation returns.
 
 import { browser } from '$app/environment';
+import { tick } from 'svelte';
+import { appearance } from './appearance.svelte';
+import { expandLayout, openPosition, type LayoutRect } from './incremental-layout';
 import { isModelSelection, type ModelSelection } from './models';
 import {
 	effectivePayload,
@@ -76,6 +79,97 @@ class Workspace {
 	view = $state<'canvas' | 'outline' | 'browse'>('canvas');
 	/** Preview positions for proposed cards, keyed `${changeSetId}:${ref}`. View-only, not persisted. */
 	ghostPositions = $state<Record<string, GhostPosition>>({});
+	/** Measured geometry belongs to the projection, never the thought. */
+	cardSizes = $state<Record<string, { width: number; height: number; zoom: string; fontScale: number }>>({});
+	layoutPreview = $state<{ csId: string; existing: Record<string, GhostPosition>; ghosts: Record<string, GhostPosition>; moved: number } | null>(null);
+	layoutAnimating = $state(false);
+	applying = $state(false);
+	private animationTimer: ReturnType<typeof setTimeout> | null = null;
+	private animateLayout() {
+		this.layoutAnimating = true;
+		if (this.animationTimer) clearTimeout(this.animationTimer);
+		this.animationTimer = setTimeout(() => this.layoutAnimating = false, 450);
+	}
+	cancelLayoutPreview() { this.animateLayout(); this.layoutPreview = null; }
+	get displayPositions() { return this.layoutPreview?.existing ?? this.positions; }
+	get displayGhostPositions() { return this.layoutPreview?.ghosts ?? this.ghostPositions; }
+	cardSize(id: string) {
+		const measured = this.cardSizes[id];
+		if (measured?.zoom === this.zoom && measured.fontScale === appearance.fontScale) return measured;
+		// Off-canvas projections have no DOM measurements. Use conservative text
+		// bounds until the canvas reports actual geometry (including font scale).
+		const op = this.pendingChangeSets.flatMap(cs => cs.operations.map(op => ({ cs, op }))).find(({ cs, op }) => `${cs.id}:${op.clientRef}` === id)?.op;
+		const payload = op && effectivePayload(op);
+		const thought = this.thoughts[id] ?? (payload?.op === 'create_thought' ? payload.thought : undefined);
+		const factor = appearance.fontScale;
+		const charsPerLine = Math.max(10, Math.floor((this.zoom === 'reading' ? 290 : CARD_W) / (13 * factor)));
+		const lines = (text: string) => text.split('\n').reduce((n, line) => n + Math.max(1, Math.ceil(line.length / charsPerLine)), 0);
+		const height = 90 * factor + lines(thought?.title ?? '') * 17 * factor +
+			(this.zoom === 'reading' ? 48 * factor + lines(thought?.statement ?? '') * 18 * factor + (thought?.source ? lines(thought.source) * 17 * factor : 0) : 0);
+		return { width: this.zoom === 'reading' ? 313 : 263, height };
+	}
+	measureCard(id: string, width: number, height: number) {
+		const old = this.cardSizes[id];
+		if (old?.width === width && old.height === height && old.zoom === this.zoom && old.fontScale === appearance.fontScale) return;
+		this.cardSizes[id] = { width, height, zoom: this.zoom, fontScale: appearance.fontScale };
+		this.layoutPreview = null;
+		this.reconcileGhosts();
+	}
+	private layoutRects(): LayoutRect[] {
+		return Object.entries(this.positions).map(([id, pos]) => ({ id, ...pos, ...this.cardSize(id) }));
+	}
+	private reconcileGhosts() {
+		const taken = this.layoutRects();
+		for (const [id, pos] of Object.entries(this.ghostPositions)) {
+			const cs = this.pendingChangeSets.find(cs => id.startsWith(`${cs.id}:`));
+			const op = cs?.operations.find(op => `${cs.id}:${op.clientRef}` === id);
+			if (!op || op.decision === 'rejected') continue;
+			const size = this.cardSize(id);
+			const next = openPosition(taken, size, pos);
+			this.ghostPositions[id] = next;
+			taken.push({ id, ...next, ...size });
+		}
+	}
+	async previewPlacement(cs: ChangeSet) {
+		if (!this.allDecided(cs)) return;
+		this.view = 'canvas';
+		await tick();
+		if (browser) await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+		const current = this.pendingChangeSets.find(current => current.id === cs.id);
+		if (!current || !this.allDecided(current) || this.applying) return;
+		this.animateLayout();
+		this.layoutPreview = this.planPlacement(current);
+		this.view = 'canvas';
+	}
+	private planPlacement(cs: ChangeSet) {
+		const additions: LayoutRect[] = [];
+		const links: { from: string; to: string }[] = [];
+		const resolve = (ref: string) => this.thoughts[ref] ? ref : `${cs.id}:${ref}`;
+		for (const op of cs.operations) {
+			if (op.decision !== 'accepted') continue;
+			const p = effectivePayload(op);
+			if (p.op === 'create_thought') {
+				const id = resolve(op.clientRef);
+				additions.push({ id, ...(this.ghostPositions[id] ?? { x: 80, y: 60 }), ...this.cardSize(id) });
+			} else if (p.op === 'add_relation') links.push({ from: resolve(p.from), to: resolve(p.to) });
+		}
+		const existing = this.layoutRects();
+		// Other batches are obstacles too, but only their temporary positions change.
+		for (const [id, pos] of Object.entries(this.ghostPositions)) {
+			if (!id.startsWith(`${cs.id}:`) && this.pendingChangeSets.some(batch => batch.operations.some(op => `${batch.id}:${op.clientRef}` === id && op.decision !== 'rejected'))) existing.push({ id, ...pos, ...this.cardSize(id) });
+		}
+		const layout = expandLayout(existing, additions, links, cs.invokedOn);
+		const positions: Record<string, GhostPosition> = {};
+		const ghosts = { ...this.ghostPositions };
+		let moved = 0;
+		for (const [id, pos] of layout) {
+			if (this.positions[id]) {
+				positions[id] = pos;
+				if (Math.hypot(pos.x - this.positions[id].x, pos.y - this.positions[id].y) > .1) moved++;
+			} else ghosts[id] = pos;
+		}
+		return { csId: cs.id, existing: positions, ghosts, moved };
+	}
 	/** Whether the manual "new thought" composer is open. View-only. */
 	composerOpen = $state(false);
 	notice = $state<string | null>(null);
@@ -116,6 +210,8 @@ class Workspace {
 	}
 
 	private applyState(s: WorkspaceState) {
+		this.layoutPreview = null;
+		if (s.activeGraphId !== this.activeGraphId) { this.cardSizes = {}; this.ghostPositions = {}; }
 		this.graphs = s.graphs;
 		this.activeGraphId = s.activeGraphId;
 		this.thoughts = s.thoughts;
@@ -131,7 +227,11 @@ class Workspace {
 		this.pendingChangeSets = s.pendingChangeSets;
 		this.decidedChangeSets = s.decidedChangeSets;
 		this.undoLabel = s.undoLabel;
-		this.selectedIds = this.selectedIds.filter((id) => id in s.thoughts);
+		// Keep the same array when nothing was pruned: a fresh reference reads as a
+		// new selection downstream (the inspector opens on it), and every server
+		// round-trip lands here — accepting a proposal must not steal the panel.
+		const surviving = this.selectedIds.filter((id) => id in s.thoughts);
+		if (surviving.length !== this.selectedIds.length) this.selectedIds = surviving;
 		for (const cs of s.pendingChangeSets) this.ensureGhosts(cs);
 		for (const key of Object.keys(this.ghostPositions)) {
 			const csId = key.slice(0, key.indexOf(':'));
@@ -149,7 +249,10 @@ class Workspace {
 			});
 			const data = await res.json().catch(() => ({}));
 			if (!res.ok) return data.error ?? `Request failed (${res.status}).`;
-			if (data.state) this.applyState(data.state);
+			if (data.state) {
+				if (url.endsWith('/apply') || url === '/api/undo') this.animateLayout();
+				this.applyState(data.state);
+			}
 			return null;
 		} catch {
 			return 'Could not reach the Trellis server.';
@@ -185,6 +288,7 @@ class Workspace {
 
 	moveCard(thoughtId: string, x: number, y: number) {
 		if (!this.positions[thoughtId]) return;
+		this.layoutPreview = null;
 		this.positions[thoughtId] = { x, y };
 		this.pendingMoves.set(thoughtId, { x, y });
 		if (this.moveTimer) clearTimeout(this.moveTimer);
@@ -434,6 +538,7 @@ class Workspace {
 
 
 	moveGhost(key: string, x: number, y: number) {
+		this.layoutPreview = null;
 		if (this.ghostPositions[key]) this.ghostPositions[key] = { x, y };
 	}
 
@@ -493,26 +598,14 @@ class Workspace {
 			({ ref }) => !this.ghostPositions[`${cs.id}:${ref}`]
 		);
 		if (missing.length === 0) return;
-		// Proposals appear at the edge of what they were invoked on: just right
-		// of the selection's cards, falling back to the canvas as a whole.
-		const anchors = cs.invokedOn
-			.map((id) => this.positions[id])
-			.filter((p): p is GhostPosition => p !== undefined);
-		const pool = anchors.length > 0 ? anchors : Object.values(this.positions);
-		const maxX = Math.max(0, ...pool.map((p) => p.x));
-		const baseY = anchors.length > 0 ? Math.min(...anchors.map((p) => p.y)) : 60;
-		const baseX = maxX + CARD_W + 80;
-		let y = baseY;
-		const taken = new Set(
-			Object.entries(this.ghostPositions)
-				.filter(([key]) => key.startsWith(`${cs.id}:`))
-				.map(([, p]) => p.y)
-		);
+		const anchors = cs.invokedOn.map(id => this.positions[id]).filter(Boolean);
+		const near = anchors.length ? { x: anchors[0].x + this.cardSize(cs.invokedOn[0]).width + 64, y: anchors[0].y } : { x: 80, y: 60 };
+		const taken = [...this.layoutRects(), ...Object.entries(this.ghostPositions).map(([id, pos]) => ({ id, ...pos, ...this.cardSize(id) }))];
 		for (const { ref } of missing) {
-			while (taken.has(y)) y += CARD_H + 48;
-			taken.add(y);
-			this.ghostPositions[`${cs.id}:${ref}`] = { x: baseX, y };
-			y += CARD_H + 48;
+			const id = `${cs.id}:${ref}`, size = this.cardSize(id);
+			const pos = openPosition(taken, size, near);
+			this.ghostPositions[id] = pos;
+			taken.push({ id, ...pos, ...size });
 		}
 	}
 
@@ -578,20 +671,28 @@ class Workspace {
 	// --- applying ---
 
 	async applyChangeSet(cs: ChangeSet): Promise<string | null> {
+		if (this.applying) return 'A change set is already being applied.';
 		if (!this.allDecided(cs)) return 'Decide every operation before applying.';
-		// Ghost preview positions become the real card positions.
-		const positions: Record<string, GhostPosition> = {};
-		for (const [key, pos] of Object.entries(this.ghostPositions)) {
-			if (key.startsWith(`${cs.id}:`)) positions[key.slice(cs.id.length + 1)] = pos;
-		}
-		const accepted = cs.operations.filter((o) => o.decision === 'accepted').length;
-		const err = await this.post(`/api/changesets/${cs.id}/apply`, { positions });
-		if (err) return err;
-		this.notice =
-			accepted === 0
-				? 'Change set rejected — nothing entered the graph.'
-				: `Applied ${accepted} of ${cs.operations.length} operations.`;
-		return null;
+		this.applying = true;
+		try {
+			const plan = this.layoutPreview?.csId === cs.id ? this.layoutPreview : this.planPlacement(cs);
+			const positions: Record<string, GhostPosition> = {};
+			for (const [key, pos] of Object.entries(plan.ghosts)) {
+				if (key.startsWith(`${cs.id}:`)) positions[key.slice(cs.id.length + 1)] = pos;
+			}
+			const existingPositions = Object.fromEntries(Object.entries(plan.existing).filter(([id, p]) =>
+				p.x !== this.positions[id]?.x || p.y !== this.positions[id]?.y));
+			const accepted = cs.operations.filter(o => o.decision === 'accepted').length;
+			this.animateLayout();
+			const err = await this.post(`/api/changesets/${cs.id}/apply`, { positions, existingPositions });
+			if (err) return err;
+			for (const [id, pos] of Object.entries(plan.ghosts)) {
+				if (!id.startsWith(`${cs.id}:`) && this.ghostPositions[id]) this.ghostPositions[id] = pos;
+			}
+			this.notice = accepted === 0 ? 'Change set rejected — nothing entered the graph.'
+				: `Applied ${accepted} operations${plan.moved ? ` · ${plan.moved} existing thoughts moved to make room` : ''}. Undo last apply restores the previous map.`;
+			return null;
+		} finally { this.applying = false; }
 	}
 
 	// --- manual creation (from the composer) ---
@@ -663,6 +764,7 @@ class Workspace {
 	// --- undo ---
 
 	async undoLastApply(): Promise<string | null> {
+		this.animateLayout();
 		const err = await this.post('/api/undo');
 		if (!err) this.notice = 'Reverted the last applied change set; it is back in the tray.';
 		return err;

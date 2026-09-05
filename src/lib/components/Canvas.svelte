@@ -4,11 +4,17 @@
 	import { workspace, CARD_W } from '$lib/workspace.svelte';
 	import { effectivePayload } from '$lib/types';
 	import ThoughtCard from './ThoughtCard.svelte';
+	import RadialFocus from './RadialFocus.svelte';
 	import Icon from './Icon.svelte';
 	import { tick, untrack } from 'svelte';
 	import { layoutCanvas } from '$lib/canvas-layout';
 
 	const ws = workspace;
+	let focusId = $state<string | null>(null);
+	$effect(() => { if (ws.layoutPreview) focusId = null; });
+	let focusButton: HTMLButtonElement;
+	async function closeFocus() { focusId = null; await tick(); focusButton?.focus(); }
+	$effect(() => { ws.activeGraphId; untrack(() => focusId = null); });
 
 	const cardW = $derived(ws.zoom === 'reading' ? 290 : CARD_W);
 	const cardH = $derived(ws.zoom === 'reading' ? 190 : 92);
@@ -102,10 +108,10 @@
 	// Center point of any drawable node: a thought's card on the whole-graph
 	// canvas, or a ghost preview card.
 	function center(csId: string | null, ref: string): Pt | null {
-		const pos = ws.positions[ref];
+		const pos = ws.displayPositions[ref];
 		if (pos) return { x: pos.x + (dimensions[ref]?.width ?? cardW) / 2, y: pos.y + (dimensions[ref]?.height ?? cardH) / 2 };
 		if (csId) {
-			const g = ws.ghostPositions[`${csId}:${ref}`];
+			const g = ws.displayGhostPositions[`${csId}:${ref}`];
 			if (g) return { x: g.x + (dimensions[`${csId}:${ref}`]?.width ?? cardW) / 2, y: g.y + (dimensions[`${csId}:${ref}`]?.height ?? cardH) / 2 };
 		}
 		return null;
@@ -178,7 +184,7 @@
 		const out: GhostCard[] = [];
 		for (const cs of ws.pendingChangeSets) {
 			for (const pr of ws.previewRefs(cs)) {
-				const pos = ws.ghostPositions[`${cs.id}:${pr.ref}`];
+				const pos = ws.displayGhostPositions[`${cs.id}:${pr.ref}`];
 				if (!pos) continue;
 				const op = cs.operations.find((o) => o.clientRef === pr.ref);
 				if (!op || op.decision === 'rejected') continue;
@@ -202,13 +208,14 @@
 
 	let dimensions = $state<Record<string, { width: number; height: number }>>({});
 	function measure(id: string, width: number, height: number) {
+		ws.measureCard(id, width, height);
 		if (dimensions[id]?.width !== width || dimensions[id]?.height !== height) dimensions[id] = { width, height };
 	}
 	// Every thought in the graph is on the canvas; an active working set is a
 	// lens that highlights its members and dims the rest.
 	const cards = $derived(
 		Object.values(ws.thoughts)
-			.map((t) => ({ t, pos: ws.positions[t.id] }))
+			.map((t) => ({ t, pos: ws.displayPositions[t.id] }))
 			.filter((c): c is { t: (typeof c)['t']; pos: NonNullable<(typeof c)['pos']> } => !!c.pos)
 	);
 	const items = $derived([
@@ -292,6 +299,7 @@
 		if (kind === 'card') ws.moveCard(id, x, y); else ws.moveGhost(id, x, y);
 	}
 	async function arrange() {
+		if (ws.layoutPreview) return;
 		previous = items.map(({ id, x, y, kind }) => ({ id, x, y, kind }));
 		const links = ws.relations.map(r => ({ from: r.fromThoughtId, to: r.toThoughtId }));
 		for (const cs of ws.pendingChangeSets) for (const op of cs.operations) {
@@ -339,7 +347,7 @@
 		const isBackground =
 			target === viewportEl || target.classList.contains('canvas-surface');
 		if (!isBackground) return;
-		startMarquee(e);
+		if (!ws.layoutPreview) startMarquee(e);
 	}
 
 	function startPan(e: PointerEvent) {
@@ -422,6 +430,8 @@
 	// Keyboard: Escape clears the selection; ⌘/Ctrl+A selects the focus (lens
 	// members when one is active, the whole canvas otherwise).
 	function onKeydown(e: KeyboardEvent) {
+		if (focusId) return;
+		if (ws.layoutPreview) { if (e.key === 'Escape' && !ws.applying) ws.cancelLayoutPreview(); return; }
 		const t = e.target as HTMLElement;
 		if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable) return;
 		if (e.key === 'Escape' && ws.selectedIds.length) {
@@ -462,9 +472,18 @@
 <svelte:window onkeydown={onKeydown} />
 
 <div class="canvas-wrap">
+	{#if focusId}
+		<RadialFocus initialId={focusId} onclose={closeFocus} />
+	{/if}
+	<div class="map-view" inert={focusId !== null} class:concealed={focusId !== null}>
 	<div class="canvas-tools" bind:clientHeight={toolbarHeight}>
-		<button onclick={arrange} disabled={!items.length} title="Space connected groups using actual card sizes">Arrange groups</button>
-		{#if previous}<button onclick={undoArrange}>Undo arrangement</button>{/if}
+		{#if ws.layoutPreview}
+			<span class="preview-note" role="status">Placement preview · {ws.layoutPreview.moved} existing thoughts move</span>
+			<button onclick={() => ws.cancelLayoutPreview()} disabled={ws.applying}>Cancel preview</button>
+		{/if}
+		<button bind:this={focusButton} onclick={() => focusId = ws.selectedIds[0]} disabled={ws.selectedIds.length !== 1 || !!ws.layoutPreview || ws.applying} title="Select one thought to explore its neighbors">Radial focus</button>
+		<button onclick={arrange} disabled={!items.length || !!ws.layoutPreview || ws.applying} title="Space connected groups using actual card sizes">Arrange groups</button>
+		{#if previous}<button onclick={undoArrange} disabled={!!ws.layoutPreview || ws.applying}>Undo arrangement</button>{/if}
 		<label>Connections <select bind:value={connections} aria-label="Visible connections">
 			<option value="all">All</option><option value="selected">Selected only</option><option value="none">Hidden</option>
 		</select></label>
@@ -535,6 +554,7 @@
 		{#each cards as { t, pos } (t.id)}
 			{@const member = ws.inWorkingSet(t.id)}
 			<ThoughtCard
+				animate={ws.layoutAnimating}
 				x={pos.x}
 				y={pos.y}
 				width={cardW}
@@ -552,7 +572,7 @@
 				dimmed={ws.lensActive && !member}
 				provenance={provenance(t.id)}
 				relationSummary={ws.zoom === 'reading' ? relationSummary(t.id) : undefined}
-				onmove={(x, y) => ws.moveCard(t.id, x, y)}
+				onmove={ws.layoutPreview || ws.applying ? undefined : (x, y) => ws.moveCard(t.id, x, y)}
 				onselect={(additive) => ws.select(t.id, additive)}
 				onremove={ws.lensActive && member
 					? async () => {
@@ -565,6 +585,7 @@
 
 		{#each ghosts as g (g.key)}
 			<ThoughtCard
+				animate={ws.layoutAnimating}
 				x={g.pos.x}
 				y={g.pos.y}
 				width={cardW}
@@ -579,7 +600,7 @@
 				scale={cam.scale}
 				ghost={g.kind}
 				provenance="agent"
-				onmove={(x, y) => ws.moveGhost(g.key, x, y)}
+				onmove={ws.layoutPreview || ws.applying ? undefined : (x, y) => ws.moveGhost(g.key, x, y)}
 			/>
 		{/each}
 	</div>
@@ -607,14 +628,18 @@
 </div>
 
 </div>
+</div>
 
 <style>
+	.map-view { position: absolute; inset: 0; display: flex; flex-direction: column; }
+	.map-view.concealed { visibility: hidden; }
 	/* Canvas controls sit on one baseline 16px above the dock: the arrange bar
 	   centered over it, the zoom cluster in the corner beside it. */
 	.canvas-tools { position: absolute; bottom: 80px; left: 0; right: 0; margin-inline: auto; z-index: 21; width: fit-content; max-width: calc(100% - 380px); border-radius: 10px; box-shadow: var(--shadow-menu); display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 12px; background: var(--paper-raised); border: 1px solid var(--hairline); }
 	.canvas-tools button, .canvas-tools select { font: inherit; font-size: var(--fs-12); color: var(--ink-soft); background: var(--card-white); border: 1px solid var(--card-border); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
 	.canvas-tools button:hover:not(:disabled), .canvas-tools select:hover { border-color: var(--blue); color: var(--blue); }
 	.canvas-tools button:disabled { opacity: .45; cursor: not-allowed; }
+	.preview-note { font-size: var(--fs-12); color: var(--blue); }
 	.canvas-tools label { display: flex; align-items: center; gap: 8px; font-size: var(--fs-12); color: var(--ink-faded); }
 	.canvas-tools .find { margin-left: auto; }
 	.find span { color: var(--ink-muted); }

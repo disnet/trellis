@@ -233,7 +233,9 @@
 		color: var(--blue);
 	}
 	.center { position: absolute; inset: 0; display: flex; flex-direction: column; min-width: 0; }
-	.canvas-pane { flex: 1; min-height: 0; }
+	.canvas-pane { flex: 1; min-height: 0; --focus-left: 16px; --focus-right: 16px; }
+	.canvas-pane.panel-left { --focus-left: calc(var(--left-w) + 32px); }
+	.canvas-pane.panel-right { --focus-right: calc(var(--right-w) + 32px); }
 	/* Outline and Browse float over the canvas ground as a centered sheet,
 	   matching the side panels' chrome instead of filling edge to edge. Unlike
 	   the canvas, the sheet has content a panel would occlude, so open panels

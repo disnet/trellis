@@ -17,6 +17,7 @@
 		zoom: 'overview' | 'reading';
 		/** Canvas zoom factor; pointer deltas are divided by it so drags track the cursor. */
 		scale?: number;
+		animate?: boolean;
 		selected?: boolean;
 		/** Marked as a per-graph landmark (Phase 6). */
 		pinned?: boolean;
@@ -45,6 +46,7 @@
 		source,
 		zoom,
 		scale = 1,
+		animate = false,
 		selected = false,
 		pinned = false,
 		dimmed = false,
@@ -107,7 +109,8 @@
 	class:dragging
 	class:dimmed
 	class:reading={zoom === 'reading'}
-	style="left: {x}px; top: {y}px; width: {width}px;"
+	class:layout-moving={animate}
+	style="left: 0; top: 0; transform: translate({x}px, {y}px); width: {width}px;"
 	onpointerdown={onpointerdown}
 	role="button"
 	tabindex="0"
@@ -142,9 +145,7 @@
 		{#if source}
 			<div class="source" title="Source">{source}</div>
 		{/if}
-		{#if relationSummary}
-			<div class="relsum">{relationSummary}</div>
-		{/if}
+		<div class="relsum" title={relationSummary}>{relationSummary ?? (ghost ? 'Connections proposed for review' : 'No connections yet')}</div>
 	{/if}
 	<div class="foot">
 		<span class="status">{status}</span>
@@ -167,6 +168,8 @@
 		font-size: var(--fs-13);
 		touch-action: none;
 	}
+	.card.layout-moving:not(.dragging) { transition: transform 380ms cubic-bezier(.22, 1, .36, 1); }
+	@media (prefers-reduced-motion: reduce) { .card.layout-moving:not(.dragging) { transition: none; } }
 	.card.dragging {
 		cursor: grabbing;
 		box-shadow: var(--shadow-lift);
@@ -240,6 +243,9 @@
 		font-size: var(--fs-12);
 	}
 	.relsum {
+		height: calc(var(--fs-11) * 2.8);
+		line-height: 1.4;
+		overflow: hidden;
 		margin-top: 6px;
 		font-size: var(--fs-11);
 		color: var(--ink-muted);

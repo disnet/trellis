@@ -569,7 +569,8 @@ export interface ApplyResult {
 
 export function applyChangeSet(
 	csId: string,
-	positions: Record<string, { x: number; y: number }>
+	positions: Record<string, { x: number; y: number }>,
+	existingPositions: Record<string, { x: number; y: number }> = {}
 ): { error: string } | ApplyResult {
 	const cs = loadChangeSet(csId);
 	if (!cs) return { error: 'Unknown change set.' };
@@ -594,6 +595,14 @@ export function applyChangeSet(
 	// Snapshot for change-set-granularity undo (survives restarts). Per-graph,
 	// so undoing here can never touch another graph.
 	const graphId = activeGraphId();
+	// Validate the entire layout adjustment before mutating anything.
+	if (!existingPositions || typeof existingPositions !== 'object' || Array.isArray(existingPositions)) return { error: 'Invalid layout adjustment.' };
+	for (const [thoughtId, pos] of Object.entries(existingPositions)) {
+		if (!pos || !Number.isFinite(pos.x) || !Number.isFinite(pos.y) ||
+			!db.prepare('SELECT 1 FROM canvas_positions WHERE graph_id = ? AND thought_id = ?').get(graphId, thoughtId)) {
+			return { error: 'Invalid layout adjustment.' };
+		}
+	}
 	const snapshot = JSON.stringify(exportState(graphId));
 
 	const now = Date.now();
@@ -627,6 +636,10 @@ export function applyChangeSet(
 
 	try {
 		db.transaction(() => {
+			if (accepted.some(op => effectivePayload(op).op === 'create_thought')) {
+				const move = db.prepare('UPDATE canvas_positions SET x = ?, y = ? WHERE graph_id = ? AND thought_id = ?');
+				for (const [thoughtId, pos] of Object.entries(existingPositions)) move.run(pos.x, pos.y, graphId, thoughtId);
+			}
 			const refToId: Record<string, string> = {};
 			for (const op of accepted) {
 				const p = effectivePayload(op);

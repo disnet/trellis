@@ -1,0 +1,31 @@
+import assert from 'node:assert/strict';
+import { after, test } from 'node:test';
+import { createServer } from 'vite';
+process.env.TRELLIS_DB = ':memory:';
+const server = await createServer({ server: { middlewareMode: true, hmr: false, ws: false }, appType: 'custom' });
+after(() => server.close());
+const store = await server.ssrLoadModule('/src/lib/server/store.ts');
+
+test('accepted thoughts and displaced cards commit together, and undo restores the original map', async () => {
+	const { thoughtId } = store.createThought({ title: 'Anchor', statement: 'A starting claim.', type: 'claim', status: 'developing', x: 100, y: 100 });
+	const generated = await store.invoke('develop', [thoughtId], undefined, { provider: 'fixture', model: '' });
+	assert(!generated.error, generated.error);
+	let cs = store.getState().pendingChangeSets.find(cs => cs.id === generated.changeSetId);
+	for (const op of cs.operations) assert.equal(store.decide(cs.id, op.id, 'accepted'), null);
+	cs = store.getState().pendingChangeSets.find(c => c.id === cs.id);
+	assert(cs.operations.some(o => o.payload.op === 'create_thought'));
+	const before = store.getState();
+	const positions = Object.fromEntries(cs.operations.filter(o => o.payload.op === 'create_thought').map((o, i) => [o.clientRef, { x: 500, y: 200 + i * 200 }]));
+	const invalid = store.applyChangeSet(cs.id, positions, { [thoughtId]: { x: Infinity, y: 100 } });
+	assert(invalid.error);
+	assert.deepEqual(store.getState().canvas, before.canvas);
+	const missing = store.applyChangeSet(cs.id, positions, { missing: { x: 1, y: 1 } });
+	assert(missing.error);
+	const result = store.applyChangeSet(cs.id, positions, { [thoughtId]: { x: 300, y: 100 } });
+	assert(!result.error, result.error);
+	assert.equal(store.getState().canvas.find(p => p.thoughtId === thoughtId).x, 300);
+	assert(Object.keys(store.getState().thoughts).length > Object.keys(before.thoughts).length);
+	assert.equal(store.undoLastApply(), null);
+	assert.deepEqual(store.getState().canvas, before.canvas);
+	assert.deepEqual(store.getState().thoughts, before.thoughts);
+});
