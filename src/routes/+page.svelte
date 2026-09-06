@@ -11,13 +11,12 @@
 	import PaneResizer from '$lib/components/PaneResizer.svelte';
 	import ProposalTray from '$lib/components/ProposalTray.svelte';
 	import ReentryPanel from '$lib/components/ReentryPanel.svelte';
-	import Scratch from '$lib/components/Scratch.svelte';
 	import Toolbar from '$lib/components/Toolbar.svelte';
 	import WorkingSetTabs from '$lib/components/WorkingSetTabs.svelte';
 	import { workspace } from '$lib/workspace.svelte';
 
 	const ws = workspace;
-	let leftPanel = $state<'scratch' | 'library' | null>(null);
+	let leftPanel = $state<'library' | null>(null);
 	let rightPanel = $state<'proposals' | 'inspector' | null>(null);
 	let previousPending = 0;
 	$effect(() => {
@@ -55,7 +54,7 @@
 		}
 		previousReveal = ws.proposalReveal;
 	});
-	function toggleLeft(panel: 'scratch' | 'library') {
+	function toggleLeft(panel: 'library') {
 		leftPanel = leftPanel === panel ? null : panel;
 		if (viewportWidth < 800) rightPanel = null;
 	}
@@ -136,18 +135,16 @@
 			</details>
 		</div>
 		<nav class="panel-switcher" aria-label="Workspace panels">
-			<button class:active={leftPanel === 'scratch'} aria-expanded={leftPanel === 'scratch'} aria-controls="scratch-library" onclick={() => toggleLeft('scratch')}><Icon name="pencil" /> Scratch</button>
-			<button class:active={leftPanel === 'library'} aria-expanded={leftPanel === 'library'} aria-controls="scratch-library" onclick={() => toggleLeft('library')}><Icon name="browse" /> Library</button>
+			<button class:active={leftPanel === 'library'} aria-expanded={leftPanel === 'library'} aria-controls="library-panel" onclick={() => toggleLeft('library')}><Icon name="browse" /> Library</button>
 			<button class:active={rightPanel === 'proposals'} class:pending={ws.pendingChangeSets.length > 0} aria-expanded={rightPanel === 'proposals'} aria-controls="review-panel" onclick={() => toggleRight('proposals')}>◇ Proposals{#if ws.pendingChangeSets.length} <span class="badge">{ws.pendingChangeSets.length}</span>{/if}</button>
 			<button class:active={rightPanel === 'inspector'} aria-expanded={rightPanel === 'inspector'} aria-controls="review-panel" onclick={() => toggleRight('inspector')}><Icon name="outline" /> Inspector{#if ws.selectedIds.length} <span class="badge">{ws.selectedIds.length}</span>{/if}</button>
 		</nav>
 	</div>
 	<div class="tool-dock"><Toolbar /></div>
-	<aside id="scratch-library" class="floating-panel left" hidden={!leftPanel} aria-label={leftPanel === 'library' ? 'Library' : 'Scratch'}>
-		<button class="close-panel" aria-label="Close scratch and library" onclick={() => leftPanel = null}><Icon name="x" /></button>
-		<div class="panel-content" hidden={leftPanel !== 'scratch'}><Scratch /></div>
+	<aside id="library-panel" class="floating-panel left" hidden={!leftPanel} aria-label="Library">
+		<button class="close-panel" aria-label="Close library" onclick={() => leftPanel = null}><Icon name="x" /></button>
 		<div class="panel-content" hidden={leftPanel !== 'library'}><Library /></div>
-		<PaneResizer bind:width={leftWidth} min={LEFT_MIN} max={leftMax} side="left" reset={LEFT_DEFAULT} label="Resize the scratch and library panel" />
+		<PaneResizer bind:width={leftWidth} min={LEFT_MIN} max={leftMax} side="left" reset={LEFT_DEFAULT} label="Resize the library panel" />
 	</aside>
 	<main class="center">
 		{#if ws.loading}

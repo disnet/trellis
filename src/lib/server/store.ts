@@ -37,6 +37,7 @@ import {
 	type ThoughtRevision,
 	type ThoughtStatus,
 	type ThoughtType,
+	type CanvasNote,
 	type CanvasPosition,
 	type WorkspaceState
 } from '$lib/types';
@@ -137,6 +138,18 @@ function rowToChangeSet(r: any, operations: ProposedOperation[]): ChangeSet {
 	};
 }
 
+function rowToNote(r: any): CanvasNote {
+	return {
+		id: r.id,
+		body: r.body,
+		x: r.x,
+		y: r.y,
+		w: r.w ?? undefined,
+		h: r.h ?? undefined,
+		createdAt: r.created_at
+	};
+}
+
 function rowToScratch(r: any): ScratchNote {
 	return {
 		id: r.id,
@@ -219,6 +232,9 @@ export function getState(): WorkspaceState {
 	const canvas = (
 		db.prepare('SELECT thought_id, x, y FROM canvas_positions WHERE graph_id = ?').all(graphId) as any[]
 	).map((r) => ({ thoughtId: r.thought_id, x: r.x, y: r.y })) as CanvasPosition[];
+	const notes = (
+		db.prepare('SELECT * FROM canvas_notes WHERE graph_id = ? ORDER BY created_at, rowid').all(graphId) as any[]
+	).map(rowToNote);
 	const pinnedThoughtIds = (
 		db
 			.prepare('SELECT thought_id FROM pinned_thoughts WHERE graph_id = ? ORDER BY pinned_at, rowid')
@@ -258,6 +274,7 @@ export function getState(): WorkspaceState {
 		thoughts,
 		relations,
 		canvas,
+		notes,
 		workingSets,
 		activeWorkingSetId: activeSet,
 		workingSet,
@@ -833,6 +850,60 @@ export function createThought(fields: {
 	return { thoughtId: tid };
 }
 
+// --- canvas notes ---
+// Free-text boxes on the canvas: the default thing you create there. Not
+// knowledge — direct and human-only, never through the proposal tray. A note
+// graduates by being converted into a thought, or feeds decompose as scratch.
+
+const NOTE_LIMIT = 20000;
+
+export function createNote(fields: {
+	body?: unknown;
+	x?: number;
+	y?: number;
+}): { error: string } | { noteId: string } {
+	const body = typeof fields.body === 'string' ? fields.body : '';
+	if (body.length > NOTE_LIMIT) return { error: `Note is longer than ${NOTE_LIMIT} characters.` };
+	if (!Number.isFinite(fields.x) || !Number.isFinite(fields.y))
+		return { error: 'A note needs a canvas position.' };
+	const noteId = id('note');
+	db.prepare(
+		'INSERT INTO canvas_notes (id, body, graph_id, x, y, created_at) VALUES (?, ?, ?, ?, ?, ?)'
+	).run(noteId, body, activeGraphId(), fields.x, fields.y, Date.now());
+	return { noteId };
+}
+
+export function deleteNote(noteId: string): string | null {
+	const res = db
+		.prepare('DELETE FROM canvas_notes WHERE id = ? AND graph_id = ?')
+		.run(noteId, activeGraphId());
+	return res.changes === 0 ? 'Unknown note.' : null;
+}
+
+/** Turn a note into a human-authored thought at the note's spot: the thought
+ *  is created and the note removed in one transaction, so the text never
+ *  exists twice (or vanishes) on failure. */
+export function convertNote(
+	noteId: string,
+	fields: { type: ThoughtType; status: ThoughtStatus; title: string; statement: string }
+): { error: string } | { thoughtId: string } {
+	const note = db
+		.prepare('SELECT * FROM canvas_notes WHERE id = ? AND graph_id = ?')
+		.get(noteId, activeGraphId()) as any;
+	if (!note) return { error: 'Unknown note.' };
+	let result: { error: string } | { thoughtId: string } = { error: 'Converting the note failed.' };
+	try {
+		db.transaction(() => {
+			result = createThought({ ...fields, x: note.x, y: note.y });
+			if ('error' in result) throw new Error(result.error);
+			db.prepare('DELETE FROM canvas_notes WHERE id = ?').run(noteId);
+		})();
+	} catch (e) {
+		return { error: e instanceof Error ? e.message : 'Converting the note failed.' };
+	}
+	return result;
+}
+
 // --- human revision (from the inspector) ---
 
 export function reviseThought(
@@ -1123,17 +1194,30 @@ export function renameGraph(graphId: string, name: string): string | null {
 
 // --- canvas layout persistence ---
 
-/** Persist card drags on the whole-graph canvas (best-effort, debounced by the
- *  client). Only updates thoughts that already have a position row. */
-export function updateCanvasPositions(items: { thoughtId: string; x: number; y: number }[]): void {
+/** Persist card drags on the whole-graph canvas, plus note drags, text, and
+ *  user-set sizes (best-effort, debounced by the client). Only updates rows
+ *  that exist. */
+export function updateCanvasPositions(
+	items: { thoughtId: string; x: number; y: number }[],
+	notes: { id: string; x: number; y: number; body: string; w?: number | null; h?: number | null }[] = []
+): void {
 	const graphId = activeGraphId();
 	const update = db.prepare(
 		'UPDATE canvas_positions SET x = ?, y = ? WHERE graph_id = ? AND thought_id = ?'
 	);
+	const updateNote = db.prepare(
+		'UPDATE canvas_notes SET x = ?, y = ?, body = ?, w = ?, h = ? WHERE graph_id = ? AND id = ?'
+	);
+	// A dimension is either a sane finite number or null (back to the default).
+	const dim = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v >= 80 && v <= 4000 ? v : null);
 	db.transaction(() => {
 		for (const item of items) {
 			if (Number.isFinite(item.x) && Number.isFinite(item.y))
 				update.run(item.x, item.y, graphId, item.thoughtId);
+		}
+		for (const note of notes) {
+			if (Number.isFinite(note.x) && Number.isFinite(note.y) && typeof note.body === 'string' && note.body.length <= NOTE_LIMIT)
+				updateNote.run(note.x, note.y, note.body, dim(note.w), dim(note.h), graphId, note.id);
 		}
 	})();
 }
@@ -1168,6 +1252,11 @@ export function exportState(graphId: string = activeGraphId()) {
 			.all(graphId),
 		canvas_positions: db
 			.prepare('SELECT * FROM canvas_positions WHERE graph_id = ?')
+			.all(graphId),
+		// Present in exports for completeness; restore() leaves notes alone —
+		// like pins, they are annotation state no change set can touch.
+		canvas_notes: db
+			.prepare('SELECT * FROM canvas_notes WHERE graph_id = ? ORDER BY created_at, rowid')
 			.all(graphId),
 		pinned_thoughts: db
 			.prepare('SELECT * FROM pinned_thoughts WHERE graph_id = ? ORDER BY pinned_at, rowid')

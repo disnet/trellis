@@ -146,6 +146,22 @@ export interface WorkingSetInfo {
 	members: string[];
 }
 
+/** A free-text box living directly on the graph's canvas: the default thing
+ *  you create there. Not knowledge — an annotation that can later be converted
+ *  into a thought or decomposed into proposals. */
+export interface CanvasNote {
+	id: string;
+	body: string;
+	x: number;
+	y: number;
+	/** User-set width; absent means the default. */
+	w?: number;
+	/** User-set height — held exactly, overflowing text scrolls inside; absent
+	 *  fits the content. */
+	h?: number;
+	createdAt: number;
+}
+
 export interface ScratchNote {
 	id: string;
 	body: string;
@@ -250,6 +266,8 @@ export interface WorkspaceState {
 	relations: Relation[];
 	/** Canvas layout of the whole graph: one position per thought. */
 	canvas: CanvasPosition[];
+	/** Free-text boxes on the canvas, oldest first. */
+	notes: CanvasNote[];
 	/** All working sets (lenses), oldest first. */
 	workingSets: WorkingSetInfo[];
 	/** The active lens, or null for the base state: the whole graph, no lens. */

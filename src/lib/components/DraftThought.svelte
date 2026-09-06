@@ -10,6 +10,8 @@
 		width: number;
 		/** Changes when something asks for the caret back (a second New thought). */
 		focusSignal?: number;
+		/** Prefilled statement — converting a canvas note starts from its text. */
+		initialStatement?: string;
 		/** Write the draft; resolves null on success, else the error message. */
 		onsave: (fields: {
 			type: ThoughtType;
@@ -19,12 +21,15 @@
 		oncancel: () => void;
 	}
 
-	let { x, y, width, focusSignal = 0, onsave, oncancel }: Props = $props();
+	let { x, y, width, focusSignal = 0, initialStatement = '', onsave, oncancel }: Props = $props();
 
 	const types: ThoughtType[] = ['claim', 'question', 'concept', 'example', 'prediction', 'evidence'];
 	let type = $state<ThoughtType>('claim');
 	let title = $state('');
-	let statement = $state('');
+	// Deliberately the initial value only: the canvas remounts the composer
+	// (keyed by note) whenever the source text should change.
+	// svelte-ignore state_referenced_locally
+	let statement = $state(initialStatement);
 	let saving = $state(false);
 	let titleEl = $state<HTMLInputElement>();
 	let statementEl = $state<HTMLTextAreaElement>();

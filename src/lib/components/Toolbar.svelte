@@ -17,11 +17,9 @@
 	];
 
 	function disabled(action: AgentAction) {
-		return (
-			ws.invoking !== null ||
-			(ws.selectedIds.length === 0 &&
-				!(action === 'decompose' && ws.scratchDraft.trim().length > 0))
-		);
+		// Decompose also runs from a canvas note's own button; here in the
+		// toolbar every operation needs a selection.
+		return ws.invoking !== null || ws.selectedIds.length === 0;
 	}
 
 	async function invoke(action: AgentAction) {
@@ -147,11 +145,11 @@
 	{#if !ws.loading && !ws.loadError}
 		<button
 			class="new-thought"
-			title="Write a thought yourself — straight into the graph, no proposal. On the canvas: press N, or double-click where you want it."
-			aria-label="New thought"
+			title="Jot a free-text note on the canvas — convert it into a thought or decompose it from there. On the canvas: press N, or double-click where you want it."
+			aria-label="New note"
 			onclick={() => ws.compose()}
 		>
-			<Icon name="plus" /><span class="label">New thought</span>
+			<Icon name="plus" /><span class="label">New note</span>
 		</button>
 	{/if}
 	<div class="ops" role="group" aria-label="Agent operations">
@@ -194,9 +192,7 @@
 	{#if !hideHint}
 		<span class="selection-hint" aria-live="polite">
 			{#if ws.invoking}
-				{ws.invoking === 'decompose' && ws.scratchDraft.trim().length > 0
-					? 'Proposing from scratch and the group…'
-					: `Proposing from ${ws.selectedIds.length} selected thought${ws.selectedIds.length === 1 ? '' : 's'} and the group…`}
+				{`Proposing from ${ws.selectedIds.length} selected thought${ws.selectedIds.length === 1 ? '' : 's'} and the group…`}
 			{:else if ws.selectedIds.length > 0}
 				{ws.selectedIds.length} selected — operations use the selection plus the group
 			{:else}

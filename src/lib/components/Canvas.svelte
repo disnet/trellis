@@ -11,6 +11,7 @@
 	} from '$lib/types';
 	import ThoughtCard from './ThoughtCard.svelte';
 	import DraftThought from './DraftThought.svelte';
+	import NoteCard from './NoteCard.svelte';
 	import RadialFocus from './RadialFocus.svelte';
 	import Icon from './Icon.svelte';
 	import { tick, untrack } from 'svelte';
@@ -246,6 +247,7 @@
 	);
 	const items = $derived([
 		...cards.map(({ t, pos }) => ({ id: t.id, title: t.title, statement: t.statement, kind: 'card', x: pos.x, y: pos.y })),
+		...ws.notes.map(n => ({ id: n.id, title: n.body.split('\n')[0].slice(0, 60) || '(empty note)', statement: n.body, kind: 'note', x: n.x, y: n.y })),
 		...ghosts.map(g => ({ id: g.key, title: g.title, statement: g.statement, kind: g.kind, ...g.pos }))
 	]);
 	let searchEl = $state<HTMLInputElement>();
@@ -348,7 +350,9 @@
 	// the selection borrows its lifted styling.
 	let groupDragAnchor = $state<string | null>(null);
 	function place(id: string, kind: string, x: number, y: number) {
-		if (kind === 'card') ws.moveCard(id, x, y); else ws.moveGhost(id, x, y);
+		if (kind === 'card') ws.moveCard(id, x, y);
+		else if (kind === 'note') ws.moveNote(id, x, y);
+		else ws.moveGhost(id, x, y);
 	}
 	async function arrange() {
 		if (ws.layoutPreview) return;
@@ -479,17 +483,26 @@
 		el.addEventListener('pointerup', up);
 	}
 
-	// --- writing a thought in place ---
-	// Double-click the background (or press N) and the composer appears as a card
-	// on the canvas, at the spot you picked. No modal: the graph you are adding
-	// to stays visible while you write.
+	// --- jotting a note in place ---
+	// Double-click the background (or press N) and a free-text box lands at the
+	// spot you picked: the default thing you create on the canvas. It stays as
+	// an annotation, or graduates — converted into a thought (the composer opens
+	// over it, type and all) or decomposed into proposals.
 
+	const NOTE_W = 240;
+	/** A fresh note's resting height, used to center it on the chosen point. */
+	const NOTE_H = 96;
 	const DRAFT_W = 290;
-	/** The draft's resting height, used to center it on the chosen point. */
-	const DRAFT_H = 166;
-	let draft = $state<Pt | null>(null);
-	/** Bumped to send the caret back to an open draft's title. */
-	let draftFocus = $state(0);
+	/** In-flight create: one double-click, one note. */
+	let creatingNote = $state(false);
+	/** The freshly created note that should take the caret. */
+	let focusNoteId = $state<string | null>(null);
+	let noteFocus = $state(0);
+	/** Note the composer is currently converting into a thought, if any. */
+	let converting = $state<string | null>(null);
+	const convertingNote = $derived(ws.notes.find((n) => n.id === converting) ?? null);
+	/** Note whose decompose is generating, so only its button pulses. */
+	let decomposingNoteId = $state<string | null>(null);
 
 	function surfacePoint(clientX: number, clientY: number): Pt {
 		const rect = viewportEl!.getBoundingClientRect();
@@ -499,63 +512,93 @@
 		};
 	}
 
-	/** Open the composer centered on a surface point, and bring the camera to it. */
-	function startDraft(sx: number, sy: number) {
-		// An open draft holds typed text; a second request must not discard it,
-		// so it answers by taking the caret back instead.
-		if (draft) return void draftFocus++;
-		if (focusId || ws.layoutPreview || ws.applying) return;
-		draft = { x: Math.round(sx - DRAFT_W / 2), y: Math.round(sy - DRAFT_H / 2) };
+	/** Create a note centered on a surface point, and bring the camera to it. */
+	async function startNote(sx: number, sy: number) {
+		if (creatingNote || converting || focusId || ws.layoutPreview || ws.applying) return;
 		stopPan();
-		// Center it, at a legible zoom: a card you type into is only useful if you
+		// Center it, at a legible zoom: a box you type into is only useful if you
 		// can read what you are typing.
 		glide(() => {
 			const scale = Math.max(cam.scale, 1);
 			cam = { x: vp.w / 2 - sx * scale, y: vp.h / 2 - sy * scale, scale };
 		});
+		creatingNote = true;
+		const result = await ws.createNote({
+			x: Math.round(sx - NOTE_W / 2),
+			y: Math.round(sy - NOTE_H / 2)
+		});
+		creatingNote = false;
+		if ('error' in result) {
+			ws.notice = result.error;
+			return;
+		}
+		focusNoteId = result.noteId;
+		noteFocus++;
 	}
 
 	function onCanvasDblClick(e: MouseEvent) {
 		const target = e.target as HTMLElement;
 		if (target !== viewportEl && !target.classList.contains('canvas-surface')) return;
 		const p = surfacePoint(e.clientX, e.clientY);
-		startDraft(p.x, p.y);
+		void startNote(p.x, p.y);
 	}
 
-	function draftAtCenter() {
-		startDraft((vp.w / 2 - cam.x) / cam.scale, (vp.h / 2 - cam.y) / cam.scale);
+	function noteAtCenter() {
+		void startNote((vp.w / 2 - cam.x) / cam.scale, (vp.h / 2 - cam.y) / cam.scale);
 	}
 
-	async function saveDraft(fields: {
+	async function removeNote(id: string) {
+		const note = ws.notes.find((n) => n.id === id);
+		if (!note) return;
+		// An empty note goes quietly; written text asks first.
+		if (note.body.trim()) {
+			const ok = await dialogs.confirm('Delete this note? Its text is not in the graph.', 'Delete note');
+			if (!ok) return;
+		}
+		if (converting === id) converting = null;
+		if (focusNoteId === id) focusNoteId = null;
+		const err = await ws.deleteNote(id);
+		if (err) ws.notice = err;
+	}
+
+	async function decomposeNote(id: string) {
+		decomposingNoteId = id;
+		try {
+			const err = await ws.decomposeNote(id);
+			if (err) ws.notice = err;
+		} finally {
+			decomposingNoteId = null;
+		}
+	}
+
+	async function saveConvert(fields: {
 		type: import('$lib/types').ThoughtType;
 		title: string;
 		statement: string;
 	}): Promise<string | null> {
-		const at = draft;
-		if (!at) return null;
-		const err = await ws.createThought({ ...fields, status: 'tentative' }, at);
+		if (!converting) return null;
+		const err = await ws.convertNote(converting, fields);
 		if (err) {
 			ws.notice = err;
 			return err;
 		}
-		draft = null;
+		converting = null;
 		return null;
 	}
 
-	// A draft belongs to the canvas it was opened on; leaving takes it with you.
+	// A conversion belongs to the canvas it was opened on; leaving abandons it
+	// (the note itself is safe — it only leaves when the conversion saves).
 	$effect(() => {
 		ws.activeGraphId;
-		untrack(() => (draft = null));
+		untrack(() => (converting = null));
 	});
-	$effect(() => { if (ws.layoutPreview) draft = null; });
+	$effect(() => { if (ws.layoutPreview) converting = null; });
 
-	// The toolbar's New thought asks for a composer; answer once the viewport has
-	// been measured, so the draft can be centered in it. Declared after the two
-	// effects that clear the draft, so a request made while the canvas was hidden
-	// survives the mount they run on.
+	// The toolbar's New note asks for a text box; answer once the viewport has
+	// been measured, so the note can be centered in it.
 	$effect(() => {
 		if (!ws.composeRequest || vp.w === 0) return;
-		untrack(() => draftAtCenter());
+		untrack(() => noteAtCenter());
 		ws.composeRequest = false;
 	});
 
@@ -614,7 +657,7 @@
 	// down; the cleanup also stops the loop when the canvas goes away.
 	$effect(() => { if (focusId) stopPan(); return stopPan; });
 
-	// Keyboard: WASD pans; N writes a thought; Escape clears the selection;
+	// Keyboard: WASD pans; N jots a note; Escape clears the selection;
 	// ⌘/Ctrl+A selects the focus (lens members when one is active, the whole
 	// canvas otherwise).
 	function onKeydown(e: KeyboardEvent) {
@@ -624,13 +667,13 @@
 		if (!typing && panKeydown(e)) return;
 		if (ws.layoutPreview) { if (e.key === 'Escape' && !ws.applying) ws.cancelLayoutPreview(); return; }
 		if (typing) return;
-		if (e.key === 'Escape' && draft) {
-			draft = null;
+		if (e.key === 'Escape' && converting) {
+			converting = null;
 		} else if (e.key === 'Escape' && (ws.selectedIds.length || ws.selectedProposalId)) {
 			ws.clearSelection();
 		} else if (e.key.toLowerCase() === 'n' && !e.metaKey && !e.ctrlKey && !e.altKey) {
 			e.preventDefault();
-			draftAtCenter();
+			noteAtCenter();
 		} else if (e.key === 'a' && (e.metaKey || e.ctrlKey)) {
 			e.preventDefault();
 			const all = cards.map(({ t: thought }) => thought.id);
@@ -742,8 +785,8 @@
 			}} />
 			<div class="index-results">
 				{#each results as item (item.id)}
-					<button onclick={() => locate(item)}><span>{item.title}</span><small>{item.kind === 'card' ? 'Thought' : '◇ Proposed'} →</small></button>
-				{:else}<p>{items.length ? 'No matching thoughts.' : 'Write a thought or decompose scratch text to get started.'}</p>{/each}
+					<button onclick={() => locate(item)}><span>{item.title}</span><small>{item.kind === 'card' ? 'Thought' : item.kind === 'note' ? '✎ Note' : '◇ Proposed'} →</small></button>
+				{:else}<p>{items.length ? 'No matching thoughts.' : 'Jot a note to get started.'}</p>{/each}
 			</div>
 		</div>
 	{/if}
@@ -928,15 +971,41 @@
 			/>
 		{/each}
 
-		{#if draft}
-			<DraftThought
-				x={draft.x}
-				y={draft.y}
-				width={DRAFT_W}
-				focusSignal={draftFocus}
-				onsave={saveDraft}
-				oncancel={() => (draft = null)}
-			/>
+		{#each ws.notes as note (note.id)}
+			{#if note.id !== converting}
+				<NoteCard
+					x={note.x}
+					y={note.y}
+					width={note.w ?? NOTE_W}
+					height={note.h}
+					body={note.body}
+					scale={cam.scale}
+					animate={ws.layoutAnimating}
+					focusSignal={focusNoteId === note.id ? noteFocus : 0}
+					busy={decomposingNoteId === note.id && ws.invoking === 'decompose'}
+					controlsLocked={ws.invoking !== null || reviewLocked}
+					onsize={(w, h) => measure(note.id, w, h)}
+					onchange={(body) => ws.editNote(note.id, body)}
+					onmove={ws.layoutPreview || ws.applying ? undefined : (x, y) => ws.moveNote(note.id, x, y)}
+					onresize={ws.layoutPreview || ws.applying ? undefined : (w, h) => ws.resizeNote(note.id, w, h)}
+					onconvert={() => (converting = note.id)}
+					ondecompose={() => decomposeNote(note.id)}
+					ondelete={() => removeNote(note.id)}
+				/>
+			{/if}
+		{/each}
+
+		{#if convertingNote}
+			{#key convertingNote.id}
+				<DraftThought
+					x={convertingNote.x}
+					y={convertingNote.y}
+					width={DRAFT_W}
+					initialStatement={convertingNote.body}
+					onsave={saveConvert}
+					oncancel={() => (converting = null)}
+				/>
+			{/key}
 		{/if}
 	</div>
 
@@ -947,10 +1016,10 @@
 		></div>
 	{/if}
 
-	{#if items.length === 0 && !draft}
+	{#if items.length === 0 && !creatingNote}
 		<div class="canvas-empty">
 			<p><strong>Your canvas is empty.</strong></p>
-			<p>Double-click anywhere (or press <kbd>N</kbd>) to write a thought, or paste something messy into Scratch and decompose it. Everything you keep lives here, spatially — groups come later, when you want the agent focused.</p>
+			<p>Double-click anywhere (or press <kbd>N</kbd>) to jot a note — keep it as an annotation, turn it into a thought, or decompose it into proposals. Everything you keep lives here, spatially — groups come later, when you want the agent focused.</p>
 		</div>
 	{/if}
 </div>

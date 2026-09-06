@@ -10,6 +10,7 @@ import { isModelSelection, type ModelSelection } from './models';
 import {
 	effectivePayload,
 	type AgentAction,
+	type CanvasNote,
 	type ChangeSet,
 	type Confidence,
 	type GraphInfo,
@@ -66,8 +67,9 @@ class Workspace {
 	/** Member thought ids of the active working set (empty when none active). */
 	workingSet = $state<string[]>([]);
 	pinnedThoughtIds = $state<string[]>([]);
+	/** Free-text boxes on the canvas: the default thing you create there. */
+	notes = $state<CanvasNote[]>([]);
 	scratchNotes = $state<ScratchNote[]>([]);
-	scratchDraft = $state('');
 	pendingChangeSets = $state<ChangeSet[]>([]);
 	decidedChangeSets = $state<ChangeSet[]>([]);
 	undoLabel = $state<string | null>(null);
@@ -120,7 +122,11 @@ class Workspace {
 		this.reconcileGhosts();
 	}
 	private layoutRects(): LayoutRect[] {
-		return Object.entries(this.positions).map(([id, pos]) => ({ id, ...pos, ...this.cardSize(id) }));
+		return [
+			...Object.entries(this.positions).map(([id, pos]) => ({ id, ...pos, ...this.cardSize(id) })),
+			// Notes are obstacles too: staged cards must not land on top of them.
+			...this.notes.map((n) => ({ id: n.id, x: n.x, y: n.y, ...this.cardSize(n.id) }))
+		];
 	}
 	private reconcileGhosts() {
 		const taken = this.layoutRects();
@@ -180,11 +186,11 @@ class Workspace {
 		}
 		return { csId: cs.id, existing: positions, ghosts, moved };
 	}
-	/** A pending request to write a thought by hand. The composer is a card on
-	 *  the canvas, so the canvas is the one that can open it; this is how the
-	 *  rest of the app asks. View-only. */
+	/** A pending request to create a note by hand. The note is a box on the
+	 *  canvas, so the canvas is the one that can open it; this is how the rest
+	 *  of the app asks. View-only. */
 	composeRequest = $state(false);
-	/** Write a thought yourself: show the canvas, and open the composer on it. */
+	/** Jot a note yourself: show the canvas, and open a text box on it. */
 	compose() {
 		this.view = 'canvas';
 		this.composeRequest = true;
@@ -240,6 +246,16 @@ class Workspace {
 		this.activeWorkingSetId = s.activeWorkingSetId;
 		this.workingSet = s.workingSet;
 		this.pinnedThoughtIds = s.pinnedThoughtIds;
+		// A server round-trip can land while a note is being typed into or
+		// dragged; the pending (unflushed) local values win over the older
+		// server copy, and the next flush persists them.
+		for (const id of this.pendingNoteEdits.keys()) {
+			if (!s.notes.some((n) => n.id === id)) this.pendingNoteEdits.delete(id);
+		}
+		this.notes = s.notes.map((n) => {
+			const pending = this.pendingNoteEdits.get(n.id);
+			return pending ? { ...n, ...pending } : n;
+		});
 		this.scratchNotes = s.scratchNotes;
 		this.pendingChangeSets = s.pendingChangeSets;
 		this.decidedChangeSets = s.decidedChangeSets;
@@ -328,15 +344,21 @@ class Workspace {
 	// --- canvas (positions update locally, persisted with a debounce) ---
 
 	private pendingMoves = new Map<string, GhostPosition>();
+	/** Unflushed note drags, text edits, and resizes — latest full values per note. */
+	private pendingNoteEdits = new Map<string, { x: number; y: number; body: string; w?: number; h?: number }>();
 	private moveTimer: ReturnType<typeof setTimeout> | null = null;
+
+	private scheduleFlush() {
+		if (this.moveTimer) clearTimeout(this.moveTimer);
+		this.moveTimer = setTimeout(() => void this.flushMoves(), 400);
+	}
 
 	moveCard(thoughtId: string, x: number, y: number) {
 		if (!this.positions[thoughtId]) return;
 		this.layoutPreview = null;
 		this.positions[thoughtId] = { x, y };
 		this.pendingMoves.set(thoughtId, { x, y });
-		if (this.moveTimer) clearTimeout(this.moveTimer);
-		this.moveTimer = setTimeout(() => void this.flushMoves(), 400);
+		this.scheduleFlush();
 	}
 
 	/**
@@ -363,21 +385,113 @@ class Workspace {
 			clearTimeout(this.moveTimer);
 			this.moveTimer = null;
 		}
-		if (this.pendingMoves.size === 0) return;
+		if (this.pendingMoves.size === 0 && this.pendingNoteEdits.size === 0) return;
 		const items = [...this.pendingMoves.entries()].map(([thoughtId, p]) => ({
 			thoughtId,
 			...p
 		}));
+		const notes = [...this.pendingNoteEdits.entries()].map(([id, n]) => ({
+			id,
+			...n,
+			// Explicit nulls: an absent dimension means "back to the default", and
+			// JSON would silently drop undefined.
+			w: n.w ?? null,
+			h: n.h ?? null
+		}));
 		this.pendingMoves.clear();
+		this.pendingNoteEdits.clear();
 		try {
 			await fetch('/api/canvas', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ items })
+				body: JSON.stringify({ items, notes })
 			});
 		} catch {
 			// Position persistence is best-effort; the next successful save wins.
 		}
+	}
+
+	// --- canvas notes ---
+	// The default thing you create on the canvas: a free-text box. Useful on its
+	// own as an annotation beside a thought group, and the raw material for
+	// convert-to-thought and decompose.
+
+	async createNote(at: GhostPosition): Promise<{ noteId: string } | { error: string }> {
+		await this.flushMoves();
+		try {
+			const res = await fetch('/api/notes', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ action: 'create', body: '', ...at })
+			});
+			const data = await res.json().catch(() => ({}));
+			if (!res.ok) return { error: data.error ?? `Request failed (${res.status}).` };
+			if (data.state) this.applyState(data.state);
+			return { noteId: data.noteId };
+		} catch {
+			return { error: 'Could not reach the Trellis server.' };
+		}
+	}
+
+	private touchNote(id: string, patch: Partial<{ x: number; y: number; body: string; w?: number; h?: number }>) {
+		const note = this.notes.find((n) => n.id === id);
+		if (!note) return;
+		Object.assign(note, patch);
+		this.pendingNoteEdits.set(id, { x: note.x, y: note.y, body: note.body, w: note.w, h: note.h });
+		this.scheduleFlush();
+	}
+
+	moveNote(id: string, x: number, y: number) {
+		this.layoutPreview = null;
+		this.touchNote(id, { x, y });
+	}
+
+	/** Set a note's size; undefined returns a dimension to its default. */
+	resizeNote(id: string, w: number | undefined, h: number | undefined) {
+		this.layoutPreview = null;
+		this.touchNote(id, { w, h });
+	}
+
+	editNote(id: string, body: string) {
+		this.touchNote(id, { body });
+	}
+
+	async deleteNote(id: string): Promise<string | null> {
+		this.pendingNoteEdits.delete(id);
+		return this.post('/api/notes', { action: 'delete', noteId: id });
+	}
+
+	/** Graduate a note into a human-authored thought at the note's spot. */
+	async convertNote(
+		id: string,
+		fields: { type: ThoughtType; title: string; statement: string }
+	): Promise<string | null> {
+		await this.flushMoves();
+		try {
+			const res = await fetch('/api/notes', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ action: 'convert', noteId: id, ...fields, status: 'tentative' })
+			});
+			const data = await res.json().catch(() => ({}));
+			if (!res.ok) return data.error ?? `Request failed (${res.status}).`;
+			this.pendingNoteEdits.delete(id);
+			if (data.state) this.applyState(data.state);
+			if (typeof data.thoughtId === 'string') this.selectedIds = [data.thoughtId];
+			return null;
+		} catch {
+			return 'Could not reach the Trellis server.';
+		}
+	}
+
+	/** Decompose a note's text into proposed thoughts (same path as scratch:
+	 *  the text is captured as a scratch note for provenance, and the note
+	 *  itself stays on the canvas). */
+	async decomposeNote(id: string): Promise<string | null> {
+		const note = this.notes.find((n) => n.id === id);
+		if (!note) return 'Unknown note.';
+		if (!note.body.trim()) return 'Write something in the note first.';
+		return this.invoke('decompose', note.body);
 	}
 
 	// --- working-set membership (Phase 3) ---
@@ -616,27 +730,22 @@ class Workspace {
 	/** The action currently generating a proposal, if any (live calls take seconds). */
 	invoking = $state<AgentAction | null>(null);
 
-	async invoke(action: AgentAction): Promise<string | null> {
+	async invoke(action: AgentAction, scratchBody?: string): Promise<string | null> {
 		if (this.invoking) return null;
-		const scratchBody =
-			action === 'decompose' && this.scratchDraft.trim().length > 0
-				? this.scratchDraft
-				: undefined;
+		if (action !== 'decompose' || !scratchBody?.trim()) scratchBody = undefined;
 		if (!scratchBody && this.selectedIds.length === 0) {
 			return action === 'decompose'
-				? 'Decompose needs scratch text or a selected thought.'
+				? 'Decompose a note, or select at least one thought.'
 				: `Select at least one thought to ${action}.`;
 		}
 		this.invoking = action;
 		try {
-			const err = await this.post('/api/invoke', {
+			return await this.post('/api/invoke', {
 				action,
 				selectedIds: [...this.selectedIds],
 				scratchBody,
 				selection: { ...this.modelSelection }
 			});
-			if (!err && scratchBody) this.scratchDraft = '';
-			return err;
 		} finally {
 			this.invoking = null;
 		}
@@ -794,7 +903,8 @@ class Workspace {
 	): Promise<string | null> {
 		const taken: GhostPosition[] = [
 			...Object.values(this.positions),
-			...Object.values(this.ghostPositions)
+			...Object.values(this.ghostPositions),
+			...this.notes.map((n) => ({ x: n.x, y: n.y }))
 		];
 		const pos = at ?? this.freePosition(taken);
 		await this.flushMoves();

@@ -107,6 +107,22 @@ CREATE TABLE IF NOT EXISTS proposed_operations (
 );
 CREATE INDEX IF NOT EXISTS idx_ops_change_set ON proposed_operations(change_set_id);
 
+-- Free-text boxes living directly on the canvas: annotations beside thought
+-- groups, and the raw material for convert-to-thought / decompose. Position
+-- lives on the row (they are not thoughts, so canvas_positions cannot hold it).
+CREATE TABLE IF NOT EXISTS canvas_notes (
+  id TEXT PRIMARY KEY,
+  body TEXT NOT NULL,
+  graph_id TEXT NOT NULL REFERENCES graphs(id),
+  x REAL NOT NULL,
+  y REAL NOT NULL,
+  -- User-set size (a set height scrolls overflowing text internally);
+  -- NULL means the default width with content-fit height.
+  w REAL,
+  h REAL,
+  created_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS scratch_notes (
   id TEXT PRIMARY KEY,
   body TEXT NOT NULL,
@@ -161,6 +177,7 @@ function open(): Database.Database {
 	migrateToPredictionEvidence(db);
 	migrateToWholeGraphCanvas(db);
 	migrateToConsultedColumn(db);
+	migrateToResizableNotes(db);
 	seedIfEmpty(db);
 	return db;
 }
@@ -231,6 +248,13 @@ function migrateToWholeGraphCanvas(db: Database.Database) {
 		).run();
 	})();
 	db.pragma('foreign_keys = ON');
+}
+
+// Canvas notes gained user-set dimensions when they became resizable.
+function migrateToResizableNotes(db: Database.Database) {
+	const cols = db.pragma('table_info(canvas_notes)') as { name: string }[];
+	if (!cols.some((c) => c.name === 'w')) db.exec('ALTER TABLE canvas_notes ADD COLUMN w REAL');
+	if (!cols.some((c) => c.name === 'h')) db.exec('ALTER TABLE canvas_notes ADD COLUMN h REAL');
 }
 
 // Change sets gained a consulted column (thoughts pulled in by graph-wide
