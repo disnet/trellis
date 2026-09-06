@@ -17,6 +17,7 @@
 	import { tick, untrack } from 'svelte';
 	import { layoutCanvas } from '$lib/canvas-layout';
 	import { groupColor } from '$lib/group-colors';
+	import { nextGroupOf } from '$lib/groups';
 
 	const ws = workspace;
 	let focusId = $state<string | null>(null);
@@ -786,6 +787,25 @@
 		if (err) ws.notice = err;
 	}
 
+	/** Double-clicking a thought opens the group it belongs to. A thought held by
+	 *  several groups cycles through them and then back to the whole graph; one
+	 *  held by none is already at home on the base canvas. The thought stays
+	 *  selected across the switch, so the Inspector keeps showing it. */
+	async function openGroupOf(thoughtId: string) {
+		const holding = ws.workingSets.filter((set) => set.members.includes(thoughtId));
+		if (holding.length === 0 && !ws.lensActive) {
+			ws.notice = 'That thought is not in any group yet.';
+			return;
+		}
+		const next = nextGroupOf(ws.workingSets, thoughtId, ws.activeWorkingSetId);
+		if (holding.length === 0) ws.notice = 'That thought is in no group — showing every thought.';
+		else if (!next) ws.notice = 'Showing every thought.';
+		else if (holding.length > 1) ws.notice = `Group “${next.name}” — one of ${holding.length} holding this thought.`;
+		const err = await ws.switchSet(next?.id ?? null);
+		if (err) ws.notice = err;
+		else ws.select(thoughtId);
+	}
+
 	/** Selected thoughts not already in the active group. */
 	const stageable = $derived(ws.selectedIds.filter((id) => !ws.inWorkingSet(id)));
 	async function addSelectionToSet() {
@@ -1039,6 +1059,7 @@
 				onmove={ws.layoutPreview || ws.applying ? undefined : (x, y) => ws.moveSelection('card', t.id, x, y)}
 				ondragging={(d) => dragged('card', t.id, ws.selectedIds.includes(t.id), d)}
 				onselect={(additive) => ws.select(t.id, additive)}
+				onopen={ws.layoutPreview || ws.applying ? undefined : () => openGroupOf(t.id)}
 				onremove={ws.lensActive && member
 					? async () => {
 							const err = await ws.removeFromSet(t.id);

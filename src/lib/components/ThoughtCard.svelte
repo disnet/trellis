@@ -53,6 +53,8 @@
 		ondragging?: (dragging: boolean) => void;
 		onsize?: (width: number, height: number) => void;
 		onselect?: (additive: boolean) => void;
+		/** Double-click on the card body (not its buttons) — opens the card's group. */
+		onopen?: () => void;
 		/** Remove from the working set (shown on selected cards; the graph is untouched). */
 		onremove?: () => void;
 	}
@@ -86,6 +88,7 @@
 		ondragging,
 		onsize,
 		onselect,
+		onopen,
 		onremove
 	}: Props = $props();
 
@@ -149,6 +152,13 @@
 	class:grouped={!!groups?.length}
 	style="left: 0; top: 0; transform: translate({x}px, {y}px); width: {width}px;{groups?.length ? ` --group-ring: ${groups[0].color};` : ''}"
 	onpointerdown={onpointerdown}
+	ondblclick={(e) => {
+		// The card body only: a double-click on remove or a review button is two
+		// clicks on that button, not an open.
+		if ((e.target as HTMLElement).closest('button')) return;
+		e.stopPropagation();
+		onopen?.();
+	}}
 	role="button"
 	tabindex="0"
 	onkeydown={(e) => {
@@ -171,7 +181,10 @@
 			<span class="badge actor">{provenance === 'agent' ? '✳ agent' : '✎ you'}</span>
 		{/if}
 		{#if groups?.length}
-			<span class="group-dots" title={groups.map((g) => g.name).join(' · ')}>
+			<span
+				class="group-dots"
+				title="{groups.map((g) => g.name).join(' · ')}{onopen ? ' — double-click to open' : ''}"
+			>
 				{#each groups as g, i (i)}
 					<span class="group-dot" style="background: {g.color}"></span>
 				{/each}
