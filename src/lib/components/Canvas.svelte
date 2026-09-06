@@ -454,13 +454,70 @@
 		el.addEventListener('pointerup', up);
 	}
 
-	// Keyboard: Escape clears the selection; ⌘/Ctrl+A selects the focus (lens
-	// members when one is active, the whole canvas otherwise).
+	// WASD pans the camera for as long as the keys are held, at a steady rate in
+	// screen space (so a nudge covers the same visible distance at any zoom).
+	// Shift doubles it. Each key names the direction the viewpoint travels, so
+	// the camera offset moves the opposite way; diagonals are normalised.
+	const PAN_KEYS: Record<string, [number, number]> = {
+		w: [0, 1],
+		a: [1, 0],
+		s: [0, -1],
+		d: [-1, 0]
+	};
+	const PAN_SPEED = 900; // px/second
+	const held = new Set<string>();
+	let heldFast = false;
+	let panFrame = 0;
+	let panLast = 0;
+
+	function panStep(now: number) {
+		// Cap dt so a backgrounded tab does not resume with one enormous jump.
+		const dt = Math.min((now - panLast) / 1000, 0.1);
+		panLast = now;
+		let dx = 0, dy = 0;
+		for (const k of held) { dx += PAN_KEYS[k][0]; dy += PAN_KEYS[k][1]; }
+		const len = Math.hypot(dx, dy);
+		if (len > 0) {
+			const step = (PAN_SPEED * (heldFast ? 2 : 1) * dt) / len;
+			cam.x += dx * step;
+			cam.y += dy * step;
+		}
+		panFrame = requestAnimationFrame(panStep);
+	}
+
+	/** True when the event was a pan key and has been consumed. */
+	function panKeydown(e: KeyboardEvent): boolean {
+		const k = e.key.toLowerCase();
+		if (!(k in PAN_KEYS) || e.metaKey || e.ctrlKey || e.altKey) return false;
+		e.preventDefault();
+		heldFast = e.shiftKey;
+		if (held.has(k)) return true; // key repeat: the loop is already running
+		held.add(k);
+		if (!panFrame) { panLast = performance.now(); panFrame = requestAnimationFrame(panStep); }
+		return true;
+	}
+	function onKeyup(e: KeyboardEvent) {
+		heldFast = e.shiftKey;
+		held.delete(e.key.toLowerCase());
+		if (!held.size) stopPan();
+	}
+	function stopPan() {
+		held.clear();
+		if (panFrame) { cancelAnimationFrame(panFrame); panFrame = 0; }
+	}
+	// Losing the window or opening the radial focus must not leave a key stuck
+	// down; the cleanup also stops the loop when the canvas goes away.
+	$effect(() => { if (focusId) stopPan(); return stopPan; });
+
+	// Keyboard: WASD pans; Escape clears the selection; ⌘/Ctrl+A selects the
+	// focus (lens members when one is active, the whole canvas otherwise).
 	function onKeydown(e: KeyboardEvent) {
 		if (focusId) return;
-		if (ws.layoutPreview) { if (e.key === 'Escape' && !ws.applying) ws.cancelLayoutPreview(); return; }
 		const t = e.target as HTMLElement;
-		if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable) return;
+		const typing = t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable;
+		if (!typing && panKeydown(e)) return;
+		if (ws.layoutPreview) { if (e.key === 'Escape' && !ws.applying) ws.cancelLayoutPreview(); return; }
+		if (typing) return;
 		if (e.key === 'Escape' && (ws.selectedIds.length || ws.selectedProposalId)) {
 			ws.clearSelection();
 		} else if (e.key === 'a' && (e.metaKey || e.ctrlKey)) {
@@ -537,7 +594,7 @@
 	}
 </script>
 
-<svelte:window onkeydown={onKeydown} />
+<svelte:window onkeydown={onKeydown} onkeyup={onKeyup} onblur={stopPan} />
 
 <div class="canvas-wrap">
 	{#if focusId}
