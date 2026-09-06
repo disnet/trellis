@@ -76,16 +76,26 @@
 		return () => observer.disconnect();
 	});
 
-	// Default size: the box grows with its text. With a user-set height the
-	// flex layout owns the textarea's extent instead, and overflow scrolls.
+	// How tall the box may grow on its own before the text starts scrolling
+	// instead. A pasted essay should stay a note-sized note; past this, the
+	// corner handle is how you ask for more room.
+	const MAX_AUTO_H = 260;
+	let capped = $state(false);
+
+	// Default size: the box grows with its text, up to MAX_AUTO_H. With a
+	// user-set height the flex layout owns the textarea's extent instead, and
+	// overflow scrolls.
 	function autosize() {
 		if (!textEl) return;
 		if (height) {
 			textEl.style.height = '';
+			capped = false;
 			return;
 		}
 		textEl.style.height = 'auto';
-		textEl.style.height = `${textEl.scrollHeight}px`;
+		const fit = textEl.scrollHeight;
+		capped = fit > MAX_AUTO_H;
+		textEl.style.height = `${Math.min(fit, MAX_AUTO_H)}px`;
 	}
 	$effect(() => {
 		body;
@@ -213,6 +223,7 @@
 	class:dragging={selfDragging || dragging}
 	class:resizing
 	class:fixed={!!height}
+	class:capped
 	class:layout-moving={animate}
 	style="left: 0; top: 0; transform: translate({x}px, {y}px); width: {width}px;{height ? ` height: ${height}px;` : ''}"
 	{onpointerdown}
@@ -253,7 +264,7 @@
 			// Scrolling overflowed text is what the wheel means here — keep the
 			// event from reaching the canvas, which would pan instead.
 			const el = e.currentTarget;
-			if (height && el.scrollHeight > el.clientHeight) e.stopPropagation();
+			if (el.scrollHeight > el.clientHeight) e.stopPropagation();
 		}}
 		{onkeydown}
 		{onblur}
@@ -378,6 +389,10 @@
 	.note.fixed textarea {
 		flex: 1;
 		min-height: 0;
+	}
+	/* Same deal once the auto-grown box hits its ceiling. */
+	.note.fixed textarea,
+	.note.capped textarea {
 		overflow-y: auto;
 		scrollbar-width: thin;
 	}
