@@ -15,6 +15,7 @@
 	import Icon from './Icon.svelte';
 	import { tick, untrack } from 'svelte';
 	import { layoutCanvas } from '$lib/canvas-layout';
+	import { groupColor } from '$lib/group-colors';
 
 	const ws = workspace;
 	let focusId = $state<string | null>(null);
@@ -253,6 +254,29 @@
 	let showIndex = $state(false);
 	$effect(() => { if (showIndex) searchEl?.focus(); });
 	let connections = $state<'all' | 'selected' | 'none'>('all');
+
+	// Group colors on the base (all-thoughts) canvas. An active lens already
+	// shows its group by dimming everything else, so the rings only draw when
+	// no lens is on. The toggle persists per browser, view-only.
+	let showGroups = $state(true);
+	try { showGroups = localStorage.getItem('trellis:show-groups') !== 'off'; } catch { /* Default on. */ }
+	function toggleGroups() {
+		showGroups = !showGroups;
+		try { localStorage.setItem('trellis:show-groups', showGroups ? 'on' : 'off'); } catch { /* View-only preference. */ }
+	}
+	const groupsByThought = $derived.by(() => {
+		const map = new Map<string, { name: string; color: string }[]>();
+		ws.workingSets.forEach((set, index) => {
+			for (const id of set.members) {
+				const list = map.get(id);
+				const entry = { name: set.name, color: groupColor(index) };
+				if (list) list.push(entry);
+				else map.set(id, [entry]);
+			}
+		});
+		return map;
+	});
+	const groupsVisible = $derived(showGroups && !ws.lensActive && groupsByThought.size > 0);
 	const results = $derived(items.filter(i => (i.title + ' ' + i.statement).toLowerCase().includes(query.trim().toLowerCase())));
 
 	// How many cards sit outside the visible window, for the Find button's count.
@@ -614,22 +638,22 @@
 		}
 	}
 
-	// --- working set from the current multi-selection ---
+	// --- group from the current multi-selection ---
 
 	async function setFromSelection() {
 		const n = ws.selectedIds.length;
-		const name = await dialogs.prompt('Name the new working set:', `${n} thoughts`, 'Create set');
+		const name = await dialogs.prompt('Name the new group:', `${n} thoughts`, 'Create group');
 		if (name === null) return;
 		const err = await ws.createSetFrom(name.trim() || `${n} thoughts`, [...ws.selectedIds]);
 		if (err) ws.notice = err;
 	}
 
-	/** Selected thoughts not already in the active working set. */
+	/** Selected thoughts not already in the active group. */
 	const stageable = $derived(ws.selectedIds.filter((id) => !ws.inWorkingSet(id)));
 	async function addSelectionToSet() {
 		const n = stageable.length;
 		const err = await ws.addToSet([...ws.selectedIds]);
-		ws.notice = err ?? `Added ${n} thought${n === 1 ? '' : 's'} to the working set.`;
+		ws.notice = err ?? `Added ${n} thought${n === 1 ? '' : 's'} to the group.`;
 	}
 
 	// --- reviewing proposals in place ---
@@ -699,6 +723,15 @@
 		<label>Connections <select bind:value={connections} aria-label="Visible connections">
 			<option value="all">All</option><option value="selected">Selected only</option><option value="none">Hidden</option>
 		</select></label>
+		{#if !ws.lensActive && ws.workingSets.length > 0}
+			<button
+				class="groups-toggle"
+				class:on={showGroups}
+				aria-pressed={showGroups}
+				title="Color each thought by the groups it belongs to"
+				onclick={toggleGroups}
+			>Groups: {showGroups ? 'On' : 'Off'}</button>
+		{/if}
 		<button class="find" aria-expanded={showIndex} onclick={() => showIndex = !showIndex}>Find on canvas · {items.length}{#if outside} <span>({outside} offscreen)</span>{/if}</button>
 	</div>
 	{#if showIndex}
@@ -741,9 +774,9 @@
 		{#if ws.selectedIds.length > 1}
 			<div class="selection-bar" role="toolbar" aria-label="Selection actions">
 				<span class="selection-count">{ws.selectedIds.length} selected</span>
-				<button onclick={setFromSelection} title="Open a new working set holding the selected thoughts">New working set</button>
+				<button onclick={setFromSelection} title="Open a new group holding the selected thoughts">New group</button>
 				{#if ws.lensActive && stageable.length > 0}
-					<button onclick={addSelectionToSet} title="Add the selected thoughts to the active working set">Add {stageable.length} to set</button>
+					<button onclick={addSelectionToSet} title="Add the selected thoughts to the active group">Add {stageable.length} to group</button>
 				{/if}
 				<button class="quiet" onclick={() => ws.clearSelection()} title="Clear the selection (Esc)">Clear</button>
 			</div>
@@ -852,6 +885,7 @@
 				selected={ws.selectedIds.includes(t.id)}
 				pinned={ws.isPinned(t.id)}
 				dimmed={ws.lensActive && !member}
+				groups={groupsVisible ? groupsByThought.get(t.id) : undefined}
 				provenance={provenance(t.id)}
 				relationSummary={ws.zoom === 'reading' ? relationSummary(t.id) : undefined}
 				dragging={groupDragAnchor !== null && groupDragAnchor !== t.id && ws.selectedIds.includes(t.id)}
@@ -916,7 +950,7 @@
 	{#if items.length === 0 && !draft}
 		<div class="canvas-empty">
 			<p><strong>Your canvas is empty.</strong></p>
-			<p>Double-click anywhere (or press <kbd>N</kbd>) to write a thought, or paste something messy into Scratch and decompose it. Everything you keep lives here, spatially — working sets come later, when you want the agent focused.</p>
+			<p>Double-click anywhere (or press <kbd>N</kbd>) to write a thought, or paste something messy into Scratch and decompose it. Everything you keep lives here, spatially — groups come later, when you want the agent focused.</p>
 		</div>
 	{/if}
 </div>
@@ -941,6 +975,7 @@
 	.canvas-tools button:hover:not(:disabled), .canvas-tools select:hover { border-color: var(--blue); color: var(--blue); }
 	.canvas-tools button:disabled { opacity: .45; cursor: not-allowed; }
 	.preview-note { font-size: var(--fs-12); color: var(--blue); }
+	.canvas-tools .groups-toggle.on { border-color: var(--blue); color: var(--blue-deep); background: var(--blue-wash); }
 	.canvas-tools label { display: flex; align-items: center; gap: 8px; font-size: var(--fs-12); color: var(--ink-faded); }
 	.canvas-tools .find { margin-left: auto; }
 	.find span { color: var(--ink-muted); }

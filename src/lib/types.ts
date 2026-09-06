@@ -132,14 +132,18 @@ export interface GraphInfo {
 	createdAt: number;
 }
 
-/** A named working set: a lens over the whole-graph canvas. Only membership —
- *  never knowledge, and never layout (positions belong to the graph canvas). */
+/** A named working set (shown in the UI as a "group"): a lens over the
+ *  whole-graph canvas. Only membership — never knowledge, and never layout
+ *  (positions belong to the graph canvas). */
 export interface WorkingSetInfo {
 	id: string;
 	name: string;
 	createdAt: number;
 	/** Number of thoughts in the set, for tab display. */
 	size: number;
+	/** Member thought ids — lets the canvas color grouped thoughts without
+	 *  switching lenses. */
+	members: string[];
 }
 
 export interface ScratchNote {

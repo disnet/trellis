@@ -28,8 +28,11 @@
 		selected?: boolean;
 		/** Marked as a per-graph landmark (Phase 6). */
 		pinned?: boolean;
-		/** Outside the active working set (lens) — still present, visually quiet. */
+		/** Outside the active group (lens) — still present, visually quiet. */
 		dimmed?: boolean;
+		/** Groups this thought belongs to, when the canvas is showing them:
+		 *  a tinted ring in the first group's color, one dot per group. */
+		groups?: { name: string; color: string }[];
 		/** 'proposed' = new content awaiting ratification. */
 		ghost?: 'proposed' | null;
 		/** Review state of the operation behind a proposed card. */
@@ -70,6 +73,7 @@
 		selected = false,
 		pinned = false,
 		dimmed = false,
+		groups,
 		ghost = null,
 		decision = 'pending',
 		blocked = null,
@@ -142,7 +146,8 @@
 	class:layout-moving={animate}
 	class:accepted={ghost === 'proposed' && decision === 'accepted'}
 	class:rejected={ghost === 'proposed' && decision === 'rejected'}
-	style="left: 0; top: 0; transform: translate({x}px, {y}px); width: {width}px;"
+	class:grouped={!!groups?.length}
+	style="left: 0; top: 0; transform: translate({x}px, {y}px); width: {width}px;{groups?.length ? ` --group-ring: ${groups[0].color};` : ''}"
 	onpointerdown={onpointerdown}
 	role="button"
 	tabindex="0"
@@ -165,11 +170,18 @@
 		{:else}
 			<span class="badge actor">{provenance === 'agent' ? '✳ agent' : '✎ you'}</span>
 		{/if}
+		{#if groups?.length}
+			<span class="group-dots" title={groups.map((g) => g.name).join(' · ')}>
+				{#each groups as g, i (i)}
+					<span class="group-dot" style="background: {g.color}"></span>
+				{/each}
+			</span>
+		{/if}
 		{#if onremove}
 			<button
 				class="remove"
-				title="Remove from working set (the thought stays in the graph)"
-				aria-label="Remove from working set"
+				title="Remove from group (the thought stays in the graph)"
+				aria-label="Remove from group"
 				onpointerdown={(e) => e.stopPropagation()}
 				onclick={onremove}
 			><Icon name="x" size="0.85em" /></button>
@@ -279,6 +291,30 @@
 	   card the tray is showing. */
 	.card.proposed.selected {
 		border-color: var(--blue);
+	}
+	/* Group identity on the base (all-thoughts) canvas: a quiet ring in the
+	   first group's color. Selection outranks it — that ring means "you". */
+	.card.grouped:not(.selected) {
+		box-shadow:
+			0 0 0 2.5px var(--group-ring),
+			var(--shadow-rest);
+	}
+	.card.grouped.dragging:not(.selected) {
+		box-shadow:
+			0 0 0 2.5px var(--group-ring),
+			var(--shadow-lift);
+	}
+	.group-dots {
+		display: inline-flex;
+		align-items: center;
+		gap: 3px;
+		margin-left: auto;
+	}
+	.group-dot {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		box-shadow: 0 0 0 1.5px var(--card-bg, var(--card-white));
 	}
 	/* Outside the active lens: present (spatial memory intact) but quiet.
 	   Opacity, not color alone — and selection/hover lift the veil. */

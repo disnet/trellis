@@ -36,8 +36,8 @@
 
 	async function startFresh() {
 		const ok = await dialogs.confirm(
-			'Empty this working set? Every thought stays on the canvas.',
-			'Empty set'
+			'Empty this group? Every thought stays on the canvas.',
+			'Empty group'
 		);
 		if (!ok) return;
 		const err = await ws.startFresh();
@@ -195,10 +195,10 @@
 		<span class="selection-hint" aria-live="polite">
 			{#if ws.invoking}
 				{ws.invoking === 'decompose' && ws.scratchDraft.trim().length > 0
-					? 'Proposing from scratch and the working set…'
-					: `Proposing from ${ws.selectedIds.length} selected thought${ws.selectedIds.length === 1 ? '' : 's'} and the working set…`}
+					? 'Proposing from scratch and the group…'
+					: `Proposing from ${ws.selectedIds.length} selected thought${ws.selectedIds.length === 1 ? '' : 's'} and the group…`}
 			{:else if ws.selectedIds.length > 0}
-				{ws.selectedIds.length} selected — operations use the selection plus the working set
+				{ws.selectedIds.length} selected — operations use the selection plus the group
 			{:else}
 				Click a card to select · shift-click for multiple
 			{/if}
@@ -256,7 +256,7 @@
 							</span>
 						</button>
 						<button class="item" disabled={!canStartFresh} onclick={() => run(startFresh)}>
-							<span class="item-label"><Icon name="clear" /> Empty working set</span>
+							<span class="item-label"><Icon name="clear" /> Empty group</span>
 							<span class="item-hint">Membership only — every thought stays on the canvas</span>
 						</button>
 						<button class="item" disabled={ws.undoLabel === null} onclick={() => run(undo)}>
@@ -281,12 +281,12 @@
 				<span class="label">{ws.zoom === 'overview' ? 'Reading view' : 'Overview'}</span>
 			</button>
 			<button
-				title="Empty the working set — every thought stays on the canvas"
-				aria-label="Empty working set"
+				title="Empty the group — every thought stays on the canvas"
+				aria-label="Empty group"
 				disabled={!canStartFresh}
 				onclick={startFresh}
 			>
-				<Icon name="clear" /><span class="label">Empty set</span>
+				<Icon name="clear" /><span class="label">Empty group</span>
 			</button>
 			<button
 				class="undo"

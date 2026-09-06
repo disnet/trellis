@@ -457,7 +457,7 @@ class Workspace {
 		const err = await this.post('/api/workingset', { action: 'create', name, thoughtIds: ids });
 		if (!err) {
 			this.selectedIds = [];
-			this.notice = `Opened ${ids.length} thought${ids.length === 1 ? '' : 's'} in the new working set “${name}”.`;
+			this.notice = `Opened ${ids.length} thought${ids.length === 1 ? '' : 's'} in the new group “${name}”.`;
 		}
 		return err;
 	}
@@ -487,7 +487,7 @@ class Workspace {
 		const err = await this.post('/api/workingset', { action: 'clear' });
 		if (!err) {
 			this.selectedIds = [];
-			this.notice = 'Working set emptied. Every thought is still on the canvas.';
+			this.notice = 'Group emptied. Every thought is still on the canvas.';
 		}
 		return err;
 	}
@@ -553,7 +553,7 @@ class Workspace {
 		if (!err) {
 			this.selectedIds = [thoughtId];
 			const n = this.workingSet.length - 1;
-			this.notice = `Focused “${title}” and ${n} neighbor${n === 1 ? '' : 's'} in a new working set.`;
+			this.notice = `Focused “${title}” and ${n} neighbor${n === 1 ? '' : 's'} in a new group.`;
 		}
 		return err;
 	}
@@ -573,11 +573,11 @@ class Workspace {
 	async pullNeighbors(thoughtId: string): Promise<string | null> {
 		const ids = this.neighborIds([thoughtId]);
 		if (ids.length === 0) {
-			return 'No neighbors outside the working set.';
+			return 'No neighbors outside the group.';
 		}
 		const err = await this.addToSet(ids);
 		if (!err)
-			this.notice = `Added ${ids.length} neighbor${ids.length === 1 ? '' : 's'} to the working set.`;
+			this.notice = `Added ${ids.length} neighbor${ids.length === 1 ? '' : 's'} to the group.`;
 		return err;
 	}
 

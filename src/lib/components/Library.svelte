@@ -38,7 +38,7 @@
 	<h2>Library</h2>
 	<p class="hint">
 		{totalThoughts} thought{totalThoughts === 1 ? '' : 's'} in the graph{#if ws.lensActive}
-			· {ws.workingSet.length} in the working set{/if}
+			· {ws.workingSet.length} in the group{/if}
 	</p>
 	{#if pinned.length > 0}
 		<div class="pinned-rail" aria-label="Pinned thoughts">
@@ -51,7 +51,7 @@
 						</button>
 						<button
 							class="pin-open"
-							title="Focus this thought and its neighbors in a new working set"
+							title="Focus this thought and its neighbors in a new group"
 							onclick={() => run(() => ws.openNeighborhood(t.id))}
 						>⌾ focus</button>
 						<button
@@ -88,9 +88,9 @@
 						<button class="link" onclick={() => locate(t.id)}>select</button>
 						{#if ws.lensActive}
 							{#if inSet}
-								<span class="in-set">in set</span>
+								<span class="in-set">in group</span>
 							{:else}
-								<button class="add" onclick={() => add(t.id)}>+ add to set</button>
+								<button class="add" onclick={() => add(t.id)}>+ add to group</button>
 							{/if}
 						{/if}
 					</div>

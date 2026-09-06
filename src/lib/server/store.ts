@@ -199,7 +199,16 @@ export function getState(): WorkspaceState {
 				 GROUP BY ws.id ORDER BY ws.created_at, ws.rowid`
 			)
 			.all(graphId) as any[]
-	).map((r) => ({ id: r.id, name: r.name, createdAt: r.created_at, size: r.size }));
+	).map((r) => ({ id: r.id, name: r.name, createdAt: r.created_at, size: r.size, members: [] as string[] }));
+	const membersBySet = new Map(workingSets.map((s) => [s.id, s.members]));
+	for (const r of db
+		.prepare(
+			`SELECT i.working_set_id, i.thought_id FROM working_set_items i
+			 WHERE i.working_set_id IN (SELECT id FROM working_sets WHERE graph_id = ?)`
+		)
+		.all(graphId) as any[]) {
+		membersBySet.get(r.working_set_id)?.push(r.thought_id);
+	}
 	const workingSet = activeSet
 		? (
 				db
@@ -900,7 +909,7 @@ export function reviseThought(
 export function addToWorkingSet(thoughtIds: string[]): string | null {
 	const graphId = activeGraphId();
 	const activeSet = activeWorkingSetId(graphId);
-	if (!activeSet) return 'No working set is active — create one first.';
+	if (!activeSet) return 'No group is active — create one first.';
 	const exists = db.prepare('SELECT 1 FROM thoughts WHERE id = ? AND graph_id = ?');
 	const insert = db.prepare(
 		'INSERT INTO working_set_items (working_set_id, thought_id) VALUES (?, ?) ON CONFLICT DO NOTHING'
@@ -916,16 +925,16 @@ export function addToWorkingSet(thoughtIds: string[]): string | null {
 
 export function removeFromWorkingSet(thoughtId: string): string | null {
 	const activeSet = activeWorkingSetId();
-	if (!activeSet) return 'No working set is active.';
+	if (!activeSet) return 'No group is active.';
 	const res = db
 		.prepare('DELETE FROM working_set_items WHERE working_set_id = ? AND thought_id = ?')
 		.run(activeSet, thoughtId);
-	return res.changes === 0 ? 'That thought is not in the working set.' : null;
+	return res.changes === 0 ? 'That thought is not in the group.' : null;
 }
 
 export function clearWorkingSet(): string | null {
 	const activeSet = activeWorkingSetId();
-	if (!activeSet) return 'No working set is active.';
+	if (!activeSet) return 'No group is active.';
 	db.prepare('DELETE FROM working_set_items WHERE working_set_id = ?').run(activeSet);
 	return null;
 }
@@ -966,7 +975,7 @@ export function createWorkingSet(name?: string, thoughtIds?: string[]): string |
 		}
 	).n;
 	const trimmed = typeof name === 'string' ? name.trim() : '';
-	let finalName = trimmed || `Set ${count + 1}`;
+	let finalName = trimmed || `Group ${count + 1}`;
 	if (finalName.length > SET_NAME_LIMIT) finalName = `${finalName.slice(0, SET_NAME_LIMIT - 1)}…`;
 	const seeds = [...new Set(Array.isArray(thoughtIds) ? thoughtIds : [])];
 	const exists = db.prepare('SELECT 1 FROM thoughts WHERE id = ? AND graph_id = ?');
@@ -998,19 +1007,19 @@ export function switchWorkingSet(wsId: string | null): string | null {
 		return null;
 	}
 	if (!db.prepare('SELECT 1 FROM working_sets WHERE id = ? AND graph_id = ?').get(wsId, graphId))
-		return 'Unknown working set.';
+		return 'Unknown group.';
 	setMeta(`active_working_set:${graphId}`, wsId);
 	return null;
 }
 
 export function renameWorkingSet(wsId: string, name: string): string | null {
 	const trimmed = typeof name === 'string' ? name.trim() : '';
-	if (!trimmed) return 'A working set needs a name.';
+	if (!trimmed) return 'A group needs a name.';
 	if (trimmed.length > SET_NAME_LIMIT) return `Name is longer than ${SET_NAME_LIMIT} characters.`;
 	const res = db
 		.prepare('UPDATE working_sets SET name = ? WHERE id = ? AND graph_id = ?')
 		.run(trimmed, wsId, activeGraphId());
-	return res.changes === 0 ? 'Unknown working set.' : null;
+	return res.changes === 0 ? 'Unknown group.' : null;
 }
 
 /** Spawn a new working set (lens) holding a thought plus its 1-hop neighbors
@@ -1059,7 +1068,7 @@ export function openNeighborhood(thoughtId: string): string | null {
 export function deleteWorkingSet(wsId: string): string | null {
 	const graphId = activeGraphId();
 	if (!db.prepare('SELECT 1 FROM working_sets WHERE id = ? AND graph_id = ?').get(wsId, graphId))
-		return 'Unknown working set.';
+		return 'Unknown group.';
 	db.transaction(() => {
 		db.prepare('DELETE FROM working_set_items WHERE working_set_id = ?').run(wsId);
 		db.prepare('DELETE FROM working_sets WHERE id = ?').run(wsId);

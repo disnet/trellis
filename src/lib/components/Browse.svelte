@@ -213,8 +213,8 @@
 		const ids = rows.map((t) => t.id);
 		if (ids.length > 30) {
 			const ok = await dialogs.confirm(
-				`Open a new working set with all ${ids.length} matching thoughts?`,
-				'Open set'
+				`Open a new group with all ${ids.length} matching thoughts?`,
+				'Open group'
 			);
 			if (!ok) return;
 		}
@@ -261,10 +261,10 @@
 					<option value="orphan">orphans</option>
 				</select>
 				{#if ws.lensActive}
-					<select bind:value={setFilter} aria-label="Filter by working-set membership">
-						<option value="all">Set: any</option>
-						<option value="in">in this set</option>
-						<option value="out">not in this set</option>
+					<select bind:value={setFilter} aria-label="Filter by group membership">
+						<option value="all">Group: any</option>
+						<option value="in">in this group</option>
+						<option value="out">not in this group</option>
 					</select>
 				{/if}
 			</div>
@@ -274,19 +274,19 @@
 			{#if ws.lensActive && stageable.length > 0}
 				<button
 					class="action"
-					title="Add the selected thoughts to the active working set"
+					title="Add the selected thoughts to the active group"
 					onclick={() => run(() => ws.addToSet(stageable))}
 				>
-					+ Add {stageable.length} selected to set
+					+ Add {stageable.length} selected to group
 				</button>
 			{/if}
 			<button
 				class="action promote"
 				disabled={rows.length === 0}
-				title="Open a new working set containing every thought matching the current filter"
+				title="Open a new group containing every thought matching the current filter"
 				onclick={promote}
 			>
-				New set from results
+				New group from results
 			</button>
 		</div>
 	</header>
@@ -341,11 +341,11 @@
 							<td class="col-actions">
 								{#if ws.lensActive}
 									{#if inSet}
-										<span class="in-set">in set</span>
+										<span class="in-set">in group</span>
 									{:else}
 										<button
 											class="add"
-											title="Add to the active working set"
+											title="Add to the active group"
 											onclick={(ev) => {
 												ev.stopPropagation();
 												run(() => ws.addToSet([t.id]));

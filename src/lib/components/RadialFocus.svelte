@@ -70,7 +70,7 @@
 						{@const beyond = radialNeighbors(thought.id, ws.thoughts, ws.relations).filter(n => n.thought.id !== currentId).length}
 						<article class="neighbor" class:selected={ws.selectedIds.includes(thought.id)} style="left: {pos.x}px; top: {pos.y}px;">
 							<button class="inspect" onclick={() => ws.select(thought.id)} aria-label={`Inspect ${thought.title}`}>
-								<span class="eyebrow">{thought.type}{ws.lensActive && !ws.inWorkingSet(thought.id) ? ' · Outside working set' : ''}</span>
+								<span class="eyebrow">{thought.type}{ws.lensActive && !ws.inWorkingSet(thought.id) ? ' · Outside group' : ''}</span>
 								<strong>{thought.title}</strong>
 							</button>
 							<div class="relations">

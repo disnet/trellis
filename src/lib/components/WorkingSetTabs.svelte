@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { dialogs } from '$lib/dialogs.svelte';
+	import { groupColor } from '$lib/group-colors';
 	import { workspace } from '$lib/workspace.svelte';
 	import Icon from './Icon.svelte';
 
@@ -34,8 +35,8 @@
 
 	async function remove(id: string, name: string) {
 		const ok = await dialogs.confirm(
-			`Delete working set “${name}”? Every thought stays on the canvas.`,
-			'Delete set'
+			`Delete group “${name}”? Every thought stays on the canvas.`,
+			'Delete group'
 		);
 		if (!ok) return;
 		await run(() => ws.deleteSet(id));
@@ -44,20 +45,20 @@
 	const totalThoughts = $derived(Object.keys(ws.thoughts).length);
 </script>
 
-<div class="tabs" role="tablist" aria-label="Working sets">
+<div class="tabs" role="tablist" aria-label="Groups">
 	<div class="tab" class:active={!ws.lensActive}>
 		<button
 			class="tab-name"
 			role="tab"
 			aria-selected={!ws.lensActive}
-			title="The whole graph — no working set active"
+			title="The whole graph — no group active"
 			onclick={() => run(() => ws.switchSet(null))}
 		>
 			All thoughts
 			<span class="count">{totalThoughts}</span>
 		</button>
 	</div>
-	{#each ws.workingSets as set (set.id)}
+	{#each ws.workingSets as set, index (set.id)}
 		{@const active = set.id === ws.activeWorkingSetId}
 		{#if renamingId === set.id}
 			<form
@@ -74,7 +75,7 @@
 					onkeydown={(e) => {
 						if (e.key === 'Escape') renamingId = null;
 					}}
-					aria-label="Rename working set"
+					aria-label="Rename group"
 					maxlength="40"
 				/>
 			</form>
@@ -88,14 +89,15 @@
 					onclick={() => run(() => ws.switchSet(set.id))}
 					ondblclick={() => startRename(set.id, set.name)}
 				>
+					<span class="swatch" style="background: {groupColor(index)}"></span>
 					{set.name}
 					<span class="count">{set.size}</span>
 				</button>
 				{#if active}
 					<button
 						class="close"
-						title="Delete this working set (every thought stays on the canvas)"
-						aria-label="Delete working set “{set.name}”"
+						title="Delete this group (every thought stays on the canvas)"
+						aria-label="Delete group “{set.name}”"
 						onclick={() => remove(set.id, set.name)}
 					><Icon name="x" size="0.9em" /></button>
 				{/if}
@@ -104,10 +106,10 @@
 	{/each}
 	<button
 		class="new-tab"
-		title="New working set — a focus for you and the agent; the canvas keeps every thought"
+		title="New group — a focus for you and the agent; the canvas keeps every thought"
 		onclick={() => run(() => ws.createSet())}
 	>
-		+ New set
+		+ New group
 	</button>
 </div>
 
@@ -153,6 +155,13 @@
 	.tab.active .tab-name {
 		color: var(--ink);
 		font-weight: 600;
+	}
+	.swatch {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		flex-shrink: 0;
+		align-self: center;
 	}
 	.count {
 		font-size: var(--fs-10);
