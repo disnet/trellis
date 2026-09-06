@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { appearance } from '$lib/appearance.svelte';
 	import { dialogs } from '$lib/dialogs.svelte';
-	import { workspace, CARD_W } from '$lib/workspace.svelte';
+	import { workspace, CARD_W, type CanvasKind } from '$lib/workspace.svelte';
 	import {
 		ACTION_NAMES,
 		effectivePayload,
@@ -346,9 +346,21 @@
 		});
 		showIndex = false;
 	}
-	// The card being dragged while the whole selection travels with it — the rest of
-	// the selection borrows its lifted styling.
-	let groupDragAnchor = $state<string | null>(null);
+	// The item being dragged while the whole selection travels with it — the rest
+	// of the selection borrows its lifted styling.
+	let groupDragAnchor = $state<{ kind: CanvasKind; id: string } | null>(null);
+	/** True for the rest of a selection travelling behind the dragged item. */
+	function travelling(kind: CanvasKind, id: string, selected: boolean): boolean {
+		return (
+			selected &&
+			groupDragAnchor !== null &&
+			!(groupDragAnchor.kind === kind && groupDragAnchor.id === id)
+		);
+	}
+	/** Report a drag: only a selected item takes the rest of the selection with it. */
+	function dragged(kind: CanvasKind, id: string, selected: boolean, dragging: boolean) {
+		groupDragAnchor = dragging && selected ? { kind, id } : null;
+	}
 	function place(id: string, kind: string, x: number, y: number) {
 		if (kind === 'card') ws.moveCard(id, x, y);
 		else if (kind === 'note') ws.moveNote(id, x, y);
@@ -402,8 +414,13 @@
 		const target = e.target as HTMLElement;
 		const isBackground =
 			target === viewportEl || target.classList.contains('canvas-surface');
-		if (!isBackground) return;
-		if (!ws.layoutPreview) startMarquee(e);
+		if (!isBackground || ws.layoutPreview) return;
+		// The press preventDefaults, so nothing takes focus away on its own:
+		// clicking out of a note has to stop the writing explicitly, or the caret
+		// stays in a note that is no longer the subject.
+		const active = document.activeElement as HTMLElement | null;
+		if (active && active !== document.body && viewportEl.contains(active)) active.blur();
+		startMarquee(e);
 	}
 
 	function startPan(e: PointerEvent) {
@@ -444,23 +461,39 @@
 		const y0 = e.clientY - rect.top;
 		const additive = e.shiftKey;
 		// Shift extends this selection; a plain drag replaces it.
-		const base = additive ? [...ws.selectedIds] : [];
+		const base = {
+			thoughts: additive ? [...ws.selectedIds] : [],
+			notes: additive ? [...ws.selectedNoteIds] : [],
+			proposals: additive ? [...ws.selectedProposalIds] : []
+		};
 		let moved = false;
 		el.setPointerCapture(e.pointerId);
 
-		function hits(box: { x0: number; y0: number; x1: number; y1: number }): string[] {
-			// Box corners into surface coordinates, then intersect with card rects.
+		/** Everything the box touches — thoughts, notes and proposals alike. */
+		function hits(box: { x0: number; y0: number; x1: number; y1: number }) {
+			// Box corners into surface coordinates, then intersect with item rects.
 			const l = (Math.min(box.x0, box.x1) - cam.x) / cam.scale;
 			const t = (Math.min(box.y0, box.y1) - cam.y) / cam.scale;
 			const r = (Math.max(box.x0, box.x1) - cam.x) / cam.scale;
 			const b = (Math.max(box.y0, box.y1) - cam.y) / cam.scale;
-			return cards
-				.filter(({ t: thought, pos }) => {
-					const w = dimensions[thought.id]?.width ?? cardW;
-					const h = dimensions[thought.id]?.height ?? cardH;
-					return pos.x < r && pos.x + w > l && pos.y < b && pos.y + h > t;
-				})
-				.map(({ t: thought }) => thought.id);
+			const touches = (x: number, y: number, id: string, fallback: { w: number; h: number }) => {
+				const w = dimensions[id]?.width ?? fallback.w;
+				const h = dimensions[id]?.height ?? fallback.h;
+				return x < r && x + w > l && y < b && y + h > t;
+			};
+			const card = { w: cardW, h: cardH };
+			return {
+				thoughts: cards
+					.filter(({ t: thought, pos }) => touches(pos.x, pos.y, thought.id, card))
+					.map(({ t: thought }) => thought.id),
+				notes: ws.notes
+					// The note under the composer is not on the canvas to be swept.
+					.filter((n) => n.id !== converting && touches(n.x, n.y, n.id, { w: n.w ?? NOTE_W, h: n.h ?? NOTE_H }))
+					.map((n) => n.id),
+				proposals: ghosts
+					.filter((g) => touches(g.pos.x, g.pos.y, g.key, card))
+					.map((g) => g.op.id)
+			};
 		}
 
 		function move(ev: PointerEvent) {
@@ -470,7 +503,12 @@
 			if (!moved) return;
 			marquee = { x0, y0, x1, y1 };
 			// Selection tracks the box live so the effect of releasing is visible.
-			ws.selectMany([...base, ...hits(marquee)]);
+			const swept = hits(marquee);
+			ws.selectRegion({
+				thoughts: [...base.thoughts, ...swept.thoughts],
+				notes: [...base.notes, ...swept.notes],
+				proposals: [...base.proposals, ...swept.proposals]
+			});
 		}
 		function up() {
 			el.releasePointerCapture(e.pointerId);
@@ -669,19 +707,37 @@
 		if (typing) return;
 		if (e.key === 'Escape' && converting) {
 			converting = null;
-		} else if (e.key === 'Escape' && (ws.selectedIds.length || ws.selectedProposalId)) {
+		} else if (e.key === 'Escape' && ws.selectionSize) {
 			ws.clearSelection();
 		} else if (e.key.toLowerCase() === 'n' && !e.metaKey && !e.ctrlKey && !e.altKey) {
 			e.preventDefault();
 			noteAtCenter();
 		} else if (e.key === 'a' && (e.metaKey || e.ctrlKey)) {
 			e.preventDefault();
+			// Notes and proposals sit outside any group, so a lens narrows only the
+			// thoughts.
 			const all = cards.map(({ t: thought }) => thought.id);
-			ws.selectMany(ws.lensActive ? all.filter((id) => ws.inWorkingSet(id)) : all);
+			ws.selectRegion({
+				thoughts: ws.lensActive ? all.filter((id) => ws.inWorkingSet(id)) : all,
+				notes: ws.notes.filter((n) => n.id !== converting).map((n) => n.id),
+				proposals: ghosts.map((g) => g.op.id)
+			});
 		}
 	}
 
 	// --- group from the current multi-selection ---
+
+	/** "2 thoughts, 1 note" — spelled out only when the selection is mixed. */
+	const selectionParts = $derived(
+		[
+			[ws.selectedIds.length, 'thought'] as const,
+			[ws.selectedNoteIds.length, 'note'] as const,
+			[ws.selectedProposalIds.length, 'proposal'] as const
+		]
+			.filter(([n]) => n > 0)
+			.map(([n, word]) => `${n} ${word}${n === 1 ? '' : 's'}`)
+			.join(', ')
+	);
 
 	async function setFromSelection() {
 		const n = ws.selectedIds.length;
@@ -814,10 +870,19 @@
 				>{c.a === 0 ? 'Dismiss' : c.r === 0 ? 'Apply all' : `Apply ${c.a}`}</button>
 			</div>
 		{/each}
-		{#if ws.selectedIds.length > 1}
+		{#if ws.selectionSize > 1}
 			<div class="selection-bar" role="toolbar" aria-label="Selection actions">
-				<span class="selection-count">{ws.selectedIds.length} selected</span>
-				<button onclick={setFromSelection} title="Open a new group holding the selected thoughts">New group</button>
+				<span class="selection-count">{ws.selectionSize} selected</span>
+				{#if ws.selectedIds.length !== ws.selectionSize}
+					<span class="selection-parts">{selectionParts}</span>
+				{/if}
+				{#if ws.selectedIds.length > 1}
+					<button onclick={setFromSelection} title="Open a new group holding the selected thoughts">
+						{ws.selectedIds.length === ws.selectionSize
+							? 'New group'
+							: `New group from ${ws.selectedIds.length} thoughts`}
+					</button>
+				{/if}
 				{#if ws.lensActive && stageable.length > 0}
 					<button onclick={addSelectionToSet} title="Add the selected thoughts to the active group">Add {stageable.length} to group</button>
 				{/if}
@@ -931,9 +996,9 @@
 				groups={groupsVisible ? groupsByThought.get(t.id) : undefined}
 				provenance={provenance(t.id)}
 				relationSummary={ws.zoom === 'reading' ? relationSummary(t.id) : undefined}
-				dragging={groupDragAnchor !== null && groupDragAnchor !== t.id && ws.selectedIds.includes(t.id)}
-				onmove={ws.layoutPreview || ws.applying ? undefined : (x, y) => ws.moveSelection(t.id, x, y)}
-				ondragging={(d) => (groupDragAnchor = d && ws.selectedIds.includes(t.id) ? t.id : null)}
+				dragging={travelling('card', t.id, ws.selectedIds.includes(t.id))}
+				onmove={ws.layoutPreview || ws.applying ? undefined : (x, y) => ws.moveSelection('card', t.id, x, y)}
+				ondragging={(d) => dragged('card', t.id, ws.selectedIds.includes(t.id), d)}
 				onselect={(additive) => ws.select(t.id, additive)}
 				onremove={ws.lensActive && member
 					? async () => {
@@ -960,14 +1025,16 @@
 				zoom={ws.zoom}
 				scale={cam.scale}
 				ghost={g.kind}
-				selected={ws.selectedProposalId === g.op.id}
-				onselect={() => ws.selectProposal(g.op.id)}
+				selected={ws.selectedProposalIds.includes(g.op.id)}
+				onselect={(additive) => ws.selectProposal(g.op.id, additive)}
 				decision={g.decision}
 				blocked={g.blocked}
 				ondecide={(d) => decide(g.cs, g.op, d)}
 				reviewBusy={reviewLocked}
 				provenance="agent"
-				onmove={ws.layoutPreview || ws.applying ? undefined : (x, y) => ws.moveGhost(g.key, x, y)}
+				dragging={travelling('ghost', g.op.id, ws.selectedProposalIds.includes(g.op.id))}
+				onmove={ws.layoutPreview || ws.applying ? undefined : (x, y) => ws.moveSelection('ghost', g.op.id, x, y)}
+				ondragging={(d) => dragged('ghost', g.op.id, ws.selectedProposalIds.includes(g.op.id), d)}
 			/>
 		{/each}
 
@@ -984,9 +1051,13 @@
 					focusSignal={focusNoteId === note.id ? noteFocus : 0}
 					busy={decomposingNoteId === note.id && ws.invoking === 'decompose'}
 					controlsLocked={ws.invoking !== null || reviewLocked}
+					selected={ws.selectedNoteIds.includes(note.id)}
+					dragging={travelling('note', note.id, ws.selectedNoteIds.includes(note.id))}
 					onsize={(w, h) => measure(note.id, w, h)}
 					onchange={(body) => ws.editNote(note.id, body)}
-					onmove={ws.layoutPreview || ws.applying ? undefined : (x, y) => ws.moveNote(note.id, x, y)}
+					onselect={(additive) => ws.selectNote(note.id, additive)}
+					ondragging={(d) => dragged('note', note.id, ws.selectedNoteIds.includes(note.id), d)}
+					onmove={ws.layoutPreview || ws.applying ? undefined : (x, y) => ws.moveSelection('note', note.id, x, y)}
 					onresize={ws.layoutPreview || ws.applying ? undefined : (w, h) => ws.resizeNote(note.id, w, h)}
 					onconvert={() => (converting = note.id)}
 					ondecompose={() => decomposeNote(note.id)}
@@ -1067,6 +1138,8 @@
 	.review-bar button:disabled { opacity: .45; cursor: not-allowed; }
 	.review-bar button.apply { font-weight: 600; }
 	.selection-count { font-size: var(--fs-12); font-weight: 600; color: var(--ink-soft); white-space: nowrap; }
+	/* The breakdown of a mixed sweep: quieter than the count it follows. */
+	.selection-parts { font-size: var(--fs-12); color: var(--ink-muted); white-space: nowrap; }
 	.selection-bar button { font: inherit; font-size: var(--fs-12); color: var(--ink-soft); background: var(--card-white); border: 1px solid var(--card-border); border-radius: 6px; padding: 5px 10px; cursor: pointer; white-space: nowrap; }
 	.selection-bar button:hover { border-color: var(--blue); color: var(--blue); }
 	.selection-bar button.quiet { border-color: transparent; background: transparent; color: var(--ink-muted); }

@@ -35,6 +35,10 @@ export interface GhostPosition {
 	y: number;
 }
 
+/** What kind of thing a canvas item is: a thought's card, a note, or a
+ *  proposal's preview card (addressed by its operation id). */
+export type CanvasKind = 'card' | 'note' | 'ghost';
+
 export const CARD_W = 240;
 export const CARD_H = 92;
 
@@ -78,6 +82,10 @@ class Workspace {
 	undoLabel = $state<string | null>(null);
 
 	selectedIds = $state<string[]>([]);
+	/** Canvas notes in the selection. */
+	selectedNoteIds = $state<string[]>([]);
+	/** Operation ids of the proposals in the selection. */
+	selectedProposalIds = $state<string[]>([]);
 	zoom = $state<'overview' | 'reading'>('overview');
 	/** What the center pane shows: two projections of the working set, plus a
 	 *  graph-wide browse table. View-only, never persisted. */
@@ -303,12 +311,17 @@ class Workspace {
 		// round-trip lands here — accepting a proposal must not steal the panel.
 		const surviving = this.selectedIds.filter((id) => id in s.thoughts);
 		if (surviving.length !== this.selectedIds.length) this.selectedIds = surviving;
+		const survivingNotes = this.selectedNoteIds.filter((id) => s.notes.some((n) => n.id === id));
+		if (survivingNotes.length !== this.selectedNoteIds.length) this.selectedNoteIds = survivingNotes;
 		// A ratified or dismissed batch takes its proposals with it.
-		if (
-			this.selectedProposalId !== null &&
-			!s.pendingChangeSets.some((cs) => cs.operations.some((op) => op.id === this.selectedProposalId))
-		)
-			this.selectedProposalId = null;
+		if (this.selectedProposalIds.length) {
+			const live = new Set(
+				s.pendingChangeSets.flatMap((cs) => cs.operations.map((op) => op.id))
+			);
+			const survivingProposals = this.selectedProposalIds.filter((id) => live.has(id));
+			if (survivingProposals.length !== this.selectedProposalIds.length)
+				this.selectedProposalIds = survivingProposals;
+		}
 		for (const cs of s.pendingChangeSets) this.ensureGhosts(cs);
 		for (const key of Object.keys(this.ghostPositions)) {
 			const csId = key.slice(0, key.indexOf(':'));
@@ -433,42 +446,81 @@ class Workspace {
 	}
 
 	// --- selection ---
+	// One selection spans the canvas. Thoughts, notes and proposals keep separate
+	// lists because only thoughts feed the agent operations and groups, but a
+	// marquee sweep or a shift-click builds across all three, and the whole thing
+	// drags as one block.
 
-	select(id: string, additive = false) {
-		this.selectedProposalId = null;
-		if (additive) {
-			this.selectedIds = this.selectedIds.includes(id)
-				? this.selectedIds.filter((s) => s !== id)
-				: [...this.selectedIds, id];
-		} else {
-			this.selectedIds = [id];
-		}
+	/** Marks in the selection, across all three kinds. */
+	get selectionSize(): number {
+		return this.selectedIds.length + this.selectedNoteIds.length + this.selectedProposalIds.length;
 	}
 
-	/** Replace the selection with `ids`, or union them in when additive. */
+	/** Add or remove `id` in `list`; replace the list with it when not additive. */
+	private toggled(list: string[], id: string, additive: boolean): string[] {
+		if (!additive) return [id];
+		return list.includes(id) ? list.filter((s) => s !== id) : [...list, id];
+	}
+
+	select(id: string, additive = false) {
+		if (!additive) {
+			this.selectedNoteIds = [];
+			this.selectedProposalIds = [];
+		}
+		this.selectedIds = this.toggled(this.selectedIds, id, additive);
+	}
+
+	selectNote(id: string, additive = false) {
+		if (!additive) {
+			this.selectedIds = [];
+			this.selectedProposalIds = [];
+		}
+		this.selectedNoteIds = this.toggled(this.selectedNoteIds, id, additive);
+	}
+
+	/** Replace the selection with `ids` (thoughts), or union them in when additive. */
 	selectMany(ids: string[], additive = false) {
 		const valid = ids.filter((id) => id in this.thoughts);
-		this.selectedProposalId = null;
+		if (!additive) {
+			this.selectedNoteIds = [];
+			this.selectedProposalIds = [];
+		}
 		this.selectedIds = additive ? [...new Set([...this.selectedIds, ...valid])] : valid;
+	}
+
+	/** Replace the whole canvas selection at once — what a marquee sweep does. */
+	selectRegion(region: { thoughts?: string[]; notes?: string[]; proposals?: string[] }) {
+		this.selectedIds = [...new Set(region.thoughts ?? [])].filter((id) => id in this.thoughts);
+		this.selectedNoteIds = [...new Set(region.notes ?? [])].filter((id) =>
+			this.notes.some((n) => n.id === id)
+		);
+		this.selectedProposalIds = [...new Set(region.proposals ?? [])];
 	}
 
 	clearSelection() {
 		this.selectedIds = [];
-		this.selectedProposalId = null;
+		this.selectedNoteIds = [];
+		this.selectedProposalIds = [];
 	}
 
 	// --- proposal selection ---
-	// A proposal is not a thought, so it gets its own selection: picking one on
-	// the canvas is how you ask the tray to show you its rationale and evidence.
+	// A proposal is not a thought, so it gets its own list: picking one on the
+	// canvas is how you ask the tray to show you its rationale and evidence.
 
-	/** Operation id of the proposal selected on the canvas, or null. */
-	selectedProposalId = $state<string | null>(null);
+	/** The single selected proposal — what the tray reveals. Null when a sweep
+	 *  took several, since then no one operation is the subject. */
+	get selectedProposalId(): string | null {
+		return this.selectedProposalIds.length === 1 ? this.selectedProposalIds[0] : null;
+	}
 	/** Bumped on every reveal so re-picking the same proposal scrolls again. */
 	proposalReveal = $state(0);
 
-	selectProposal(opId: string) {
-		this.selectedIds = [];
-		this.selectedProposalId = opId;
+	selectProposal(opId: string, additive = false) {
+		if (!additive) {
+			this.selectedIds = [];
+			this.selectedNoteIds = [];
+		}
+		this.selectedProposalIds = this.toggled(this.selectedProposalIds, opId, additive);
 		this.proposalReveal++;
 	}
 
@@ -492,22 +544,59 @@ class Workspace {
 		this.scheduleFlush();
 	}
 
+	/** Ghost card key (`${changeSetId}:${clientRef}`) behind a proposal operation. */
+	private ghostKey(opId: string): string | null {
+		for (const cs of this.pendingChangeSets)
+			for (const op of cs.operations) if (op.id === opId) return `${cs.id}:${op.clientRef}`;
+		return null;
+	}
+
+	private itemPosition(kind: CanvasKind, id: string): GhostPosition | null {
+		if (kind === 'card') return this.positions[id] ?? null;
+		if (kind === 'note') {
+			const note = this.notes.find((n) => n.id === id);
+			return note ? { x: note.x, y: note.y } : null;
+		}
+		const key = this.ghostKey(id);
+		return key ? (this.ghostPositions[key] ?? null) : null;
+	}
+
+	private placeItem(kind: CanvasKind, id: string, x: number, y: number) {
+		if (kind === 'card') this.moveCard(id, x, y);
+		else if (kind === 'note') this.moveNote(id, x, y);
+		else {
+			const key = this.ghostKey(id);
+			if (key) this.moveGhost(key, x, y);
+		}
+	}
+
+	/** Everything currently selected, tagged with what kind of item it is. */
+	private selectionItems(): { kind: CanvasKind; id: string }[] {
+		return [
+			...this.selectedIds.map((id) => ({ kind: 'card' as const, id })),
+			...this.selectedNoteIds.map((id) => ({ kind: 'note' as const, id })),
+			...this.selectedProposalIds.map((id) => ({ kind: 'ghost' as const, id }))
+		];
+	}
+
 	/**
-	 * Drag `anchorId` to (x, y). When the dragged card is part of a multi-selection
-	 * the rest of the selection moves by the same delta, so a selection travels as
-	 * one block. Dragging a card outside the selection moves only that card.
+	 * Drag one canvas item — a thought, a note, or a proposal (by operation id) —
+	 * to (x, y). When it is part of a multi-selection the rest of the selection
+	 * moves by the same delta, whatever kinds it mixes, so a selection travels as
+	 * one block. Dragging something outside the selection moves only it.
 	 */
-	moveSelection(anchorId: string, x: number, y: number) {
-		const anchor = this.positions[anchorId];
+	moveSelection(kind: CanvasKind, anchorId: string, x: number, y: number) {
+		const anchor = this.itemPosition(kind, anchorId);
 		if (!anchor) return;
 		const dx = x - anchor.x;
 		const dy = y - anchor.y;
-		this.moveCard(anchorId, x, y);
-		if (!this.selectedIds.includes(anchorId)) return;
-		for (const id of this.selectedIds) {
-			if (id === anchorId) continue;
-			const p = this.positions[id];
-			if (p) this.moveCard(id, p.x + dx, p.y + dy);
+		this.placeItem(kind, anchorId, x, y);
+		const items = this.selectionItems();
+		if (!items.some((i) => i.kind === kind && i.id === anchorId)) return;
+		for (const item of items) {
+			if (item.kind === kind && item.id === anchorId) continue;
+			const p = this.itemPosition(item.kind, item.id);
+			if (p) this.placeItem(item.kind, item.id, p.x + dx, p.y + dy);
 		}
 	}
 

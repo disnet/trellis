@@ -184,7 +184,7 @@
 						{@const blocked = ws.acceptBlockReason(cs, op)}
 						<li
 							class="op decision-{op.decision}"
-							class:focused={ws.selectedProposalId === op.id}
+							class:focused={ws.selectedProposalIds.includes(op.id)}
 							bind:this={opEls[op.id]}
 						>
 							<div class="op-head">

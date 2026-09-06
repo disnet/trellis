@@ -22,7 +22,14 @@
 		busy?: boolean;
 		/** Freeze the graduation controls (any agent call is in flight). */
 		controlsLocked?: boolean;
+		/** Part of the canvas selection — a marquee sweep or a shift-click. */
+		selected?: boolean;
+		/** Forced drag styling — set on the rest of the selection during a group drag. */
+		dragging?: boolean;
 		onchange: (body: string) => void;
+		/** Fires when this note starts and stops being dragged. */
+		ondragging?: (dragging: boolean) => void;
+		onselect?: (additive: boolean) => void;
 		onmove?: (x: number, y: number) => void;
 		/** Set a user size from the corner handle; undefined resets a dimension. */
 		onresize?: (w: number | undefined, h: number | undefined) => void;
@@ -43,7 +50,11 @@
 		focusSignal = 0,
 		busy = false,
 		controlsLocked = false,
+		selected = false,
+		dragging = false,
 		onchange,
+		ondragging,
+		onselect,
 		onmove,
 		onresize,
 		onsize,
@@ -52,7 +63,7 @@
 		ondelete
 	}: Props = $props();
 
-	let dragging = $state(false);
+	let selfDragging = $state(false);
 	let cardEl = $state<HTMLDivElement>();
 	let textEl = $state<HTMLTextAreaElement>();
 
@@ -94,6 +105,12 @@
 	function onpointerdown(e: PointerEvent) {
 		if (e.button !== 0) return;
 		e.stopPropagation();
+		// Shift picks the note up into the selection rather than the caret.
+		if (e.shiftKey) {
+			e.preventDefault();
+			onselect?.(true);
+			return;
+		}
 		const startX = e.clientX;
 		const startY = e.clientY;
 		const origX = x;
@@ -107,7 +124,10 @@
 			const dy = ev.clientY - startY;
 			if (Math.abs(dx) + Math.abs(dy) > 4) moved = true;
 			if (moved && onmove) {
-				dragging = true;
+				if (!selfDragging) {
+					selfDragging = true;
+					ondragging?.(true);
+				}
 				onmove(origX + dx / scale, origY + dy / scale);
 			}
 		}
@@ -115,9 +135,14 @@
 			el.releasePointerCapture(e.pointerId);
 			el.removeEventListener('pointermove', move);
 			el.removeEventListener('pointerup', up);
-			dragging = false;
-			// A motionless press is a request to write: hand the caret over.
-			if (!moved) textEl?.focus();
+			if (selfDragging) ondragging?.(false);
+			selfDragging = false;
+			// A motionless press is a request to write: take the selection down to
+			// this note, and hand the caret over.
+			if (!moved) {
+				onselect?.(false);
+				textEl?.focus();
+			}
 		}
 		el.addEventListener('pointermove', move);
 		el.addEventListener('pointerup', up);
@@ -184,7 +209,8 @@
 <div
 	class="note"
 	bind:this={cardEl}
-	class:dragging
+	class:selected
+	class:dragging={selfDragging || dragging}
 	class:resizing
 	class:fixed={!!height}
 	class:layout-moving={animate}
@@ -212,7 +238,17 @@
 			onchange(e.currentTarget.value);
 			autosize();
 		}}
-		onpointerdown={(e) => e.stopPropagation()}
+		onpointerdown={(e) => {
+			e.stopPropagation();
+			// Shift-clicking the text of a note you are not writing in adds the note
+			// to the selection; while writing, shift still extends the text range.
+			if (e.shiftKey && document.activeElement !== textEl) {
+				e.preventDefault();
+				onselect?.(true);
+				return;
+			}
+			if (!e.shiftKey) onselect?.(false);
+		}}
 		onwheel={(e) => {
 			// Scrolling overflowed text is what the wheel means here — keep the
 			// event from reaching the canvas, which would pan instead.
@@ -281,6 +317,14 @@
 	.note:focus-within {
 		border-color: var(--blue);
 		box-shadow: var(--ring-selection);
+	}
+	/* In the canvas selection: the same ring a selected card wears, so a mixed
+	   sweep of notes and thoughts reads as one selection. */
+	.note.selected {
+		border-color: var(--blue);
+		box-shadow:
+			inset 0 0 0 0.5px var(--blue),
+			var(--ring-selection);
 	}
 	.head {
 		display: flex;
