@@ -5,7 +5,7 @@
 import { browser } from '$app/environment';
 import { tick } from 'svelte';
 import { appearance } from './appearance.svelte';
-import { expandLayout, openPosition, type LayoutRect } from './incremental-layout';
+import { expandLayout, openPosition, stageBeside, type LayoutRect } from './incremental-layout';
 import { isModelSelection, type ModelSelection } from './models';
 import {
 	effectivePayload,
@@ -113,6 +113,16 @@ class Workspace {
 	cardSize(id: string) {
 		const measured = this.cardSizes[id];
 		if (measured?.zoom === this.zoom && measured.fontScale === appearance.fontScale) return measured;
+		// A note's geometry does not follow zoom, so any measurement stands; before
+		// one lands, its stored width plus a body-text estimate beats card bounds.
+		const note = this.notes.find((n) => n.id === id);
+		if (note) {
+			if (measured) return measured;
+			const width = note.w ?? 240;
+			const chars = Math.max(10, Math.floor(width / 8));
+			const lines = note.body.split('\n').reduce((n, line) => n + Math.max(1, Math.ceil(line.length / chars)), 0);
+			return { width, height: note.h ?? Math.max(96, 44 + lines * 20) };
+		}
 		// Off-canvas projections have no DOM measurements. Use conservative text
 		// bounds until the canvas reports actual geometry (including font scale).
 		const op = this.pendingChangeSets.flatMap(cs => cs.operations.map(op => ({ cs, op }))).find(({ cs, op }) => `${cs.id}:${op.clientRef}` === id)?.op;
@@ -168,8 +178,11 @@ class Workspace {
 	private planPlacement(cs: ChangeSet) {
 		const additions: LayoutRect[] = [];
 		const links: { from: string; to: string }[] = [];
-		/** Accepted cards the person already placed: applying honors those spots. */
+		/** Accepted cards the person already placed: applying honors those spots.
+		 *  A block staged beside its source note is a placement too — it applies
+		 *  where it was reviewed instead of reshuffling along relations. */
 		const pinned: string[] = [];
+		const noteAnchored = !!cs.noteId && this.notes.some((n) => n.id === cs.noteId);
 		const resolve = (ref: string) => this.thoughts[ref] ? ref : `${cs.id}:${ref}`;
 		for (const op of cs.operations) {
 			if (op.decision !== 'accepted') continue;
@@ -177,7 +190,7 @@ class Workspace {
 			if (p.op === 'create_thought') {
 				const id = resolve(op.clientRef);
 				additions.push({ id, ...(this.ghostPositions[id] ?? { x: 80, y: 60 }), ...this.cardSize(id) });
-				if (this.handPlaced.has(id)) pinned.push(id);
+				if (this.handPlaced.has(id) || (noteAnchored && this.ghostPositions[id])) pinned.push(id);
 			} else if (p.op === 'add_relation') links.push({ from: resolve(p.from), to: resolve(p.to) });
 		}
 		const existing = this.layoutRects();
@@ -609,7 +622,7 @@ class Workspace {
 		const note = this.notes.find((n) => n.id === id);
 		if (!note) return 'Unknown note.';
 		if (!note.body.trim()) return 'Write something in the note first.';
-		return this.invoke('decompose', note.body);
+		return this.invoke('decompose', note.body, id);
 	}
 
 	// --- working-set membership (Phase 3) ---
@@ -848,7 +861,7 @@ class Workspace {
 	/** The action currently generating a proposal, if any (live calls take seconds). */
 	invoking = $state<AgentAction | null>(null);
 
-	async invoke(action: AgentAction, scratchBody?: string): Promise<string | null> {
+	async invoke(action: AgentAction, scratchBody?: string, noteId?: string): Promise<string | null> {
 		if (this.invoking) return null;
 		if (action !== 'decompose' || !scratchBody?.trim()) scratchBody = undefined;
 		if (!scratchBody && this.selectedIds.length === 0) {
@@ -862,6 +875,7 @@ class Workspace {
 				action,
 				selectedIds: [...this.selectedIds],
 				scratchBody,
+				noteId: scratchBody ? noteId : undefined,
 				selection: { ...this.modelSelection }
 			});
 		} finally {
@@ -890,9 +904,24 @@ class Workspace {
 			({ ref }) => !this.ghostPositions[`${cs.id}:${ref}`]
 		);
 		if (missing.length === 0) return;
+		const taken = [...this.layoutRects(), ...Object.entries(this.ghostPositions).map(([id, pos]) => ({ id, ...pos, ...this.cardSize(id) }))];
+		const note = cs.noteId ? this.notes.find((n) => n.id === cs.noteId) : undefined;
+		if (note) {
+			// Decomposed from a note: the proposals stage as one block beside it.
+			// When that space is occupied, the note moves together with its block
+			// to the nearest open area rather than the block scattering.
+			const staged = stageBeside(
+				taken.filter((r) => r.id !== note.id),
+				{ id: note.id, x: note.x, y: note.y, ...this.cardSize(note.id) },
+				missing.map(({ ref }) => ({ id: `${cs.id}:${ref}`, ...this.cardSize(`${cs.id}:${ref}`) }))
+			);
+			for (const [id, pos] of staged.positions) this.ghostPositions[id] = pos;
+			if (staged.anchor.x !== note.x || staged.anchor.y !== note.y)
+				this.moveNote(note.id, staged.anchor.x, staged.anchor.y);
+			return;
+		}
 		const anchors = cs.invokedOn.map(id => this.positions[id]).filter(Boolean);
 		const near = anchors.length ? { x: anchors[0].x + this.cardSize(cs.invokedOn[0]).width + 64, y: anchors[0].y } : { x: 80, y: 60 };
-		const taken = [...this.layoutRects(), ...Object.entries(this.ghostPositions).map(([id, pos]) => ({ id, ...pos, ...this.cardSize(id) }))];
 		for (const { ref } of missing) {
 			const id = `${cs.id}:${ref}`, size = this.cardSize(id);
 			const pos = openPosition(taken, size, near);

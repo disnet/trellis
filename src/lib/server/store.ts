@@ -136,6 +136,7 @@ function rowToChangeSet(r: any, operations: ProposedOperation[]): ChangeSet {
 		invokedOn: JSON.parse(r.invoked_on),
 		consulted: r.consulted ? JSON.parse(r.consulted) : [],
 		scratchId: r.scratch_id ?? undefined,
+		noteId: r.note_id ?? undefined,
 		operations,
 		createdAt: r.created_at,
 		appliedBy: r.applied_by ?? undefined,
@@ -398,7 +399,9 @@ export async function invoke(
 	action: AgentAction,
 	selectedIds: string[],
 	scratchBody?: string,
-	selection?: ModelSelection
+	selection?: ModelSelection,
+	/** The canvas note a decompose was invoked on, so staging can anchor there. */
+	sourceNoteId?: string
 ): Promise<{ error: string; generationFailed?: boolean } | { changeSetId: string }> {
 	const fromScratch = action === 'decompose' && !!scratchBody?.trim();
 	if (!fromScratch && selectedIds.length === 0) {
@@ -414,6 +417,12 @@ export async function invoke(
 	for (const tid of selectedIds) {
 		if (!exists.get(tid, graphId)) return { error: `Unknown thought in selection: ${tid}` };
 	}
+	// A stale or foreign note id degrades to unanchored staging, never an error.
+	const noteId =
+		fromScratch && sourceNoteId &&
+		db.prepare('SELECT 1 FROM canvas_notes WHERE id = ? AND graph_id = ?').get(sourceNoteId, graphId)
+			? sourceNoteId
+			: null;
 
 	// Persist the scratch note before generation so capture survives a failed
 	// model call. A retry with identical text reuses the undistilled note.
@@ -445,8 +454,8 @@ export async function invoke(
 	const csId = db.transaction(() => {
 		const changeSetId = id('cs');
 		db.prepare(
-			`INSERT INTO change_sets (id, action, status, summary, invoked_on, consulted, scratch_id, graph_id, created_at)
-			 VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?)`
+			`INSERT INTO change_sets (id, action, status, summary, invoked_on, consulted, scratch_id, note_id, graph_id, created_at)
+			 VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)`
 		).run(
 			changeSetId,
 			action,
@@ -454,6 +463,7 @@ export async function invoke(
 			JSON.stringify(selectedIds),
 			JSON.stringify(outcome.consulted),
 			scratch?.id ?? null,
+			noteId,
 			graphId,
 			now
 		);

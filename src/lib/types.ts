@@ -246,6 +246,9 @@ export interface ChangeSet {
 	consulted: string[];
 	/** Scratch note id, when invoked from scratch. */
 	scratchId?: string;
+	/** Canvas note id, when decompose was invoked on a note. Staging anchors
+	 *  the proposed cards beside that note. */
+	noteId?: string;
 	operations: ProposedOperation[];
 	createdAt: number;
 	/** Who ratified the change set — distinct from who authored the operations. */

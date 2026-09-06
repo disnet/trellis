@@ -76,6 +76,46 @@ export function expandLayout(existing: LayoutRect[], additions: LayoutRect[], li
 	return new Map(placed.map(n => [n.id, { x: n.x, y: n.y }]));
 }
 
+/** Stage a decompose's proposed cards as one block beside their source note.
+ * Cards fill columns to the note's right, overlapping neither each other nor
+ * `obstacles` (which must not include the note itself). When the space beside
+ * the note is occupied, the note moves together with its block to the nearest
+ * open area rather than the block scattering across the map. */
+export function stageBeside(
+	obstacles: LayoutRect[],
+	anchor: LayoutRect,
+	additions: { id: string; width: number; height: number }[]
+) {
+	const rows = Math.max(1, Math.ceil(Math.sqrt(additions.length)));
+	const rects: LayoutRect[] = [];
+	let x = anchor.x + anchor.width + GAP, columnWidth = 0, y = anchor.y;
+	additions.forEach((card, i) => {
+		if (i > 0 && i % rows === 0) { x += columnWidth + GAP; columnWidth = 0; y = anchor.y; }
+		rects.push({ id: card.id, x, y, width: card.width, height: card.height });
+		columnWidth = Math.max(columnWidth, card.width);
+		y += card.height + GAP;
+	});
+	const blocked = rects.some(r => obstacles.some(o =>
+		r.x < o.x + o.width + GAP && r.x + r.width + GAP > o.x &&
+		r.y < o.y + o.height + GAP && r.y + r.height + GAP > o.y));
+	let dx = 0, dy = 0;
+	if (blocked) {
+		const all = [anchor, ...rects];
+		const left = Math.min(...all.map(r => r.x)), top = Math.min(...all.map(r => r.y));
+		const size = {
+			width: Math.max(...all.map(r => r.x + r.width)) - left,
+			height: Math.max(...all.map(r => r.y + r.height)) - top
+		};
+		const spot = openPosition(obstacles, size, { x: left, y: top });
+		dx = spot.x - left;
+		dy = spot.y - top;
+	}
+	return {
+		anchor: { x: anchor.x + dx, y: anchor.y + dy },
+		positions: new Map(rects.map(r => [r.id, { x: r.x + dx, y: r.y + dy }]))
+	};
+}
+
 /** Collision-free staging, including variable sizes and every pending batch. */
 export function openPosition(taken: LayoutRect[], size: { width: number; height: number }, near: { x: number; y: number }) {
 	const overlaps = (x: number, y: number) => taken.some(n => x < n.x + n.width + GAP && x + size.width + GAP > n.x && y < n.y + n.height + GAP && y + size.height + GAP > n.y);

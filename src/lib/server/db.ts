@@ -86,6 +86,7 @@ CREATE TABLE IF NOT EXISTS change_sets (
   invoked_on TEXT NOT NULL,
   consulted TEXT NOT NULL DEFAULT '[]',
   scratch_id TEXT,
+  note_id TEXT,
   graph_id TEXT NOT NULL REFERENCES graphs(id),
   created_at INTEGER NOT NULL,
   applied_by TEXT,
@@ -200,6 +201,7 @@ function open(): Database.Database {
 	migrateToPredictionEvidence(db);
 	migrateToWholeGraphCanvas(db);
 	migrateToConsultedColumn(db);
+	migrateToNoteAnchoredChangeSets(db);
 	migrateToResizableNotes(db);
 	migrateToProseDraftHistory(db);
 	seedIfEmpty(db);
@@ -321,6 +323,14 @@ function migrateToConsultedColumn(db: Database.Database) {
 	const cols = db.pragma('table_info(change_sets)') as { name: string }[];
 	if (!cols.some((c) => c.name === 'consulted'))
 		db.exec("ALTER TABLE change_sets ADD COLUMN consulted TEXT NOT NULL DEFAULT '[]'");
+}
+
+// Change sets gained a note_id column (the canvas note a decompose was invoked
+// on) so proposal staging can anchor the new cards beside their source note.
+function migrateToNoteAnchoredChangeSets(db: Database.Database) {
+	const cols = db.pragma('table_info(change_sets)') as { name: string }[];
+	if (!cols.some((c) => c.name === 'note_id'))
+		db.exec('ALTER TABLE change_sets ADD COLUMN note_id TEXT');
 }
 
 // Databases created before the prediction/evidence thought types lack the

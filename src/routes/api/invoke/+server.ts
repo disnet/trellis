@@ -11,12 +11,13 @@ export const POST: RequestHandler = async ({ request }) => {
 	const action = body?.action as AgentAction;
 	const selectedIds = Array.isArray(body?.selectedIds) ? (body.selectedIds as string[]) : [];
 	const scratchBody = typeof body?.scratchBody === 'string' ? body.scratchBody : undefined;
+	const noteId = typeof body?.noteId === 'string' ? body.noteId : undefined;
 
 	if (!ACTIONS.includes(action)) return json({ error: 'Unknown operation.' }, { status: 400 });
 	if (body.selection !== undefined && !isModelSelection(body.selection))
 		return json({ error: 'Invalid provider or model.' }, { status: 400 });
 
-	const result = await invoke(action, selectedIds, scratchBody, body.selection);
+	const result = await invoke(action, selectedIds, scratchBody, body.selection, noteId);
 	// Generation failures are recoverable: nothing was staged, the scratch note
 	// (if any) is preserved, and the client may simply invoke again.
 	if ('error' in result)
