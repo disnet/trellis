@@ -295,6 +295,25 @@ class Workspace {
 		this.moveTimer = setTimeout(() => void this.flushMoves(), 400);
 	}
 
+	/**
+	 * Drag `anchorId` to (x, y). When the dragged card is part of a multi-selection
+	 * the rest of the selection moves by the same delta, so a selection travels as
+	 * one block. Dragging a card outside the selection moves only that card.
+	 */
+	moveSelection(anchorId: string, x: number, y: number) {
+		const anchor = this.positions[anchorId];
+		if (!anchor) return;
+		const dx = x - anchor.x;
+		const dy = y - anchor.y;
+		this.moveCard(anchorId, x, y);
+		if (!this.selectedIds.includes(anchorId)) return;
+		for (const id of this.selectedIds) {
+			if (id === anchorId) continue;
+			const p = this.positions[id];
+			if (p) this.moveCard(id, p.x + dx, p.y + dy);
+		}
+	}
+
 	private async flushMoves() {
 		if (this.moveTimer) {
 			clearTimeout(this.moveTimer);

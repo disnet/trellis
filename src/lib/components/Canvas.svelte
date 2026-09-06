@@ -295,6 +295,9 @@
 		});
 		showIndex = false;
 	}
+	// The card being dragged while the whole selection travels with it — the rest of
+	// the selection borrows its lifted styling.
+	let groupDragAnchor = $state<string | null>(null);
 	function place(id: string, kind: string, x: number, y: number) {
 		if (kind === 'card') ws.moveCard(id, x, y); else ws.moveGhost(id, x, y);
 	}
@@ -572,7 +575,9 @@
 				dimmed={ws.lensActive && !member}
 				provenance={provenance(t.id)}
 				relationSummary={ws.zoom === 'reading' ? relationSummary(t.id) : undefined}
-				onmove={ws.layoutPreview || ws.applying ? undefined : (x, y) => ws.moveCard(t.id, x, y)}
+				dragging={groupDragAnchor !== null && groupDragAnchor !== t.id && ws.selectedIds.includes(t.id)}
+				onmove={ws.layoutPreview || ws.applying ? undefined : (x, y) => ws.moveSelection(t.id, x, y)}
+				ondragging={(d) => (groupDragAnchor = d && ws.selectedIds.includes(t.id) ? t.id : null)}
 				onselect={(additive) => ws.select(t.id, additive)}
 				onremove={ws.lensActive && member
 					? async () => {

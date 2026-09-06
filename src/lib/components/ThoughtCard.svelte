@@ -27,7 +27,11 @@
 		ghost?: 'proposed' | null;
 		provenance: ActorType;
 		relationSummary?: string;
+		/** Forced drag styling — set on the rest of the selection during a group drag. */
+		dragging?: boolean;
 		onmove?: (x: number, y: number) => void;
+		/** Fires when this card starts and stops being dragged. */
+		ondragging?: (dragging: boolean) => void;
 		onsize?: (width: number, height: number) => void;
 		onselect?: (additive: boolean) => void;
 		/** Remove from the working set (shown on selected cards; the graph is untouched). */
@@ -53,13 +57,15 @@
 		ghost = null,
 		provenance,
 		relationSummary,
+		dragging = false,
 		onmove,
+		ondragging,
 		onsize,
 		onselect,
 		onremove
 	}: Props = $props();
 
-	let dragging = $state(false);
+	let selfDragging = $state(false);
 	let cardEl = $state<HTMLDivElement>();
 	$effect(() => {
 		if (!cardEl || !onsize) return;
@@ -86,7 +92,10 @@
 			const dy = ev.clientY - startY;
 			if (Math.abs(dx) + Math.abs(dy) > 4) moved = true;
 			if (moved && onmove) {
-				dragging = true;
+				if (!selfDragging) {
+					selfDragging = true;
+					ondragging?.(true);
+				}
 				onmove(origX + dx / scale, origY + dy / scale);
 			}
 		}
@@ -94,7 +103,8 @@
 			el.releasePointerCapture(e.pointerId);
 			el.removeEventListener('pointermove', move);
 			el.removeEventListener('pointerup', up);
-			dragging = false;
+			if (selfDragging) ondragging?.(false);
+			selfDragging = false;
 			if (!moved) onselect?.(ev.shiftKey);
 		}
 		el.addEventListener('pointermove', move);
@@ -106,7 +116,7 @@
 	class="card {ghost ?? ''}"
 	bind:this={cardEl}
 	class:selected
-	class:dragging
+	class:dragging={selfDragging || dragging}
 	class:dimmed
 	class:reading={zoom === 'reading'}
 	class:layout-moving={animate}
