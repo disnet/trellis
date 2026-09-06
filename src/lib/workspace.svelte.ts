@@ -964,6 +964,16 @@ class Workspace {
 
 	/** The action currently generating a proposal, if any (live calls take seconds). */
 	invoking = $state<AgentAction | null>(null);
+	/** Drafts are keyed by graph and subject so closing a panel never loses text. */
+	conversationDrafts = $state<Record<string, string>>({});
+	conversationRequests = $state<Record<string, boolean>>({});
+	async proposeFromConversation(conversationId: string): Promise<string | null> {
+		if (this.invoking) return 'An operation is already in progress.';
+		this.invoking = 'decompose';
+		try {
+			return await this.post('/api/invoke', { action: 'decompose', selectedIds: [], conversationId, selection: { ...this.modelSelection } });
+		} finally { this.invoking = null; }
+	}
 
 	async invoke(action: AgentAction, scratchBody?: string, noteId?: string): Promise<string | null> {
 		if (this.invoking) return null;

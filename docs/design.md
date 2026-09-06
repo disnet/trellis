@@ -35,7 +35,7 @@ The core loop: messy input → agent-proposed structure → human ratification �
 7. **Human-visible memory.** Long-term memory appears as inspectable structure — a relevant prior claim surfaced at the edge of the workspace, not "we discussed this." The agent never holds a richer private account of your thinking than you can see.
 8. **Structure without premature bureaucracy.** Freeform capture stays easy; the system proposes structure afterward. The person is never required to classify anything during capture.
 9. **Views are projections.** Canvas, outline, argument map, and document are lenses over the same objects. Layout and presentation are not the knowledge model.
-10. **Chat is compost — and absent from v0.** Useful conversation results get reified into the graph; the transcript survives only as provenance. v0 goes further: there is no chat surface at all (see "Key design decision" below).
+10. **Chat is compost.** Side conversations attach to a thought, including a proposed thought, to clarify before committing. Conversation replies cannot mutate the graph or stage proposals. The person explicitly invokes Propose thoughts or revises manually when ready. Discussions remain visible context for later operations, not ratified beliefs or a replacement for the graph. The original v0 omitted chat; this is the deliberate post-prototype amendment.
 
 ## Conceptual model
 
@@ -113,7 +113,7 @@ Reopening Trellis restores the last working set and summarizes structural state 
 
 ## Key design decision embodied in code
 
-The agent endpoint's response type is `ChangeSet`, not `string`. **There is no chat completion surfaced anywhere in the UI in v0.** If the loop feels dead without free-form conversation, that itself is a finding — the brainstorms predict scratch-chat is needed as compost; v0 tests how far structure-only interaction goes. Attaching ephemeral chat to a thought is a v0.1 candidate, not a v0 hedge.
+The graph-operation endpoint's response type is `ChangeSet`, not `string`. The original v0 tested structure-only interaction. The post-prototype discussion endpoint returns only a conversational reply attached to a thought or proposed thought. It cannot stage or apply graph edits. Conversations persist separately, follow accepted proposals to their thoughts, and survive undo. Later graph operations include recent discussion excerpts for thoughts in their deterministic context, plus discussions on pending proposals originating from those thoughts. Excerpts are recorded on the change set and inspectable in review. Explicit discussion distillation also includes its thread when the subject is still proposed. Older messages stay readable; each context excerpt is bounded to the newest 24 messages / 24,000 characters, with omissions disclosed. No graph-wide conversation search or private conversational memory is introduced.
 
 ## Technical design
 

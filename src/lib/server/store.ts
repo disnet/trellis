@@ -8,6 +8,7 @@ import { activeGraphId, activeWorkingSetId, db } from './db';
 import { generateProposal, linkCallToChangeSet } from './agent';
 import { generateTreatment, type ProseInput } from './agent/prose';
 import { defaultSelection } from './agent/settings';
+import { conversationsForGraph, conversationExcerpt, resolveTarget } from './conversations';
 import type { ModelSelection } from '$lib/models';
 import {
 	RELATION_TYPES,
@@ -135,6 +136,7 @@ function rowToChangeSet(r: any, operations: ProposedOperation[]): ChangeSet {
 		summary: r.summary,
 		invokedOn: JSON.parse(r.invoked_on),
 		consulted: r.consulted ? JSON.parse(r.consulted) : [],
+		conversationContext: r.conversation_context ? JSON.parse(r.conversation_context) : [],
 		scratchId: r.scratch_id ?? undefined,
 		noteId: r.note_id ?? undefined,
 		operations,
@@ -401,8 +403,19 @@ export async function invoke(
 	scratchBody?: string,
 	selection?: ModelSelection,
 	/** The canvas note a decompose was invoked on, so staging can anchor there. */
-	sourceNoteId?: string
+	sourceNoteId?: string,
+	conversationId?: string
 ): Promise<{ error: string; generationFailed?: boolean } | { changeSetId: string }> {
+	const conversation = conversationId ? conversationsForGraph().find(c => c.id === conversationId) : undefined;
+	if (conversationId) {
+		if (!conversation?.messages.length) return { error: 'Unknown or empty discussion.' };
+		if (action !== 'decompose') return { error: 'Use Propose thoughts to distill a discussion.' };
+		try {
+			const target = resolveTarget(conversation.thoughtId ? { thoughtId: conversation.thoughtId } : { operationId: conversation.operationId! });
+			selectedIds = conversation.thoughtId ? [conversation.thoughtId] : [];
+			scratchBody = `Distill this discussion into a small change set. Prefer revising its existing thought when appropriate. A proposed subject is not yet in the graph and cannot be referenced as an existing thought. Preserve authorship and uncertainty; suggestions in the discussion are not accepted beliefs.\nSubject: ${JSON.stringify(target.material)}\nDiscussion: ${JSON.stringify(conversationExcerpt(conversation))}`;
+		} catch (e) { return { error: (e as Error).message }; }
+	}
 	const fromScratch = action === 'decompose' && !!scratchBody?.trim();
 	if (!fromScratch && selectedIds.length === 0) {
 		return {
@@ -447,7 +460,7 @@ export async function invoke(
 		}
 	}
 
-	const outcome = await generateProposal(action, selectedIds, scratch, selection);
+	const outcome = await generateProposal(action, selectedIds, scratch, selection, conversation ? conversationExcerpt(conversation) : undefined);
 	if (!outcome.ok) return { error: outcome.error, generationFailed: true };
 
 	const now = Date.now();
@@ -493,6 +506,7 @@ export async function invoke(
 			);
 		}
 		linkCallToChangeSet(outcome.callId, changeSetId);
+		db.prepare('UPDATE change_sets SET conversation_context = ? WHERE id = ?').run(JSON.stringify(outcome.conversationContext), changeSetId);
 		return changeSetId;
 	})();
 
@@ -712,6 +726,8 @@ export function applyChangeSet(
 					const pos = place(op.clientRef, 80);
 					insertPosition.run(graphId, tid, pos.x, pos.y);
 					joinLens(tid);
+					db.prepare('UPDATE proposed_operations SET applied_thought_id = ? WHERE id = ?').run(tid, op.id);
+					db.prepare('UPDATE conversations SET thought_id = ? WHERE operation_id = ? AND graph_id = ?').run(tid, op.id, graphId);
 				} else if (p.op === 'revise_thought') {
 					const row = db
 						.prepare('SELECT * FROM thoughts WHERE id = ? AND graph_id = ?')
@@ -1382,6 +1398,7 @@ export function exportState(graphId: string = activeGraphId(), { includeProse = 
 	return {
 		exportedAt: Date.now(),
 		graph: { id: graph.id, name: graph.name },
+		conversations: includeProse ? conversationsForGraph(graphId) : [],
 		thoughts: db.prepare('SELECT * FROM thoughts WHERE graph_id = ?').all(graphId),
 		thought_revisions: db
 			.prepare(
@@ -1471,6 +1488,8 @@ function restore(graphId: string, snapshot: ReturnType<typeof exportState>) {
 		db.prepare('DELETE FROM scratch_notes WHERE graph_id = ?').run(graphId);
 		db.prepare('DELETE FROM thoughts WHERE graph_id = ?').run(graphId);
 		insert('thoughts', snapshot.thoughts as any[]);
+		// Keep transcripts, but return conversations to their proposal after undo.
+		db.prepare('UPDATE conversations SET thought_id = NULL WHERE graph_id = ? AND thought_id NOT IN (SELECT id FROM thoughts WHERE graph_id = ?)').run(graphId, graphId);
 		insert('thought_revisions', snapshot.thought_revisions as any[]);
 		insert('relations', snapshot.relations as any[]);
 		insert('working_sets', snapshot.working_sets as any[]);

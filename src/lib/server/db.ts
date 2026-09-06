@@ -85,6 +85,7 @@ CREATE TABLE IF NOT EXISTS change_sets (
   summary TEXT NOT NULL,
   invoked_on TEXT NOT NULL,
   consulted TEXT NOT NULL DEFAULT '[]',
+  conversation_context TEXT NOT NULL DEFAULT '[]',
   scratch_id TEXT,
   note_id TEXT,
   graph_id TEXT NOT NULL REFERENCES graphs(id),
@@ -104,6 +105,7 @@ CREATE TABLE IF NOT EXISTS proposed_operations (
   edited_payload TEXT,
   rationale TEXT NOT NULL,
   decision TEXT NOT NULL DEFAULT 'pending',
+  applied_thought_id TEXT,
   decided_at INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_ops_change_set ON proposed_operations(change_set_id);
@@ -184,6 +186,20 @@ CREATE TABLE IF NOT EXISTS prose_treatments (
   guidance TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_prose_slot ON prose_treatments(graph_id, working_set_id, style);
+
+-- Side conversations survive graph undo. Target ids deliberately have no FK:
+-- a proposed thought can return to staging, retaining its discussion.
+CREATE TABLE IF NOT EXISTS conversations (
+  id TEXT PRIMARY KEY,
+  graph_id TEXT NOT NULL REFERENCES graphs(id),
+  thought_id TEXT,
+  operation_id TEXT,
+  title TEXT NOT NULL,
+  messages TEXT NOT NULL DEFAULT '[]',
+  subject TEXT,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_conversations_graph ON conversations(graph_id);
 `;
 
 function open(): Database.Database {
@@ -193,6 +209,15 @@ function open(): Database.Database {
 	db.pragma('journal_mode = WAL');
 	db.pragma('foreign_keys = ON');
 	db.exec(SCHEMA);
+	const conversationCols = db.pragma('table_info(conversations)') as { name: string }[];
+	if (!conversationCols.some((c) => c.name === 'subject'))
+		db.exec('ALTER TABLE conversations ADD COLUMN subject TEXT');
+	const operationCols = db.pragma('table_info(proposed_operations)') as { name: string }[];
+	if (!operationCols.some((c) => c.name === 'applied_thought_id'))
+		db.exec('ALTER TABLE proposed_operations ADD COLUMN applied_thought_id TEXT');
+	const changeSetCols = db.pragma('table_info(change_sets)') as { name: string }[];
+	if (!changeSetCols.some((c) => c.name === 'conversation_context'))
+		db.exec("ALTER TABLE change_sets ADD COLUMN conversation_context TEXT NOT NULL DEFAULT '[]'");
 	const proseCols = db.pragma('table_info(prose_treatments)') as { name: string }[];
 	if (!proseCols.some((c) => c.name === 'source_thought_ids'))
 		db.exec("ALTER TABLE prose_treatments ADD COLUMN source_thought_ids TEXT NOT NULL DEFAULT '[]'");

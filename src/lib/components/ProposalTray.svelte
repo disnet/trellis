@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { workspace } from '$lib/workspace.svelte';
+	import SideConversation from './SideConversation.svelte';
+	import DiscussionMarkdown from './DiscussionMarkdown.svelte';
 	import {
 		ACTION_NAMES,
 		effectivePayload,
@@ -16,6 +18,7 @@
 
 	let editingOpId = $state<string | null>(null);
 	let showOriginalOpId = $state<string | null>(null);
+	let discussionHistory = $state<Record<string, boolean>>({});
 
 	// Picking a proposal on the canvas brings the tray to it: the card shows what
 	// is proposed, the tray shows why. Refs, not ids, so nothing leaks globally.
@@ -188,6 +191,18 @@
 										onclick={() => revealThought(id)}>{ws.thoughts[id].title}</button>{:else}{id}{/if}{/each}
 						</p>
 					{/if}
+					{#if cs.conversationContext?.length}
+						<details class="consulted"><summary>Used {cs.conversationContext.length} side discussion{cs.conversationContext.length === 1 ? '' : 's'}</summary>
+							{#each cs.conversationContext as conversation (conversation.id)}
+								<details><summary>{conversation.title}</summary>
+									{#if conversation.subject}<p>{conversation.subject.proposed ? 'Proposed wording discussed' : 'Wording discussed'}: {conversation.subject.statement}</p>{/if}
+									{#each conversation.messages as message (message.id)}
+										<div class="discussion-excerpt"><strong>{message.role === 'user' ? 'You' : 'Agent'}</strong><DiscussionMarkdown body={message.body} /></div>
+									{/each}
+								</details>
+							{/each}
+						</details>
+					{/if}
 					{#if cs.consulted.length > 0}
 						<!-- Graph-wide retrieval is disclosed, never invisible: exactly
 						     which thoughts the search added to the agent's context. -->
@@ -272,6 +287,7 @@
 									<p class="op-extra">source: {p.thought.source}</p>
 								{/if}
 								<p class="rationale">{op.rationale}</p>
+								{#if p.op !== 'add_relation'}<SideConversation operationId={op.id} />{/if}
 								{#if op.evidenceRefs.length > 0}
 									<p class="evidence">
 										evidence:
@@ -359,13 +375,20 @@
 	{/if}
 
 	{#if ws.decidedChangeSets.length > 0}
-		<h3>Ratified</h3>
+		<h3>Reviewed</h3>
 		<ul class="history">
 			{#each [...ws.decidedChangeSets].reverse() as cs (cs.id)}
 				<li>
 					<span class="action small">{actionNames[cs.action]}</span>
 					<span class="hist-summary">{cs.summary}</span>
 					<span class="hist-status">{cs.status.replace('_', ' ')}</span>
+					<details ontoggle={(event) => discussionHistory[cs.id] = event.currentTarget.open}><summary>Thought discussions</summary>
+						{#if discussionHistory[cs.id]}
+						{#each cs.operations.filter(op => effectivePayload(op).op !== 'add_relation') as op (op.id)}
+							<p>{ws.opLabel(op)}</p><SideConversation operationId={op.id} />
+						{/each}
+						{/if}
+					</details>
 				</li>
 			{/each}
 		</ul>
@@ -382,6 +405,7 @@
 		flex-direction: column;
 		gap: 10px;
 	}
+	.discussion-excerpt { margin-top: 12px; min-width: 0; }
 	h2 {
 		margin: 0;
 		font-size: var(--fs-13);
@@ -716,12 +740,14 @@
 		font-size: var(--fs-11);
 		color: var(--ink-muted);
 		display: flex;
+		flex-wrap: wrap;
 		gap: 6px;
 		align-items: baseline;
 		background: var(--inset-fill);
 		border-radius: 6px;
 		padding: 5px 8px;
 	}
+	.history li > details { flex-basis: 100%; min-width: 0; }
 	.hist-summary {
 		flex: 1;
 		line-height: 1.3;

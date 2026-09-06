@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { workspace } from '$lib/workspace.svelte';
+	import SideConversation from './SideConversation.svelte';
 	import { formatConfidence, type Confidence, type ThoughtStatus } from '$lib/types';
 
 	const ws = workspace;
@@ -222,6 +223,7 @@
 			</div>
 		{/if}
 
+		<SideConversation thoughtId={thought.id} />
 		<h4>Relations</h4>
 		{#if relations.length === 0}
 			<p class="hint">No relations yet.</p>

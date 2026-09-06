@@ -235,6 +235,8 @@ export interface ProposedOperation {
 export type ChangeSetStatus = 'pending' | 'applied' | 'partially_applied' | 'rejected';
 
 export interface ChangeSet {
+	/** Exact side-conversation excerpts used when generating this proposal. */
+	conversationContext?: Conversation[];
 	id: string;
 	action: AgentAction;
 	status: ChangeSetStatus;
@@ -288,6 +290,25 @@ export interface WorkspaceState {
 }
 
 export const PROSE_GUIDANCE_LIMIT = 2000;
+export const CHAT_MESSAGE_LIMIT = 8000;
+export interface ConversationMessage {
+	id: string;
+	role: 'user' | 'assistant';
+	body: string;
+	createdAt: number;
+	model?: string;
+}
+export interface Conversation {
+	id: string;
+	graphId: string;
+	thoughtId: string | null;
+	operationId: string | null;
+	title: string;
+	/** Wording at the latest user message, including its provisional status. */
+	subject?: { title: string; statement: string; proposed: boolean };
+	messages: ConversationMessage[];
+}
+export interface ConversationTarget { thoughtId?: string; operationId?: string }
 export type ProseDraftSummary = Pick<ProseTreatment, 'id' | 'workingSetId' | 'style' | 'title' | 'generatedAt'>;
 
 export type ProseStyle = 'overview' | 'paper' | 'blog' | 'polemic';

@@ -18,7 +18,7 @@ Success for this phase: the core loop (messy input → agent-proposed structure 
 
 ## Positioning
 
-Graph-editing agent operations return structured, validated change sets that stage for review, and model output can never write directly to accepted thought state. There is no chat surface. Prose is a derived reading view of a group, saved separately from that state. Neighboring products preserve the transcript (chat tools) or the document (Notion/Obsidian); Trellis preserves ratified thought state with full provenance — who authored each revision, and who accepted it.
+Graph-editing agent operations return structured, validated change sets that stage for review, and model output can never write directly to accepted thought state. Side conversations attach to individual thoughts, including proposed thoughts, for clarification before committing changes. Replies only extend the discussion; Propose thoughts explicitly stages changes for review, and manual revision remains a separate human action. Prose is a derived reading view of a group, saved separately from that state. Trellis preserves ratified thought state with full provenance — who authored each revision, and who accepted it.
 
 ## Operating Context
 
@@ -61,7 +61,7 @@ The name Trellis. No other confirmed voice, identity, or visual commitments were
 
 ## Product Principles
 
-1. **State over transcript.** The durable result of agent work is an inspectable diff to shared thought state, never prose in a timeline.
+1. **State over transcript.** The graph remains the primary artifact. Thought-scoped discussion supports clarification; changing shared thought state still requires an inspectable, ratified diff.
 2. **The agent proposes; the human ratifies.** Ratification friction is where thinking happens; it may be tuned but never silently removed for agent-authored knowledge.
 3. **Selection is context.** What the agent will consider is visible and human-steered; no hidden retrieval, no opaque memory.
 4. **Structure without premature bureaucracy.** Capture stays freeform; the system proposes structure afterward and never requires classification up front.

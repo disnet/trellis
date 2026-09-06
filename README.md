@@ -18,8 +18,9 @@ end-to-end:
   thoughts.
 - **Agent operations** (Decompose, Develop, Challenge, Connect) invoked on the
   selection. Context is assembled deterministically — the selection, the
-  working set, and its 1-hop neighborhood, nothing else — and the model
-  returns a structured change set, never prose. Output is validated
+  working set, its 1-hop neighborhood, and their side discussions. Connect and
+  Challenge also disclose thoughts retrieved by graph-wide relevance search.
+  These operations return structured change sets. Output is validated
   server-side (allowed operations, referential integrity, dependency refs,
   text limits) before it appears in the tray; invalid output gets one
   corrective retry and can never touch canonical state. Every attempt is
@@ -40,6 +41,24 @@ end-to-end:
   usage, and any error — rate limits (with retry-after when the API sends it),
   missing credentials, invalid output. Filter to problems,
   and expand a row for the full error, request, and raw model output.
+
+## Discuss a thought
+
+Open **Discuss** in the Inspector, or on a proposed thought in the proposal tray.
+Go back and forth using the selected model without creating proposals or changing
+the graph. Messages persist, failed replies can be retried, and proposed-thought
+discussions follow acceptance and undo. Reviewed proposals retain access to their
+discussions under **Reviewed → Thought discussions**.
+
+Choose **Propose thoughts** when ready to turn a discussion into a change set for
+review, or use the existing revision / proposal edit controls to write changes
+yourself. Decompose, Develop, Challenge, and Connect automatically receive recent
+discussion excerpts attached to thoughts in their context, including discussions
+on pending proposals originating from those thoughts. Each excerpt contains the
+newest 24 messages within 24,000 characters; omitted history is labeled, and the
+full thread remains readable. The proposal tray discloses the exact excerpts used.
+Unrelated graph conversations are excluded. Chat calls appear in Activity and
+work with all four model providers; offline replies are deterministic fixtures.
 
 ## Read a group as prose
 

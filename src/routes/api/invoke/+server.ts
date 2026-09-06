@@ -17,7 +17,9 @@ export const POST: RequestHandler = async ({ request }) => {
 	if (body.selection !== undefined && !isModelSelection(body.selection))
 		return json({ error: 'Invalid provider or model.' }, { status: 400 });
 
-	const result = await invoke(action, selectedIds, scratchBody, body.selection, noteId);
+	if (body.conversationId !== undefined && typeof body.conversationId !== 'string')
+		return json({ error: 'Invalid discussion.' }, { status: 400 });
+	const result = await invoke(action, selectedIds, scratchBody, body.selection, noteId, body.conversationId);
 	// Generation failures are recoverable: nothing was staged, the scratch note
 	// (if any) is preserved, and the client may simply invoke again.
 	if ('error' in result)

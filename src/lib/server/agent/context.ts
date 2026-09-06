@@ -9,6 +9,8 @@
 // state always produces an identical request.
 
 import { activeGraphId, activeWorkingSetId, db } from '../db';
+import { conversationsForGraph, conversationExcerpt } from '../conversations';
+import type { Conversation } from '$lib/types';
 import type { ResolvedLink } from './links';
 import type { AgentAction, Confidence, RelationType, ThoughtStatus, ThoughtType } from '$lib/types';
 
@@ -34,6 +36,7 @@ export interface ContextRelation {
 }
 
 export interface AgentContext {
+	conversations?: Conversation[];
 	thoughts: ContextThought[];
 	relations: ContextRelation[];
 	selectedIds: string[];
@@ -155,8 +158,15 @@ export function buildContext(
 			selected: selected.has(r.id),
 			retrieved: retrieved.has(r.id)
 		}));
+	// A still-proposed thought's discussion remains attached to the selection
+	// that produced it. Once ratified, its own stable thought id owns the thread.
+	const proposalSources = new Map((db.prepare(`SELECT o.id, c.invoked_on FROM proposed_operations o JOIN change_sets c ON c.id = o.change_set_id WHERE c.graph_id = ? AND c.status = 'pending' AND o.decision != 'rejected'`).all(graphId) as { id: string; invoked_on: string }[])
+		.map(row => [row.id, JSON.parse(row.invoked_on) as string[]]));
 
 	return {
+		conversations: conversationsForGraph(graphId)
+			.filter(c => c.messages.length && (c.thoughtId ? pool.has(c.thoughtId) : c.operationId && proposalSources.get(c.operationId)?.some(id => pool.has(id))))
+			.map(conversationExcerpt),
 		thoughts,
 		relations: relations
 			.filter((r) => pool.has(r.from_thought_id) && pool.has(r.to_thought_id))

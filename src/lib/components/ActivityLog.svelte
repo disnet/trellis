@@ -67,6 +67,7 @@
 	$effect(() => {
 		void ws.invoking;
 		void ws.proseGenerating;
+		void Object.values(ws.conversationRequests).some(Boolean);
 		load();
 	});
 

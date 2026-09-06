@@ -8,7 +8,7 @@
 import crypto from 'node:crypto';
 import type { ModelSelection } from '$lib/models';
 import { activeGraphId, db } from '../db';
-import type { AgentAction } from '$lib/types';
+import type { AgentAction, Conversation } from '$lib/types';
 import { buildContext } from './context';
 import { resolveContextLinks } from './links';
 import {
@@ -21,7 +21,7 @@ import { validateProposal, type ValidationDeps } from './validate';
 import type { AgentProposal } from './wire';
 
 export type GenerateOutcome =
-	| { ok: true; proposal: AgentProposal; callId: string; consulted: string[] }
+	| { ok: true; proposal: AgentProposal; callId: string; consulted: string[]; conversationContext: Conversation[] }
 	| { ok: false; error: string };
 
 // Dev-console trace of the agent pipeline, alongside the durable agent_calls
@@ -74,7 +74,8 @@ export async function generateProposal(
 	action: AgentAction,
 	selectedIds: string[],
 	scratch?: { id: string; body: string },
-	selection?: ModelSelection
+	selection?: ModelSelection,
+	conversation?: Conversation
 ): Promise<GenerateOutcome> {
 	// Validation predicates are graph-scoped: an id from another graph is
 	// "unknown" here, so a proposal can never link across the boundary.
@@ -91,6 +92,8 @@ export async function generateProposal(
 
 	const adapter = selectAdapter({ thoughtExists: validationDeps.thoughtExists }, selection);
 	const context = buildContext(action, selectedIds, scratch);
+	if (conversation && !context.conversations?.some(c => c.id === conversation.id))
+		context.conversations = [...(context.conversations ?? []), conversation];
 	// Read the links the agent's own fetch tool cannot (see links.ts). Never fatal:
 	// a resolver outage degrades to the prior behavior rather than losing the call.
 	if (adapter.name !== 'fixture') {
@@ -163,7 +166,7 @@ export async function generateProposal(
 				`attempt ${attempt}: ✓ ${p.operations.length} op${p.operations.length === 1 ? '' : 's'} in ` +
 					`${latencyMs}ms${usage ? ` (${usage})` : ''} — “${p.summary}”`
 			);
-			return { ok: true, proposal: p, callId, consulted: context.retrievedIds };
+			return { ok: true, proposal: p, callId, consulted: context.retrievedIds, conversationContext: context.conversations ?? [] };
 		}
 		log(
 			`attempt ${attempt}: invalid proposal after ${latencyMs}ms — ${validated.errors.join('; ')}` +
