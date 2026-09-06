@@ -284,6 +284,27 @@ export interface WorkspaceState {
 	undoLabel: string | null;
 }
 
+export const PROSE_GUIDANCE_LIMIT = 2000;
+export type ProseDraftSummary = Pick<ProseTreatment, 'id' | 'workingSetId' | 'style' | 'title' | 'generatedAt'>;
+
+export type ProseStyle = 'overview' | 'paper' | 'blog' | 'polemic';
+/** A generated, group-scoped reading of a set of thoughts. The body is plain
+ * text with [[thought-id]] or [[description|thought-id]] references; it is never trusted HTML. */
+export interface ProseTreatment {
+	id: string;
+	graphId: string;
+	workingSetId: string;
+	style: ProseStyle;
+	title: string;
+	body: string;
+	model: string;
+	guidance: string;
+	generatedAt: number;
+	sourceFingerprint: string;
+	sourceThoughtIds: string[];
+	stale: boolean;
+}
+
 export interface ReentryThoughtRef {
 	id: string;
 	title: string;

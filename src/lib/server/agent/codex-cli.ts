@@ -40,43 +40,109 @@ function runCodex(bin: string, args: string[], cwd: string, prompt: string): Pro
 	});
 }
 
+export interface CodexStructuredRequest {
+	model?: string;
+	systemPrompt: string;
+	userPrompt: string;
+	jsonSchema: object;
+	/** Proposal generation may browse; closed-context prose passes false. */
+	allowWebSearch: boolean;
+}
+
+export interface CodexStructuredResult {
+	raw: string;
+	value: unknown;
+}
+
+/**
+ * Run one Codex structured-output request in a fresh, read-only temporary
+ * workspace. The caller owns semantic validation and any corrective retry.
+ */
+export async function generateCodexStructured({
+	model,
+	systemPrompt,
+	userPrompt,
+	jsonSchema,
+	allowWebSearch
+}: CodexStructuredRequest): Promise<CodexStructuredResult> {
+	await prepareCliEnvironment();
+	const directory = await mkdtemp(join(tmpdir(), 'trellis-codex-'));
+	try {
+		const schema = join(directory, 'schema.json');
+		const output = join(directory, 'output.json');
+		await writeFile(schema, JSON.stringify(jsonSchema));
+		await runCodex(
+			resolveCli('codex-cli'),
+			[
+				'exec',
+				'--ignore-user-config',
+				'--ephemeral',
+				'--skip-git-repo-check',
+				'--sandbox',
+				'read-only',
+				'-c',
+				'approval_policy="never"',
+				'-c',
+				'features.shell_tool=false',
+				'-c',
+				`web_search="${allowWebSearch ? 'live' : 'disabled'}"`,
+				'--output-schema',
+				schema,
+				'--output-last-message',
+				output,
+				...(model ? ['--model', model] : []),
+				'-'
+			],
+			directory,
+			`${systemPrompt}\n\n${userPrompt}`
+		);
+		const raw = await readFile(output, 'utf8');
+		let value: unknown = null;
+		try {
+			value = JSON.parse(raw);
+		} catch {
+			// The caller's validator records a useful error and can retry with the
+			// verbatim output. Keeping parsing non-throwing also preserves telemetry.
+		}
+		return { raw, value };
+	} finally {
+		await rm(directory, { recursive: true, force: true });
+	}
+}
+
 export function makeCodexCliAdapter(model?: string): ModelAdapter {
 	return {
 		name: 'codex-cli',
 		model: model ?? 'default',
 		async generate({ action, context, feedback }) {
-			await prepareCliEnvironment();
 			let request = buildUserPrompt(action, context);
 			if (feedback) request += `\n\nPrevious proposal:\n${feedback.raw}\nValidation errors:\n${feedback.errors.join('\n')}\nReturn a corrected change set.`;
-			const directory = await mkdtemp(join(tmpdir(), 'trellis-codex-'));
-			try {
-				const schema = join(directory, 'schema.json');
-				const output = join(directory, 'proposal.json');
-				await writeFile(schema, JSON.stringify(z.toJSONSchema(codexProposalSchema)));
-				await runCodex(resolveCli('codex-cli'), [
-					'exec', '--ignore-user-config', '--ephemeral', '--skip-git-repo-check',
-					'--sandbox', 'read-only', '-c', 'approval_policy="never"',
-					'-c', 'features.shell_tool=false', '-c', 'web_search="live"',
-					'--output-schema', schema, '--output-last-message', output,
-					...(model ? ['--model', model] : []), '-'
-				], directory, `${SYSTEM_PROMPT}\n\nUse only the supplied context, plus the web search tool to fetch URLs from the context or find sources that would ground evidence; use no other tools. For revised thoughts, use null for unchanged fields.\n\n${request}`);
-				const raw = await readFile(output, 'utf8');
-				let proposal: unknown;
-				try {
-					proposal = JSON.parse(raw);
-					const parsed = codexProposalSchema.safeParse(proposal);
-					if (parsed.success) {
-						proposal = { ...parsed.data, operations: parsed.data.operations.map((op) =>
-							op.op === 'revise_thought' ? { ...op, thought: Object.fromEntries(
-								Object.entries(op.thought).filter(([, value]) => value !== null)
-							) } : op
-						) };
-					}
-				} catch { proposal = null; } // Existing validator supplies corrective feedback.
-				return { raw, proposal, request };
-			} finally {
-				await rm(directory, { recursive: true, force: true });
+			const result = await generateCodexStructured({
+				model,
+				systemPrompt:
+					`${SYSTEM_PROMPT}\n\nUse only the supplied context, plus the web search tool to fetch URLs from the context or find sources that would ground evidence; use no other tools. For revised thoughts, use null for unchanged fields.`,
+				userPrompt: request,
+				jsonSchema: z.toJSONSchema(codexProposalSchema),
+				allowWebSearch: true
+			});
+			let proposal = result.value;
+			const parsed = codexProposalSchema.safeParse(proposal);
+			if (parsed.success) {
+				proposal = {
+					...parsed.data,
+					operations: parsed.data.operations.map((op) =>
+						op.op === 'revise_thought'
+							? {
+									...op,
+									thought: Object.fromEntries(
+										Object.entries(op.thought).filter(([, value]) => value !== null)
+									)
+								}
+							: op
+					)
+				};
 			}
+			return { raw: result.raw, proposal, request };
 		}
 	};
 }

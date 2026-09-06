@@ -24,6 +24,9 @@ import {
 	type ThoughtStatus,
 	type ThoughtType,
 	type WorkingSetInfo,
+	type ProseTreatment,
+	type ProseDraftSummary,
+	type ProseStyle,
 	type WorkspaceState
 } from './types';
 
@@ -78,7 +81,15 @@ class Workspace {
 	zoom = $state<'overview' | 'reading'>('overview');
 	/** What the center pane shows: two projections of the working set, plus a
 	 *  graph-wide browse table. View-only, never persisted. */
-	view = $state<'canvas' | 'outline' | 'browse'>('canvas');
+	view = $state<'canvas' | 'outline' | 'browse' | 'prose'>('canvas');
+	prose = $state<ProseTreatment[]>([]);
+	proseGenerating = $state(false);
+	proseDrafts = $state<ProseDraftSummary[]>([]);
+	proseGroupId = $state('');
+	proseStyle = $state<ProseStyle>('overview');
+	private proseListRequest = 0;
+	private proseRequest = 0;
+	private proseLoadRequest = 0;
 	/** Preview positions for proposed cards, keyed `${changeSetId}:${ref}`. View-only, not persisted. */
 	ghostPositions = $state<Record<string, GhostPosition>>({});
 	/** Proposed cards the person dragged themselves. Where they put a card is a
@@ -234,7 +245,19 @@ class Workspace {
 
 	private applyState(s: WorkspaceState) {
 		this.layoutPreview = null;
-		if (s.activeGraphId !== this.activeGraphId) { this.cardSizes = {}; this.ghostPositions = {}; this.handPlaced.clear(); }
+		if (s.activeGraphId !== this.activeGraphId) {
+			this.cardSizes = {};
+			this.ghostPositions = {};
+			this.handPlaced.clear();
+			this.proseRequest++;
+			this.proseLoadRequest++;
+			this.proseGenerating = false;
+			this.prose = [];
+			this.proseDrafts = [];
+			this.proseGroupId = '';
+			this.proseStyle = 'overview';
+			this.proseListRequest++;
+		}
 		this.graphs = s.graphs;
 		this.activeGraphId = s.activeGraphId;
 		this.thoughts = s.thoughts;
@@ -243,6 +266,8 @@ class Workspace {
 		for (const p of s.canvas) positions[p.thoughtId] = { x: p.x, y: p.y };
 		this.positions = positions;
 		this.workingSets = s.workingSets;
+		this.prose = this.prose.filter((draft) => s.workingSets.some((group) => group.id === draft.workingSetId));
+		this.proseDrafts = this.proseDrafts.filter((draft) => s.workingSets.some((group) => group.id === draft.workingSetId));
 		this.activeWorkingSetId = s.activeWorkingSetId;
 		this.workingSet = s.workingSet;
 		this.pinnedThoughtIds = s.pinnedThoughtIds;
@@ -278,6 +303,99 @@ class Workspace {
 				delete this.ghostPositions[key];
 				this.handPlaced.delete(key);
 			}
+		}
+	}
+
+	async loadProseDrafts(): Promise<string | null> {
+		const request = ++this.proseListRequest;
+		const graphId = this.activeGraphId;
+		const knownIds = new Set(this.proseDrafts.map((draft) => draft.id));
+		try {
+			const response = await fetch('/api/prose?list=1');
+			const data = await response.json();
+			if (request !== this.proseListRequest || graphId !== this.activeGraphId) return null;
+			if (!response.ok) return data.error ?? 'Could not load saved drafts.';
+			if (data.graphId === graphId) {
+				// Keep drafts generated while the list was in flight; ids are unique.
+				const added = this.proseDrafts.filter((draft) => !knownIds.has(draft.id));
+				this.proseDrafts = [...added, ...data.drafts.filter((draft: ProseDraftSummary) =>
+					!added.some((item) => item.id === draft.id)
+				)].filter((draft) => this.workingSets.some((group) => group.id === draft.workingSetId));
+			}
+			return null;
+		} catch {
+			return request === this.proseListRequest && graphId === this.activeGraphId ? 'Could not load saved drafts.' : null;
+		}
+	}
+
+	async loadProse(workingSetId: string): Promise<string | null> {
+		const knownIds = new Set(this.prose.map((draft) => draft.id));
+		const request = ++this.proseLoadRequest;
+		const graphId = this.activeGraphId;
+		try {
+			const response = await fetch(`/api/prose?workingSetId=${encodeURIComponent(workingSetId)}`);
+			const data = await response.json().catch(() => ({}));
+			if (request !== this.proseLoadRequest || graphId !== this.activeGraphId) return null;
+			if (!response.ok) return data.error ?? `Could not load prose (${response.status}).`;
+			if (data.graphId !== graphId || data.workingSetId !== workingSetId || !this.workingSets.some((group) => group.id === workingSetId)) return null;
+			const added = this.prose.filter((draft) => draft.workingSetId === workingSetId && !knownIds.has(draft.id));
+			this.prose = [
+				...this.prose.filter((item) => item.workingSetId !== workingSetId),
+				...added,
+				...data.treatments.filter((draft: ProseTreatment) => !added.some((item) => item.id === draft.id))
+			];
+			return null;
+		} catch {
+			return request === this.proseLoadRequest && graphId === this.activeGraphId
+				? 'Could not load saved prose. Check the server and try again.' : null;
+		}
+	}
+
+	async generateProse(workingSetId: string, style: ProseStyle, guidance = ''): Promise<string | null> {
+		if (this.proseGenerating) return 'A prose draft is already generating.';
+		const request = ++this.proseRequest;
+		const graphId = this.activeGraphId;
+		this.proseGenerating = true;
+		try {
+			const response = await fetch('/api/prose', {
+				method: 'POST', headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ workingSetId, style, guidance, selection: this.modelSelection })
+			});
+			const data = await response.json().catch(() => ({}));
+			if (request !== this.proseRequest || graphId !== this.activeGraphId) return null;
+			if (!response.ok) return data.error ?? `Request failed (${response.status}).`;
+			if (data.treatment?.graphId === graphId && data.treatment?.workingSetId === workingSetId) {
+				// Append: earlier drafts of the same group and style stay available.
+				const { id, title, generatedAt } = data.treatment;
+				this.proseDrafts = [
+					{ id, title, generatedAt, workingSetId, style },
+					...this.proseDrafts.filter((item) => item.id !== id)
+				];
+				this.prose = [...this.prose.filter((item) => item.id !== id), data.treatment];
+			}
+			return null;
+		} catch {
+			return request === this.proseRequest && graphId === this.activeGraphId
+				? 'Could not reach the Trellis server.' : null;
+		} finally {
+			if (request === this.proseRequest) this.proseGenerating = false;
+		}
+	}
+
+	/** Delete one saved draft from the slot's history. */
+	async deleteProseDraft(draftId: string): Promise<string | null> {
+		try {
+			const response = await fetch('/api/prose', {
+				method: 'POST', headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ action: 'delete', draftId })
+			});
+			const data = await response.json().catch(() => ({}));
+			if (!response.ok) return data.error ?? `Request failed (${response.status}).`;
+			this.prose = this.prose.filter((item) => item.id !== draftId);
+			this.proseDrafts = this.proseDrafts.filter((item) => item.id !== draftId);
+			return null;
+		} catch {
+			return 'Could not reach the Trellis server.';
 		}
 	}
 

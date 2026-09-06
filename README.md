@@ -31,6 +31,33 @@ end-to-end:
   (dashed cards at the canvas edge) until ratified.
 - **Inspector** — statement, relations, revision history, provenance
   (agent-authored vs. human, edited-from-proposal), and human revision.
+- **Prose view** — turn a group into an Overview, Paper, Blog, or Polemic using
+  the selected agent. Inline thought references open the Inspector while you
+  read. Treatments are saved separately from the graph, with a history of
+  drafts kept for each group and style.
+
+## Read a group as prose
+
+Choose **Prose** in the view switcher, choose a group, select a style, optionally
+add **Writing guidance** (such as “focus on the practical implications”), and click
+**Generate**. Use **Saved drafts** to reopen a treatment from any group in the
+current graph. Prose remembers your group and style when you switch views. The active group is preselected; from All thoughts, choose a group
+explicitly. Generation uses that group's thoughts and internal relations.
+Overview is the default; Paper gives a formal treatment, Blog a conversational
+one, and Polemic a pointed argument that still preserves uncertainty in its
+sources.
+
+References are optional and appear only where useful. Descriptive links use
+`[[description|thought-id]]` or `[description](<thought-id>)`; existing
+`[[thought-id]]` links still work. Click a reference to inspect its statement, relations, and
+history without leaving the prose. Switching styles opens the newest saved
+draft for that style. **Generate new draft** adds to that group and style's
+history; browse earlier drafts with the Newer/Older controls above the title,
+and delete the ones you no longer need.
+Drafts and their writing guidance survive reloads and show a notice when their source material changes.
+They are agent-authored reading artifacts; generating one does not create or
+revise thoughts, relations, or proposals. Offline fixtures also support this
+flow for testing without a model call.
 
 ## Run
 

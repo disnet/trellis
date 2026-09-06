@@ -18,7 +18,7 @@ Success for this phase: the core loop (messy input → agent-proposed structure 
 
 ## Positioning
 
-The agent's response type is a change set, not a string. There is no chat surface: every agent operation returns structured, validated proposed operations that stage for review, and model output can never write directly to accepted state. Neighboring products preserve the transcript (chat tools) or the document (Notion/Obsidian); Trellis preserves ratified thought state with full provenance — who authored each revision, and who accepted it.
+Graph-editing agent operations return structured, validated change sets that stage for review, and model output can never write directly to accepted thought state. There is no chat surface. Prose is a derived reading view of a group, saved separately from that state. Neighboring products preserve the transcript (chat tools) or the document (Notion/Obsidian); Trellis preserves ratified thought state with full provenance — who authored each revision, and who accepted it.
 
 ## Operating Context
 
@@ -32,6 +32,8 @@ The agent's response type is a change set, not a string. There is no chat surfac
 Shipped surfaces: whole-graph infinite pan/zoom canvas of draggable thought cards with typed rendered relations (one canonical layout per graph, two zoom levels), working sets as optional lenses over that canvas (members highlighted, the rest dimmed; base state is "All thoughts", no lens), Scratch composer, Inspector (statement, relations, revision history, provenance, human revision), proposal tray (accept / edit-then-accept / reject, partial acceptance, dependency blocking with cascade rejection, undo of last applied change set, disclosed "consulted" list), Outline projection, Browse and Library views, re-entry panel, pins with pinned rail, multiple isolated graphs with a switcher, model switcher, local-agent setup flow, appearance menu with font switching, JSON export, and web fetch/search for agent operations.
 
 Agent operations: Decompose, Develop, Challenge, Connect — invoked on a selection; context assembly is deterministic (selection + active working set + 1-hop neighborhood; Connect/Challenge additionally run a deterministic graph-wide relevance search whose results are disclosed in the tray and recorded on the change set as `consulted` — retrieval is never invisible). Output is validated server-side (allowed operations, referential integrity, dependency refs, text limits) with one corrective retry; every attempt is logged to `agent_calls` for evaluation.
+
+Prose view: choose an explicit group and generate an Overview, Paper, Blog, or Polemic with the selected model. Treatments and their optional writing guidance are persisted per group and style, with a browsable history of drafts. A Saved drafts picker reopens treatments across the active graph. Optional descriptive inline references open thoughts in the Inspector; prose should read naturally without mechanically discussing or citing notes. Context consists of the group's thoughts and internal relations; prose does not retrieve outside material. Treatments are visibly agent-authored, carry source provenance, and indicate when their sources change. They are derived reading artifacts and never become accepted thoughts through generation alone.
 
 Hard constraints future work must preserve:
 - Model output never mutates canonical graph state; applying a change set is an explicit user action.

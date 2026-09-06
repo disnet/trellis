@@ -2,6 +2,7 @@
 	import { browser } from '$app/environment';
 	import AppDialog from '$lib/components/AppDialog.svelte';
 	import Browse from '$lib/components/Browse.svelte';
+	import Prose from '$lib/components/Prose.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import GraphSwitcher from '$lib/components/GraphSwitcher.svelte';
 	import Canvas from '$lib/components/Canvas.svelte';
@@ -160,6 +161,8 @@
 					<Canvas />
 				{:else if ws.view === 'outline'}
 					<Outline />
+				{:else if ws.view === 'prose'}
+					<Prose />
 				{:else}
 					<Browse />
 				{/if}

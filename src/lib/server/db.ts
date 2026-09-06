@@ -163,6 +163,24 @@ CREATE TABLE IF NOT EXISTS agent_calls (
   change_set_id TEXT,
   created_at INTEGER NOT NULL
 );
+
+-- Generated prose is a derived artifact. Deliberately no foreign key to a
+-- working set: undo restores working-set rows and must not erase treatments.
+-- Every generation appends a draft; a group/style slot keeps its history.
+CREATE TABLE IF NOT EXISTS prose_treatments (
+  id TEXT PRIMARY KEY,
+  graph_id TEXT NOT NULL REFERENCES graphs(id),
+  working_set_id TEXT NOT NULL,
+  style TEXT NOT NULL,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  model TEXT NOT NULL,
+  generated_at INTEGER NOT NULL,
+  source_fingerprint TEXT NOT NULL,
+  source_thought_ids TEXT NOT NULL DEFAULT '[]',
+  guidance TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_prose_slot ON prose_treatments(graph_id, working_set_id, style);
 `;
 
 function open(): Database.Database {
@@ -172,14 +190,54 @@ function open(): Database.Database {
 	db.pragma('journal_mode = WAL');
 	db.pragma('foreign_keys = ON');
 	db.exec(SCHEMA);
+	const proseCols = db.pragma('table_info(prose_treatments)') as { name: string }[];
+	if (!proseCols.some((c) => c.name === 'source_thought_ids'))
+		db.exec("ALTER TABLE prose_treatments ADD COLUMN source_thought_ids TEXT NOT NULL DEFAULT '[]'");
+	if (!proseCols.some((c) => c.name === 'guidance'))
+		db.exec("ALTER TABLE prose_treatments ADD COLUMN guidance TEXT NOT NULL DEFAULT ''");
 	migrateToMultipleWorkingSets(db);
 	migrateToMultipleGraphs(db);
 	migrateToPredictionEvidence(db);
 	migrateToWholeGraphCanvas(db);
 	migrateToConsultedColumn(db);
 	migrateToResizableNotes(db);
+	migrateToProseDraftHistory(db);
 	seedIfEmpty(db);
 	return db;
+}
+
+// Databases created while regeneration replaced a group/style slot carry a
+// UNIQUE(graph_id, working_set_id, style) constraint; drafts now accumulate
+// per slot, so rebuild the table without it (SQLite cannot drop a constraint).
+function migrateToProseDraftHistory(db: Database.Database) {
+	const ddl = db
+		.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'prose_treatments'")
+		.get() as { sql: string } | undefined;
+	if (!ddl?.sql.includes('UNIQUE')) return;
+	db.transaction(() => {
+		db.exec(`
+			ALTER TABLE prose_treatments RENAME TO prose_treatments_old;
+			CREATE TABLE prose_treatments (
+			  id TEXT PRIMARY KEY,
+			  graph_id TEXT NOT NULL REFERENCES graphs(id),
+			  working_set_id TEXT NOT NULL,
+			  style TEXT NOT NULL,
+			  title TEXT NOT NULL,
+			  body TEXT NOT NULL,
+			  model TEXT NOT NULL,
+			  generated_at INTEGER NOT NULL,
+			  source_fingerprint TEXT NOT NULL,
+			  source_thought_ids TEXT NOT NULL DEFAULT '[]',
+			  guidance TEXT NOT NULL DEFAULT ''
+			);
+			INSERT INTO prose_treatments
+				(id, graph_id, working_set_id, style, title, body, model, generated_at, source_fingerprint, source_thought_ids, guidance)
+			  SELECT id, graph_id, working_set_id, style, title, body, model, generated_at, source_fingerprint, source_thought_ids, guidance
+			  FROM prose_treatments_old;
+			DROP TABLE prose_treatments_old;
+			CREATE INDEX IF NOT EXISTS idx_prose_slot ON prose_treatments(graph_id, working_set_id, style);
+		`);
+	})();
 }
 
 // Databases created before the whole-graph canvas keep coordinates on

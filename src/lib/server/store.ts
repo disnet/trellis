@@ -6,6 +6,8 @@
 import crypto from 'node:crypto';
 import { activeGraphId, activeWorkingSetId, db } from './db';
 import { generateProposal, linkCallToChangeSet } from './agent';
+import { generateTreatment, type ProseInput } from './agent/prose';
+import { defaultSelection } from './agent/settings';
 import type { ModelSelection } from '$lib/models';
 import {
 	RELATION_TYPES,
@@ -39,10 +41,13 @@ import {
 	type ThoughtType,
 	type CanvasNote,
 	type CanvasPosition,
-	type WorkspaceState
+	type WorkspaceState,
+	type ProseTreatment,
+	type ProseStyle
 } from '$lib/types';
 
 const id = (prefix: string) => `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
+const proseGenerationSlots = new Map<string, symbol>();
 
 // --- meta helpers ---
 
@@ -629,7 +634,7 @@ export function applyChangeSet(
 			return { error: 'Invalid layout adjustment.' };
 		}
 	}
-	const snapshot = JSON.stringify(exportState(graphId));
+	const snapshot = JSON.stringify(exportState(graphId, { includeProse: false }));
 
 	const now = Date.now();
 	const activeSet = activeWorkingSetId(graphId);
@@ -1134,13 +1139,149 @@ export function openNeighborhood(thoughtId: string): string | null {
 	return null;
 }
 
-/** Delete a working set (its membership only — thoughts stay in the graph).
- *  Deleting the active one returns to the base state: whole graph, no lens. */
+/** Load only the requested group's drafts; canvas mutations never carry prose bodies. */
+export function getProseTreatments(workingSetId: string): ProseTreatment[] {
+	const graphId = activeGraphId();
+	if (!db.prepare('SELECT 1 FROM working_sets WHERE id = ? AND graph_id = ?').get(workingSetId, graphId))
+		return [];
+	const fingerprint = proseFingerprint(graphId, workingSetId);
+	return (
+		// rowid breaks generated_at ties (drafts can land in the same millisecond).
+		db.prepare('SELECT * FROM prose_treatments WHERE graph_id = ? AND working_set_id = ? ORDER BY generated_at DESC, rowid DESC')
+			.all(graphId, workingSetId) as any[]
+	).map((row): ProseTreatment => ({
+		id: row.id,
+		graphId: row.graph_id,
+		workingSetId: row.working_set_id,
+		style: row.style,
+		title: row.title,
+		body: row.body,
+		model: row.model,
+		guidance: row.guidance ?? '',
+		generatedAt: row.generated_at,
+		sourceFingerprint: row.source_fingerprint,
+		sourceThoughtIds: JSON.parse(row.source_thought_ids),
+		stale: fingerprint !== row.source_fingerprint
+	}));
+
+}
+
+/** Lightweight graph-scoped index for reopening saved drafts. */
+export function listProseDrafts(): { id: string; workingSetId: string; style: ProseStyle; title: string; generatedAt: number }[] {
+	const graphId = activeGraphId();
+	return (db.prepare(
+		'SELECT id, working_set_id, style, title, generated_at FROM prose_treatments WHERE graph_id = ? ORDER BY generated_at DESC, rowid DESC'
+	).all(graphId) as any[]).map((row) => ({
+		id: row.id, workingSetId: row.working_set_id, style: row.style as ProseStyle,
+		title: row.title, generatedAt: row.generated_at
+	}));
+}
+
+// Prose is derived from a captured source snapshot, separate from graph edits.
+function proseSource(graphId: string, workingSetId: string) {
+	const rows = db.prepare(`
+		SELECT t.id, t.type, t.status, t.title, t.statement, t.confidence, t.source
+		FROM thoughts t JOIN working_set_items w ON w.thought_id = t.id
+		WHERE w.working_set_id = ? AND t.graph_id = ? ORDER BY t.id
+	`).all(workingSetId, graphId) as (Pick<Thought, 'id' | 'type' | 'status' | 'title' | 'statement'> & {
+		confidence: string | null; source: string | null;
+	})[];
+	const thoughts: ProseInput['thoughts'] = rows.map((row) => ({
+		...row,
+		confidence: row.confidence ? JSON.parse(row.confidence) : undefined,
+		source: row.source ?? undefined
+	}));
+	const relations = db.prepare(`
+		SELECT r.from_thought_id AS "from", r.to_thought_id AS "to", r.type
+		FROM relations r
+		JOIN working_set_items a ON a.thought_id = r.from_thought_id AND a.working_set_id = ?
+		JOIN working_set_items b ON b.thought_id = r.to_thought_id AND b.working_set_id = ?
+		WHERE r.graph_id = ? ORDER BY r.from_thought_id, r.to_thought_id, r.type
+	`).all(workingSetId, workingSetId, graphId) as ProseInput['relations'];
+	const group = db.prepare('SELECT name FROM working_sets WHERE id = ? AND graph_id = ?').get(workingSetId, graphId) as { name: string } | undefined;
+	return { thoughts, relations, groupName: group?.name ?? '' };
+}
+
+function fingerprintSource(source: ReturnType<typeof proseSource>): string {
+	return crypto.createHash('sha256').update(JSON.stringify(source)).digest('hex');
+}
+
+function proseFingerprint(graphId: string, workingSetId: string): string {
+	return fingerprintSource(proseSource(graphId, workingSetId));
+}
+
+/** Persist the latest requested draft in its original graph/group/style slot. */
+export async function generateProse(
+	workingSetId: string,
+	style: ProseStyle,
+	selection?: ModelSelection,
+	guidance = ''
+): Promise<{ error: string } | { treatment: ProseTreatment }> {
+	const graphId = activeGraphId();
+	if (!['overview', 'paper', 'blog', 'polemic'].includes(style))
+		return { error: 'Unknown prose style.' };
+	const group = db.prepare('SELECT name FROM working_sets WHERE id = ? AND graph_id = ?')
+		.get(workingSetId, graphId) as { name: string } | undefined;
+	if (!group) return { error: 'Unknown group.' };
+	const source = proseSource(graphId, workingSetId);
+	if (!source.thoughts.length) return { error: 'This group has no thoughts to write from.' };
+
+	const fingerprint = fingerprintSource(source);
+	const slot = JSON.stringify([graphId, workingSetId, style]);
+	const generation = Symbol();
+	proseGenerationSlots.set(slot, generation);
+	try {
+		const generated = await generateTreatment(
+			{ style, guidance, ...source }, selection ?? defaultSelection()
+		);
+		if (proseGenerationSlots.get(slot) !== generation)
+			return { error: 'A newer prose request replaced this one.' };
+		if (!db.prepare('SELECT 1 FROM working_sets WHERE id = ? AND graph_id = ?').get(workingSetId, graphId))
+			return { error: 'This group was removed while prose was generating.' };
+
+		const treatment: ProseTreatment = {
+			id: id('prose'), graphId, workingSetId, style,
+			title: generated.title, body: generated.body,
+			model: `${generated.adapter}:${generated.model}`,
+			guidance,
+			generatedAt: Date.now(),
+			sourceFingerprint: fingerprint,
+			sourceThoughtIds: source.thoughts.map((thought) => thought.id),
+			stale: proseFingerprint(graphId, workingSetId) !== fingerprint
+		};
+		// Append-only: every generation adds a draft and the slot keeps its history.
+		db.prepare(`
+			INSERT INTO prose_treatments
+				(id, graph_id, working_set_id, style, title, body, model, generated_at, source_fingerprint, source_thought_ids, guidance)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`).run(
+			treatment.id, graphId, workingSetId, style, treatment.title, treatment.body,
+			treatment.model, treatment.generatedAt, fingerprint, JSON.stringify(treatment.sourceThoughtIds), guidance
+		);
+		return { treatment };
+	} catch (error) {
+		return { error: error instanceof Error ? error.message : 'Prose generation failed.' };
+	} finally {
+		if (proseGenerationSlots.get(slot) === generation) proseGenerationSlots.delete(slot);
+	}
+}
+
+/** Delete one saved draft — pruning history never touches the graph. */
+export function deleteProseDraft(draftId: string): string | null {
+	const changed = db
+		.prepare('DELETE FROM prose_treatments WHERE id = ? AND graph_id = ?')
+		.run(draftId, activeGraphId()).changes;
+	return changed ? null : 'Unknown draft.';
+}
+
+/** Delete a working set and its derived prose; thoughts stay in the graph.
+ * Deleting the active group returns to All thoughts. */
 export function deleteWorkingSet(wsId: string): string | null {
 	const graphId = activeGraphId();
 	if (!db.prepare('SELECT 1 FROM working_sets WHERE id = ? AND graph_id = ?').get(wsId, graphId))
 		return 'Unknown group.';
 	db.transaction(() => {
+		db.prepare('DELETE FROM prose_treatments WHERE graph_id = ? AND working_set_id = ?').run(graphId, wsId);
 		db.prepare('DELETE FROM working_set_items WHERE working_set_id = ?').run(wsId);
 		db.prepare('DELETE FROM working_sets WHERE id = ?').run(wsId);
 		if (getMeta(`active_working_set:${graphId}`) === wsId)
@@ -1226,7 +1367,7 @@ export function updateCanvasPositions(
 
 /** JSON dump of one graph's persisted state (default: the active graph), for
  *  recovery, debugging, and undo snapshots. Per-graph, per docs/design.md Phase 5. */
-export function exportState(graphId: string = activeGraphId()) {
+export function exportState(graphId: string = activeGraphId(), { includeProse = true } = {}) {
 	const graph = db.prepare('SELECT * FROM graphs WHERE id = ?').get(graphId) as any;
 	return {
 		exportedAt: Date.now(),
@@ -1273,7 +1414,11 @@ export function exportState(graphId: string = activeGraphId()) {
 			.all(graphId),
 		scratch_notes: db
 			.prepare('SELECT * FROM scratch_notes WHERE graph_id = ? ORDER BY created_at, rowid')
-			.all(graphId)
+			.all(graphId),
+		// Undo preserves live drafts, so internal snapshots can omit these bodies.
+		prose_treatments: includeProse
+			? db.prepare('SELECT * FROM prose_treatments WHERE graph_id = ? ORDER BY generated_at, rowid').all(graphId)
+			: []
 	};
 }
 
@@ -1288,6 +1433,10 @@ function restore(graphId: string, snapshot: ReturnType<typeof exportState>) {
 		}
 	};
 	db.transaction(() => {
+		// Treatments are derived reading artifacts, not part of a ratified graph
+		// change. Preserve those whose group still exists after restore; a missing
+		// group makes its treatment impossible to open, so clean it up explicitly.
+		const treatmentRows = db.prepare('SELECT * FROM prose_treatments WHERE graph_id = ?').all(graphId) as any[];
 		// Pins are attention state no change set can touch, so undoing an apply
 		// keeps the *current* pins rather than reverting to the snapshot's —
 		// minus any pin whose thought does not survive the restore.
@@ -1316,6 +1465,8 @@ function restore(graphId: string, snapshot: ReturnType<typeof exportState>) {
 		insert('relations', snapshot.relations as any[]);
 		insert('working_sets', snapshot.working_sets as any[]);
 		insert('working_set_items', snapshot.working_set_items as any[]);
+		const restoredSets = new Set((snapshot.working_sets as any[]).map((s) => s.id));
+		for (const prose of treatmentRows) if (!restoredSets.has(prose.working_set_id)) db.prepare('DELETE FROM prose_treatments WHERE id = ?').run(prose.id);
 		insert('canvas_positions', snapshot.canvas_positions as any[]);
 		insert('change_sets', snapshot.change_sets as any[]);
 		insert('proposed_operations', snapshot.proposed_operations as any[]);

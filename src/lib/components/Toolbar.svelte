@@ -229,6 +229,15 @@
 			>
 				<Icon name="browse" /><span class="label">Browse</span>
 			</button>
+			<button
+				class:active={ws.view === 'prose'}
+				title="Read a group as agent-generated prose"
+				aria-label="Prose"
+				aria-pressed={ws.view === 'prose'}
+				onclick={() => (ws.view = 'prose')}
+			>
+				<span aria-hidden="true">¶</span><span class="label">Prose</span>
+			</button>
 		</div>
 		{#if utilsInMenu}
 			<div class="menu" bind:this={moreMenuEl}>

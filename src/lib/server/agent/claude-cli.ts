@@ -18,7 +18,7 @@ import { SYSTEM_PROMPT, buildUserPrompt } from './prompt';
 import { proposalSchema } from './wire';
 
 // The CLI's --json-schema validator speaks draft-07.
-const JSON_SCHEMA = JSON.stringify(z.toJSONSchema(proposalSchema, { target: 'draft-7' }));
+const JSON_SCHEMA = z.toJSONSchema(proposalSchema, { target: 'draft-7' });
 
 const TIMEOUT_MS = 180_000;
 
@@ -70,6 +70,105 @@ function parseResultJson(text: string): unknown {
 	return JSON.parse(stripped);
 }
 
+export interface ClaudeStructuredRequest {
+	model?: string;
+	systemPrompt: string;
+	userPrompt: string;
+	/** A draft-07-compatible JSON schema. */
+	jsonSchema: object;
+	/** Proposal generation may browse; closed-context prose passes false. */
+	allowWebTools: boolean;
+}
+
+export interface ClaudeStructuredResult {
+	raw: string;
+	value: unknown;
+	parseError?: string;
+	usage?: string;
+}
+
+/**
+ * Run one isolated Claude CLI structured-output request. Parsing failures are
+ * returned with the raw output so an orchestrator can log them and, where
+ * appropriate, issue a corrective retry. Transport and authentication errors
+ * still throw because repeating the same request cannot repair them.
+ */
+export async function generateClaudeStructured({
+	model = 'sonnet',
+	systemPrompt,
+	userPrompt,
+	jsonSchema,
+	allowWebTools
+}: ClaudeStructuredRequest): Promise<ClaudeStructuredResult> {
+	await prepareCliEnvironment();
+	const bin = resolveCli('claude-cli');
+	const webTools = allowWebTools ? 'WebFetch,WebSearch' : '';
+	const stdout = await runClaude(
+		bin,
+		[
+			'-p',
+			'--output-format',
+			'json',
+			'--model',
+			model,
+			'--tools',
+			webTools,
+			'--allowed-tools',
+			webTools,
+			'--setting-sources',
+			'',
+			'--strict-mcp-config',
+			'--no-session-persistence',
+			'--system-prompt',
+			systemPrompt,
+			'--json-schema',
+			JSON.stringify(jsonSchema)
+		],
+		userPrompt
+	);
+
+	let envelope: CliEnvelope;
+	try {
+		envelope = JSON.parse(stdout) as CliEnvelope;
+	} catch {
+		return {
+			raw: stdout,
+			value: null,
+			parseError: `claude -p returned unparseable output: ${stdout.slice(0, 200)}`
+		};
+	}
+	if (envelope.is_error) {
+		const msg = envelope.result ?? 'unknown CLI error';
+		throw new Error(
+			/authenticat/i.test(msg)
+				? `${msg} — run \`claude\` in a terminal to refresh the login.`
+				: msg
+		);
+	}
+
+	const raw =
+		envelope.structured_output !== undefined
+			? JSON.stringify(envelope.structured_output)
+			: (envelope.result ?? '');
+	let value: unknown = envelope.structured_output;
+	let parseError: string | undefined;
+	if (value === undefined) {
+		try {
+			value = parseResultJson(envelope.result ?? '');
+		} catch {
+			value = null;
+			parseError = `claude -p returned no structured output and its result was not JSON: ${raw.slice(0, 200)}`;
+		}
+	}
+
+	const u = envelope.usage;
+	const usage = u
+		? `${u.input_tokens ?? '?'} in / ${u.output_tokens ?? '?'} out tokens` +
+			(envelope.total_cost_usd ? `, $${envelope.total_cost_usd.toFixed(4)}` : '')
+		: undefined;
+	return { raw, value, parseError, usage };
+}
+
 export function makeClaudeCliAdapter(model = 'sonnet'): ModelAdapter {
 	// The CLI accepts aliases (sonnet, opus, haiku) as well as full model ids.
 
@@ -77,8 +176,6 @@ export function makeClaudeCliAdapter(model = 'sonnet'): ModelAdapter {
 		name: 'claude-cli',
 		model,
 		async generate({ action, context, feedback }) {
-			await prepareCliEnvironment();
-			const bin = resolveCli('claude-cli');
 			let userPrompt = buildUserPrompt(action, context);
 			if (feedback) {
 				// -p is single-turn; the corrective retry is folded into the prompt.
@@ -88,69 +185,22 @@ export function makeClaudeCliAdapter(model = 'sonnet'): ModelAdapter {
 					`Return a corrected change set.`;
 			}
 
-			const stdout = await runClaude(
-				bin,
-				[
-					'-p',
-					'--output-format',
-					'json',
-					'--model',
-					model,
-					// Web tools only: -p auto-denies tools that lack permission, so
-					// they must be both in the tool set and pre-approved.
-					'--tools',
-					'WebFetch,WebSearch',
-					'--allowed-tools',
-					'WebFetch,WebSearch',
-					'--setting-sources',
-					'',
-					'--strict-mcp-config',
-					'--no-session-persistence',
-					'--system-prompt',
-					SYSTEM_PROMPT,
-					'--json-schema',
-					JSON_SCHEMA
-				],
-				userPrompt
-			);
-
-			let envelope: CliEnvelope;
-			try {
-				envelope = JSON.parse(stdout) as CliEnvelope;
-			} catch {
-				throw new Error(`claude -p returned unparseable output: ${stdout.slice(0, 200)}`);
-			}
-			if (envelope.is_error) {
-				const msg = envelope.result ?? 'unknown CLI error';
-				throw new Error(
-					/authenticat/i.test(msg)
-						? `${msg} — run \`claude\` in a terminal to refresh the login.`
-						: msg
-				);
-			}
-
-			// Structured output lands in structured_output on current CLIs; fall
-			// back to parsing the result text so a CLI change degrades gracefully
-			// (our validator judges the payload either way).
-			let proposal: unknown = envelope.structured_output;
-			const raw =
-				proposal !== undefined ? JSON.stringify(proposal) : (envelope.result ?? '');
-			if (proposal === undefined) {
-				try {
-					proposal = parseResultJson(envelope.result ?? '');
-				} catch {
-					throw new Error(
-						`claude -p returned no structured output and its result was not JSON: ${raw.slice(0, 200)}`
-					);
-				}
-			}
-
-			const u = envelope.usage;
-			const usage = u
-				? `${u.input_tokens ?? '?'} in / ${u.output_tokens ?? '?'} out tokens` +
-					(envelope.total_cost_usd ? `, $${envelope.total_cost_usd.toFixed(4)}` : '')
-				: undefined;
-			return { raw, proposal, request: userPrompt, usage };
+			const result = await generateClaudeStructured({
+				model,
+				systemPrompt: SYSTEM_PROMPT,
+				userPrompt,
+				jsonSchema: JSON_SCHEMA,
+				allowWebTools: true
+			});
+			// Preserve the proposal adapter's prior error behavior. Prose uses the
+			// parseError as validation feedback and can therefore repair it.
+			if (result.parseError) throw new Error(result.parseError);
+			return {
+				raw: result.raw,
+				proposal: result.value,
+				request: userPrompt,
+				usage: result.usage
+			};
 		}
 	};
 }

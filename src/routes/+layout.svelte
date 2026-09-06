@@ -119,5 +119,10 @@
 		--fs-15: calc(15px * var(--font-scale));
 		--fs-16: calc(16px * var(--font-scale));
 		--fs-17: calc(17px * var(--font-scale));
+		--fs-18: calc(18px * var(--font-scale));
+		--fs-20: calc(20px * var(--font-scale));
+		--fs-22: calc(22px * var(--font-scale));
+		--fs-28: calc(28px * var(--font-scale));
+		--fs-30: calc(30px * var(--font-scale));
 	}
 </style>

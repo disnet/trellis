@@ -13,6 +13,7 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
+import type { ZodType } from 'zod';
 import type { AgentAction } from '$lib/types';
 import type { AgentContext } from './context';
 import { makeClaudeCliAdapter } from './claude-cli';
@@ -79,6 +80,57 @@ function serverTools(model: string): Anthropic.ToolUnion[] {
 			];
 }
 
+export interface AnthropicStructuredRequest {
+	client?: Anthropic;
+	model: string;
+	maxTokens: number;
+	systemPrompt: string;
+	messages: Anthropic.MessageParam[];
+	schema: ZodType;
+	/** Graph proposals can browse; closed-context prose passes false. */
+	allowWebTools: boolean;
+}
+
+export interface AnthropicStructuredResult {
+	raw: string;
+	value: unknown;
+	usage: string;
+}
+
+/** Shared Anthropic structured-output transport for graph and prose calls. */
+export async function generateAnthropicStructured({
+	client = new Anthropic({ timeout: 180_000 }),
+	model,
+	maxTokens,
+	systemPrompt,
+	messages,
+	schema,
+	allowWebTools
+}: AnthropicStructuredRequest): Promise<AnthropicStructuredResult> {
+	const common = {
+		model,
+		max_tokens: maxTokens,
+		system: systemPrompt,
+		messages,
+		output_config: { format: zodOutputFormat(schema) }
+	};
+	// Omit the tools property completely for closed-context work. This is both
+	// stricter and easier to audit than passing an empty or disabled tool list.
+	const response = await client.messages.parse(
+		allowWebTools ? { ...common, tools: serverTools(model) } : common
+	);
+	const raw = response.content
+		.filter((b): b is Anthropic.TextBlock => b.type === 'text')
+		.map((b) => b.text)
+		.join('');
+	const u = response.usage;
+	return {
+		raw,
+		value: response.parsed_output,
+		usage: `${u.input_tokens} in / ${u.output_tokens} out tokens`
+	};
+}
+
 export function makeLiveAdapter(model = 'claude-sonnet-5'): ModelAdapter {
 	// Localhost tool: fail visibly after three minutes (matching the CLI
 	// adapters — web fetches add latency) rather than hanging the UI.
@@ -102,25 +154,20 @@ export function makeLiveAdapter(model = 'claude-sonnet-5'): ModelAdapter {
 				);
 			}
 
-			const response = await client.messages.parse({
+			const response = await generateAnthropicStructured({
+				client,
 				model,
-				max_tokens: 16000,
-				system: SYSTEM_PROMPT,
+				maxTokens: 16000,
+				systemPrompt: SYSTEM_PROMPT,
 				messages,
-				tools: serverTools(model),
-				output_config: { format: zodOutputFormat(proposalSchema) }
+				schema: proposalSchema,
+				allowWebTools: true
 			});
-
-			const raw = response.content
-				.filter((b): b is Anthropic.TextBlock => b.type === 'text')
-				.map((b) => b.text)
-				.join('');
-			const u = response.usage;
 			return {
-				raw,
-				proposal: response.parsed_output,
+				raw: response.raw,
+				proposal: response.value,
 				request: userPrompt,
-				usage: `${u.input_tokens} in / ${u.output_tokens} out tokens`
+				usage: response.usage
 			};
 		}
 	};
