@@ -1,5 +1,12 @@
 <script lang="ts">
-	import { formatConfidence, type ActorType, type Confidence, type ThoughtStatus, type ThoughtType } from '$lib/types';
+	import {
+		formatConfidence,
+		type ActorType,
+		type Confidence,
+		type OperationDecision,
+		type ThoughtStatus,
+		type ThoughtType
+	} from '$lib/types';
 	import Icon from './Icon.svelte';
 
 	interface Props {
@@ -25,6 +32,15 @@
 		dimmed?: boolean;
 		/** 'proposed' = new content awaiting ratification. */
 		ghost?: 'proposed' | null;
+		/** Review state of the operation behind a proposed card. */
+		decision?: OperationDecision;
+		/** Why accepting is blocked, when it is (a rejected dependency). */
+		blocked?: string | null;
+		/** Ratify this proposal from the canvas; omit to review it only in the tray. */
+		ondecide?: (decision: OperationDecision) => void;
+		/** Freeze the controls (a placement preview or an apply is in flight)
+		 *  without removing them — the card must not change height mid-layout. */
+		reviewBusy?: boolean;
 		provenance: ActorType;
 		relationSummary?: string;
 		/** Forced drag styling — set on the rest of the selection during a group drag. */
@@ -55,6 +71,10 @@
 		pinned = false,
 		dimmed = false,
 		ghost = null,
+		decision = 'pending',
+		blocked = null,
+		ondecide,
+		reviewBusy = false,
 		provenance,
 		relationSummary,
 		dragging = false,
@@ -120,11 +140,15 @@
 	class:dimmed
 	class:reading={zoom === 'reading'}
 	class:layout-moving={animate}
+	class:accepted={ghost === 'proposed' && decision === 'accepted'}
+	class:rejected={ghost === 'proposed' && decision === 'rejected'}
 	style="left: 0; top: 0; transform: translate({x}px, {y}px); width: {width}px;"
 	onpointerdown={onpointerdown}
 	role="button"
 	tabindex="0"
 	onkeydown={(e) => {
+		// Only the card itself: Enter on a review button must ratify, not select.
+		if (e.target !== e.currentTarget) return;
 		if (e.key === 'Enter' || e.key === ' ') {
 			e.preventDefault();
 			onselect?.(e.shiftKey);
@@ -135,7 +159,9 @@
 		<span class="type type-{type}">{type}</span>
 		{#if pinned}<span class="pin" title="Pinned">⚑</span>{/if}
 		{#if ghost === 'proposed'}
-			<span class="badge proposed-badge">◇ proposed</span>
+			<span class="badge proposed-badge" class:decided={decision !== 'pending'}>
+				{decision === 'accepted' ? '✓ accepted' : decision === 'rejected' ? '✕ rejected' : '◇ proposed'}
+			</span>
 		{:else}
 			<span class="badge actor">{provenance === 'agent' ? '✳ agent' : '✎ you'}</span>
 		{/if}
@@ -163,6 +189,37 @@
 			<span class="confidence" title="Confidence">{formatConfidence(confidence)}</span>
 		{/if}
 	</div>
+	{#if ghost === 'proposed' && ondecide}
+		<!-- Ratification where the thought is: the same decision the tray makes,
+		     taken in place. Applying still happens once, for the whole batch. -->
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div class="review" onpointerdown={(e) => e.stopPropagation()}>
+			{#if decision === 'pending'}
+				<button
+					class="accept"
+					disabled={blocked !== null || reviewBusy}
+					title={blocked ?? 'Accept this proposal'}
+					onclick={() => ondecide('accepted')}>✓ Accept</button
+				>
+				<button
+					class="reject"
+					disabled={reviewBusy}
+					title="Reject this proposal"
+					onclick={() => ondecide('rejected')}>✕ Reject</button
+				>
+			{:else}
+				<button
+					class="undo"
+					disabled={reviewBusy}
+					title="Return this proposal to the review queue"
+					onclick={() => ondecide('pending')}>Reconsider</button
+				>
+			{/if}
+		</div>
+		{#if blocked && decision === 'pending'}
+			<p class="blocked">{blocked}</p>
+		{/if}
+	{/if}
 </div>
 
 <style>
@@ -197,6 +254,31 @@
 		border-style: dashed;
 		border-color: var(--gold);
 		background: var(--parchment);
+	}
+	/* Decided, not yet applied: gold gives way to the verdict, but the border
+	   stays dashed — nothing has entered the graph until the batch is applied. */
+	.card.proposed.accepted {
+		border-color: var(--accept-green);
+		background: var(--accept-fill);
+	}
+	.card.proposed.rejected {
+		border-color: var(--control-border);
+		background: var(--inset-fill);
+		opacity: 0.5;
+	}
+	.card.proposed.rejected:hover,
+	.card.proposed.rejected.selected {
+		opacity: 1;
+	}
+	.card.proposed.rejected .title {
+		text-decoration: line-through;
+		text-decoration-color: var(--ink-quiet);
+		color: var(--ink-muted);
+	}
+	/* Selection outranks the proposal's own colors, on any verdict: this is the
+	   card the tray is showing. */
+	.card.proposed.selected {
+		border-color: var(--blue);
 	}
 	/* Outside the active lens: present (spatial memory intact) but quiet.
 	   Opacity, not color alone — and selection/hover lift the veil. */
@@ -241,6 +323,8 @@
 		color: var(--gold-ink);
 	}
 	.proposed-badge { color: var(--gold-ink); font-weight: 700; }
+	.card.accepted .proposed-badge.decided { color: var(--moss-ink); }
+	.card.rejected .proposed-badge.decided { color: var(--ink-muted); }
 	.title {
 		font-weight: 600;
 		line-height: 1.25;
@@ -303,6 +387,58 @@
 		color: var(--plum-ink);
 		background: var(--confidence-fill);
 		white-space: nowrap;
+	}
+	.review {
+		display: flex;
+		gap: 6px;
+		margin-top: 8px;
+		padding-top: 6px;
+		border-top: 1px solid var(--divider);
+		cursor: default;
+	}
+	.review button {
+		flex: 1;
+		font: inherit;
+		font-size: var(--fs-11);
+		font-weight: 600;
+		border: 1px solid var(--control-border);
+		background: var(--card-white);
+		color: var(--ink-soft);
+		border-radius: 6px;
+		padding: 3px 8px;
+		cursor: pointer;
+		white-space: nowrap;
+	}
+	.review button:disabled {
+		opacity: 0.45;
+		cursor: not-allowed;
+	}
+	.review .accept {
+		border-color: var(--accept-green);
+		color: var(--moss-ink);
+	}
+	.review .accept:hover:not(:disabled) {
+		background: var(--accept-fill);
+	}
+	.review .reject {
+		color: var(--clay-ink);
+	}
+	.review .reject:hover:not(:disabled) {
+		border-color: var(--rust);
+		color: var(--rust);
+	}
+	.review .undo:hover {
+		border-color: var(--blue);
+		color: var(--blue);
+	}
+	.blocked {
+		margin: 6px 0 0;
+		font-size: var(--fs-10);
+		color: var(--rust);
+		background: var(--rust-wash);
+		border-radius: 4px;
+		padding: 3px 6px;
+		line-height: 1.35;
 	}
 	.source {
 		margin-top: 6px;

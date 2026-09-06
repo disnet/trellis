@@ -79,6 +79,10 @@ class Workspace {
 	view = $state<'canvas' | 'outline' | 'browse'>('canvas');
 	/** Preview positions for proposed cards, keyed `${changeSetId}:${ref}`. View-only, not persisted. */
 	ghostPositions = $state<Record<string, GhostPosition>>({});
+	/** Proposed cards the person dragged themselves. Where they put a card is a
+	 *  decision like any other: staging never reflows it, and applying keeps it
+	 *  exactly there, opening the map around it instead. */
+	private handPlaced = new Set<string>();
 	/** Measured geometry belongs to the projection, never the thought. */
 	cardSizes = $state<Record<string, { width: number; height: number; zoom: string; fontScale: number }>>({});
 	layoutPreview = $state<{ csId: string; existing: Record<string, GhostPosition>; ghosts: Record<string, GhostPosition>; moved: number } | null>(null);
@@ -124,6 +128,9 @@ class Workspace {
 			const cs = this.pendingChangeSets.find(cs => id.startsWith(`${cs.id}:`));
 			const op = cs?.operations.find(op => `${cs.id}:${op.clientRef}` === id);
 			if (!op || op.decision === 'rejected') continue;
+			// Never re-stage a card the person placed: it stays put and the rest
+			// of the staging works around it.
+			if (this.handPlaced.has(id)) { taken.push({ id, ...pos, ...this.cardSize(id) }); continue; }
 			const size = this.cardSize(id);
 			const next = openPosition(taken, size, pos);
 			this.ghostPositions[id] = next;
@@ -144,6 +151,8 @@ class Workspace {
 	private planPlacement(cs: ChangeSet) {
 		const additions: LayoutRect[] = [];
 		const links: { from: string; to: string }[] = [];
+		/** Accepted cards the person already placed: applying honors those spots. */
+		const pinned: string[] = [];
 		const resolve = (ref: string) => this.thoughts[ref] ? ref : `${cs.id}:${ref}`;
 		for (const op of cs.operations) {
 			if (op.decision !== 'accepted') continue;
@@ -151,6 +160,7 @@ class Workspace {
 			if (p.op === 'create_thought') {
 				const id = resolve(op.clientRef);
 				additions.push({ id, ...(this.ghostPositions[id] ?? { x: 80, y: 60 }), ...this.cardSize(id) });
+				if (this.handPlaced.has(id)) pinned.push(id);
 			} else if (p.op === 'add_relation') links.push({ from: resolve(p.from), to: resolve(p.to) });
 		}
 		const existing = this.layoutRects();
@@ -158,7 +168,7 @@ class Workspace {
 		for (const [id, pos] of Object.entries(this.ghostPositions)) {
 			if (!id.startsWith(`${cs.id}:`) && this.pendingChangeSets.some(batch => batch.operations.some(op => `${batch.id}:${op.clientRef}` === id && op.decision !== 'rejected'))) existing.push({ id, ...pos, ...this.cardSize(id) });
 		}
-		const layout = expandLayout(existing, additions, links, cs.invokedOn);
+		const layout = expandLayout(existing, additions, links, cs.invokedOn, pinned);
 		const positions: Record<string, GhostPosition> = {};
 		const ghosts = { ...this.ghostPositions };
 		let moved = 0;
@@ -211,7 +221,7 @@ class Workspace {
 
 	private applyState(s: WorkspaceState) {
 		this.layoutPreview = null;
-		if (s.activeGraphId !== this.activeGraphId) { this.cardSizes = {}; this.ghostPositions = {}; }
+		if (s.activeGraphId !== this.activeGraphId) { this.cardSizes = {}; this.ghostPositions = {}; this.handPlaced.clear(); }
 		this.graphs = s.graphs;
 		this.activeGraphId = s.activeGraphId;
 		this.thoughts = s.thoughts;
@@ -232,10 +242,19 @@ class Workspace {
 		// round-trip lands here — accepting a proposal must not steal the panel.
 		const surviving = this.selectedIds.filter((id) => id in s.thoughts);
 		if (surviving.length !== this.selectedIds.length) this.selectedIds = surviving;
+		// A ratified or dismissed batch takes its proposals with it.
+		if (
+			this.selectedProposalId !== null &&
+			!s.pendingChangeSets.some((cs) => cs.operations.some((op) => op.id === this.selectedProposalId))
+		)
+			this.selectedProposalId = null;
 		for (const cs of s.pendingChangeSets) this.ensureGhosts(cs);
 		for (const key of Object.keys(this.ghostPositions)) {
 			const csId = key.slice(0, key.indexOf(':'));
-			if (!s.pendingChangeSets.some((cs) => cs.id === csId)) delete this.ghostPositions[key];
+			if (!s.pendingChangeSets.some((cs) => cs.id === csId)) {
+				delete this.ghostPositions[key];
+				this.handPlaced.delete(key);
+			}
 		}
 	}
 
@@ -262,6 +281,7 @@ class Workspace {
 	// --- selection ---
 
 	select(id: string, additive = false) {
+		this.selectedProposalId = null;
 		if (additive) {
 			this.selectedIds = this.selectedIds.includes(id)
 				? this.selectedIds.filter((s) => s !== id)
@@ -274,11 +294,28 @@ class Workspace {
 	/** Replace the selection with `ids`, or union them in when additive. */
 	selectMany(ids: string[], additive = false) {
 		const valid = ids.filter((id) => id in this.thoughts);
+		this.selectedProposalId = null;
 		this.selectedIds = additive ? [...new Set([...this.selectedIds, ...valid])] : valid;
 	}
 
 	clearSelection() {
 		this.selectedIds = [];
+		this.selectedProposalId = null;
+	}
+
+	// --- proposal selection ---
+	// A proposal is not a thought, so it gets its own selection: picking one on
+	// the canvas is how you ask the tray to show you its rationale and evidence.
+
+	/** Operation id of the proposal selected on the canvas, or null. */
+	selectedProposalId = $state<string | null>(null);
+	/** Bumped on every reveal so re-picking the same proposal scrolls again. */
+	proposalReveal = $state(0);
+
+	selectProposal(opId: string) {
+		this.selectedIds = [];
+		this.selectedProposalId = opId;
+		this.proposalReveal++;
 	}
 
 	// --- canvas (positions update locally, persisted with a debounce) ---
@@ -558,7 +595,9 @@ class Workspace {
 
 	moveGhost(key: string, x: number, y: number) {
 		this.layoutPreview = null;
-		if (this.ghostPositions[key]) this.ghostPositions[key] = { x, y };
+		if (!this.ghostPositions[key]) return;
+		this.ghostPositions[key] = { x, y };
+		this.handPlaced.add(key);
 	}
 
 	position(thoughtId: string): GhostPosition | undefined {
@@ -655,6 +694,22 @@ class Workspace {
 			if (blocked) return blocked;
 		}
 		return this.post(`/api/changesets/${cs.id}/decide`, { opId: op.id, decision });
+	}
+
+	/** Decide every still-pending operation of a change set in one round trip.
+	 *  Accepting skips operations blocked by a rejected dependency — they stay
+	 *  pending and keep saying why. */
+	async decideAll(cs: ChangeSet, decision: 'accepted' | 'rejected'): Promise<string | null> {
+		const ops = cs.operations.filter(
+			(op) =>
+				op.decision === 'pending' &&
+				(decision === 'rejected' || this.acceptBlockReason(cs, op) === null)
+		);
+		if (ops.length === 0) return null;
+		return this.post(`/api/changesets/${cs.id}/decide`, {
+			opIds: ops.map((op) => op.id),
+			decision
+		});
 	}
 
 	async saveEdit(cs: ChangeSet, op: ProposedOperation, edited: OperationPayload): Promise<string | null> {

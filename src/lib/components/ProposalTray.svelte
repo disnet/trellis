@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { workspace } from '$lib/workspace.svelte';
 	import {
+		ACTION_NAMES,
 		effectivePayload,
 		formatConfidence,
 		type ChangeSet,
@@ -15,6 +16,23 @@
 
 	let editingOpId = $state<string | null>(null);
 	let showOriginalOpId = $state<string | null>(null);
+
+	// Picking a proposal on the canvas brings the tray to it: the card shows what
+	// is proposed, the tray shows why. Refs, not ids, so nothing leaks globally.
+	const opEls = $state<Record<string, HTMLLIElement | undefined>>({});
+	$effect(() => {
+		const id = ws.selectedProposalId;
+		ws.proposalReveal;
+		if (!id) return;
+		// Next frame: the panel is opened in the same flush as this selection.
+		const frame = requestAnimationFrame(() =>
+			opEls[id]?.scrollIntoView({
+				block: 'nearest',
+				behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
+			})
+		);
+		return () => cancelAnimationFrame(frame);
+	});
 
 	// Edit form state
 	let eTitle = $state('');
@@ -91,6 +109,11 @@
 		if (err) ws.notice = err;
 	}
 
+	async function decideAll(cs: ChangeSet, decision: 'accepted' | 'rejected') {
+		const err = await ws.decideAll(cs, decision);
+		if (err) ws.notice = err;
+	}
+
 	async function apply(cs: ChangeSet) {
 		const err = await ws.applyChangeSet(cs);
 		if (err) ws.notice = err;
@@ -114,12 +137,7 @@
 		return ref;
 	}
 
-	const actionNames = {
-		decompose: 'Decompose',
-		develop: 'Develop',
-		challenge: 'Challenge',
-		connect: 'Connect'
-	} as const;
+	const actionNames = ACTION_NAMES;
 </script>
 
 <section class="tray">
@@ -164,7 +182,11 @@
 					{#each cs.operations as op (op.id)}
 						{@const p = effectivePayload(op)}
 						{@const blocked = ws.acceptBlockReason(cs, op)}
-						<li class="op decision-{op.decision}">
+						<li
+							class="op decision-{op.decision}"
+							class:focused={ws.selectedProposalId === op.id}
+							bind:this={opEls[op.id]}
+						>
 							<div class="op-head">
 								<span class="op-kind">
 									{p.op === 'create_thought'
@@ -264,13 +286,25 @@
 						<button disabled={c.p > 0 || ws.applying} onclick={() => ws.layoutPreview?.csId === cs.id ? ws.cancelLayoutPreview() : ws.previewPlacement(cs)}>
 							{ws.layoutPreview?.csId === cs.id ? 'Cancel placement preview' : 'Preview placement'}
 						</button>
-						<p>{ws.layoutPreview?.csId === cs.id ? `${ws.layoutPreview.moved} existing thoughts will move. Nothing is saved until you apply.` : 'Applying makes room near connected thoughts. Undo last apply also restores their positions.'}</p>
+						<p>{ws.layoutPreview?.csId === cs.id ? `${ws.layoutPreview.moved} existing thoughts will move. Nothing is saved until you apply.` : 'Applying makes room near connected thoughts, and leaves any card you dragged exactly where you put it. Undo last apply also restores their positions.'}</p>
 					</div>
 				{/if}
 				<footer>
 					<span class="tally">
 						{c.a} accepted · {c.r} rejected{c.p > 0 ? ` · ${c.p} to review` : ''}
 					</span>
+					{#if c.p > 0}
+						<button
+							disabled={ws.applying || !!ws.layoutPreview}
+							onclick={() => decideAll(cs, 'accepted')}
+							title="Accept every remaining operation in this change set">Accept all</button
+						>
+						<button
+							disabled={ws.applying || !!ws.layoutPreview}
+							onclick={() => decideAll(cs, 'rejected')}
+							title="Reject every remaining operation in this change set">Reject all</button
+						>
+					{/if}
 					<button
 						class="primary"
 						disabled={c.p > 0 || ws.applying}
@@ -431,6 +465,13 @@
 		border-color: var(--control-border);
 		background: var(--inset-fill);
 		opacity: 0.75;
+	}
+	/* Selected on the canvas: the same blue ring the card wears out there, so the
+	   two surfaces are visibly showing the same proposal. */
+	.op.focused {
+		border-color: var(--blue);
+		box-shadow: var(--ring-selection);
+		opacity: 1;
 	}
 	.op-head {
 		display: flex;
@@ -593,6 +634,7 @@
 	.changeset footer {
 		margin-top: 10px;
 		display: flex;
+		flex-wrap: wrap;
 		justify-content: space-between;
 		align-items: center;
 		gap: 8px;

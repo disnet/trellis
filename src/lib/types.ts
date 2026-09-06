@@ -153,6 +153,15 @@ export interface ScratchNote {
 
 export type AgentAction = 'decompose' | 'develop' | 'challenge' | 'connect';
 
+/** Display names for the agent operations — the tray and the canvas name them
+ *  identically, so a change set reads the same wherever it is reviewed. */
+export const ACTION_NAMES: Record<AgentAction, string> = {
+	decompose: 'Decompose',
+	develop: 'Develop',
+	challenge: 'Challenge',
+	connect: 'Connect'
+};
+
 export interface ProposedThoughtFields {
 	type: ThoughtType;
 	status: ThoughtStatus;

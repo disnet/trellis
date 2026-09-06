@@ -86,3 +86,44 @@ test('preview is view-only, cancellation restores positions, and failed apply ke
 	} finally { globalThis.fetch = originalFetch; }
 	ws.cancelLayoutPreview();
 });
+
+test('a hand-placed addition keeps its exact spot and the map opens around it', () => {
+	const old = [rect('anchor', 0, 0), rect('bystander', 4000, 4000)];
+	const node = rect('new', 40, 30);
+	const links = [{ from: 'new', to: 'anchor' }];
+	const auto = expandLayout(old, [node], links);
+	assert.notDeepEqual(auto.get('new'), { x: 40, y: 30 }, 'without a hand placement the anchor decides');
+	const pinnedResult = expandLayout(old, [node], links, [], ['new']);
+	assert.deepEqual(pinnedResult.get('new'), { x: 40, y: 30 }, 'the drop point is the placement');
+	assert.deepEqual(pinnedResult.get('bystander'), { x: 4000, y: 4000 }, 'distant cards still never move');
+	assert.notDeepEqual(pinnedResult.get('anchor'), { x: 0, y: 0 }, 'the overlapped card yields instead');
+	noOverlap([...old, node], pinnedResult);
+	// No anchor to fall back on: the coordinates alone are enough.
+	assert.deepEqual(expandLayout(old, [node], [], [], ['new']).get('new'), { x: 40, y: 30 });
+});
+
+test('dragging a proposed card pins it: staging leaves it alone and applying honors it', async () => {
+	const { workspace: ws } = await server.ssrLoadModule('/src/lib/workspace.svelte.ts');
+	const size = { width: 260, height: 120, zoom: 'overview', fontScale: 1 };
+	ws.thoughts = { anchor: { id: 'anchor', title: 'Anchor', statement: 'A claim', type: 'claim' } };
+	ws.positions = { anchor: { x: 0, y: 0 } };
+	ws.cardSizes = { anchor: size, 'drag:new': size };
+	ws.ghostPositions = { 'drag:new': { x: 900, y: 900 } };
+	const cs = { id: 'drag', invokedOn: ['anchor'], operations: [
+		{ id: 'create', clientRef: 'new', decision: 'accepted', payload: { op: 'create_thought', thought: { title: 'New', statement: 'New claim' } } },
+		{ id: 'rel', clientRef: 'r', decision: 'accepted', payload: { op: 'add_relation', from: 'new', to: 'anchor', relationType: 'supports' } }
+	] };
+	ws.pendingChangeSets = [cs];
+	await ws.previewPlacement(cs);
+	assert.notDeepEqual(ws.layoutPreview.ghosts['drag:new'], { x: 900, y: 900 }, 'an untouched card is placed for you');
+	ws.cancelLayoutPreview();
+
+	ws.moveGhost('drag:new', 60, 40);
+	// Re-measuring re-stages every other ghost, but never a card you placed.
+	ws.measureCard('anchor', 260, 120);
+	assert.deepEqual(ws.ghostPositions['drag:new'], { x: 60, y: 40 });
+	await ws.previewPlacement(cs);
+	assert.deepEqual(ws.layoutPreview.ghosts['drag:new'], { x: 60, y: 40 }, 'applying lands it where you put it');
+	assert.equal(ws.layoutPreview.moved, 1, 'the overlapped thought moves instead');
+	ws.cancelLayoutPreview();
+});

@@ -46,6 +46,16 @@
 		}
 		previousSelection = ids;
 	});
+	// Picking a proposal on the canvas is a request to read it: the panel comes to
+	// the front, and the tray scrolls itself to that operation.
+	let previousReveal = 0;
+	$effect(() => {
+		if (ws.proposalReveal !== previousReveal && ws.selectedProposalId) {
+			rightPanel = 'proposals';
+			if (viewportWidth < 800) leftPanel = null;
+		}
+		previousReveal = ws.proposalReveal;
+	});
 	function toggleLeft(panel: 'scratch' | 'library') {
 		leftPanel = leftPanel === panel ? null : panel;
 		if (viewportWidth < 800) rightPanel = null;

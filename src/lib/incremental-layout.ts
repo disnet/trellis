@@ -5,18 +5,24 @@ const GAP = 32;
 /** Insert near related cards, testing four directions. Only a collision chain moves;
  * unaffected cards retain exact coordinates. Each trial preserves the existing
  * ordering along its movement axis and never changes the perpendicular axis.
+ *
+ * `pinnedIds` name additions the person placed by hand: those keep the exact
+ * coordinates they arrive with, and the map opens around them instead.
  */
-export function expandLayout(existing: LayoutRect[], additions: LayoutRect[], links: LayoutLink[], fallbackIds: string[] = []) {
+export function expandLayout(existing: LayoutRect[], additions: LayoutRect[], links: LayoutLink[], fallbackIds: string[] = [], pinnedIds: string[] = []) {
 	let placed = existing.map(n => ({ ...n }));
 	const pending = additions.map(n => ({ ...n }));
+	const pinned = new Set(pinnedIds);
 	while (pending.length) {
 		const ids = new Set(placed.map(n => n.id));
 		const related = (id: string) => links.flatMap(l => l.from === id ? [l.to] : l.to === id ? [l.from] : []);
 		const next = pending.findIndex(n => related(n.id).some(id => ids.has(id)));
 		const node = pending.splice(Math.max(0, next), 1)[0];
+		const keep = pinned.has(node.id);
 		let anchors = placed.filter(n => related(node.id).includes(n.id));
 		if (!anchors.length) anchors = placed.filter(n => fallbackIds.includes(n.id));
-		if (!anchors.length) { placed.push({ ...node, ...openPosition(placed, node, node) }); continue; }
+		// A hand-placed card needs no anchor: its own coordinates are the intent.
+		if (!keep && !anchors.length) { placed.push({ ...node, ...openPosition(placed, node, node) }); continue; }
 		let best: LayoutRect[] | undefined, bestScore = Infinity;
 		for (const axis of ['x', 'y'] as const) for (const sign of [1, -1]) {
 			const horizontal = axis === 'x';
@@ -28,8 +34,10 @@ export function expandLayout(existing: LayoutRect[], additions: LayoutRect[], li
 			const origins = new Map(trial.map(n => [n.id, n.u]));
 			const projectedAnchors = anchors.map(project);
 			const fresh = project(node);
-			fresh.u = Math.max(...projectedAnchors.map(n => n.u + n.w / 2)) + GAP + fresh.w / 2;
-			fresh.v = projectedAnchors.reduce((sum, n) => sum + n.v, 0) / projectedAnchors.length;
+			if (!keep) {
+				fresh.u = Math.max(...projectedAnchors.map(n => n.u + n.w / 2)) + GAP + fresh.w / 2;
+				fresh.v = projectedAnchors.reduce((sum, n) => sum + n.v, 0) / projectedAnchors.length;
+			}
 			trial.push(fresh);
 			const queue = [fresh];
 			let steps = 0;
@@ -63,7 +71,7 @@ export function expandLayout(existing: LayoutRect[], additions: LayoutRect[], li
 			if (score < bestScore) { best = result; bestScore = score; }
 		}
 		// Defensive fallback for pathological pre-existing overlaps: always terminate.
-		placed = best ?? [...placed, { ...node, ...openPosition(placed, node, node) }];
+		placed = best ?? [...placed, keep ? { ...node } : { ...node, ...openPosition(placed, node, node) }];
 	}
 	return new Map(placed.map(n => [n.id, { x: n.x, y: n.y }]));
 }

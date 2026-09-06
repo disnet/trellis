@@ -2,7 +2,13 @@
 	import { appearance } from '$lib/appearance.svelte';
 	import { dialogs } from '$lib/dialogs.svelte';
 	import { workspace, CARD_W } from '$lib/workspace.svelte';
-	import { effectivePayload } from '$lib/types';
+	import {
+		ACTION_NAMES,
+		effectivePayload,
+		type ChangeSet,
+		type OperationDecision,
+		type ProposedOperation
+	} from '$lib/types';
 	import ThoughtCard from './ThoughtCard.svelte';
 	import RadialFocus from './RadialFocus.svelte';
 	import Icon from './Icon.svelte';
@@ -123,6 +129,11 @@
 		b: Pt;
 		type: string;
 		proposed: boolean;
+		/** Set on proposed edges: the operation to ratify, and its change set. */
+		cs?: ChangeSet;
+		op?: ProposedOperation;
+		decision?: OperationDecision;
+		blocked?: string | null;
 	}
 
 	const edges = $derived.by((): Edge[] => {
@@ -134,21 +145,26 @@
 			if (a && b) out.push({ id: r.id, a, b, type: r.type, proposed: false });
 		}
 		for (const cs of ws.pendingChangeSets) {
-			// An endpoint that is a rejected create op has no visible card; skip its edges.
-			const hiddenRefs = new Set(
-				cs.operations
-					.filter((o) => o.decision === 'rejected' && effectivePayload(o).op === 'create_thought')
-					.map((o) => o.clientRef)
-			);
 			for (const op of cs.operations) {
 				const p = effectivePayload(op);
-				if (p.op !== 'add_relation' || op.decision === 'rejected') continue;
+				if (p.op !== 'add_relation') continue;
 				if (connections === 'none' || (connections === 'selected' && !ws.selectedIds.includes(p.from) && !ws.selectedIds.includes(p.to))) continue;
-				if (hiddenRefs.has(p.from) || hiddenRefs.has(p.to)) continue;
 				const a = center(cs.id, p.from);
 				const b = center(cs.id, p.to);
+				// A rejected connection stays drawn, quietly: rejecting on the canvas
+				// has to be as reversible as rejecting in the tray.
 				if (a && b)
-					out.push({ id: op.id, a, b, type: p.relationType, proposed: true });
+					out.push({
+						id: op.id,
+						a,
+						b,
+						type: p.relationType,
+						proposed: true,
+						cs,
+						op,
+						decision: op.decision,
+						blocked: ws.acceptBlockReason(cs, op)
+					});
 			}
 		}
 		return out;
@@ -162,7 +178,7 @@
 	// as the --fs-* tokens the labels render at.
 	const labelScale = $derived(appearance.fontScale);
 	function labelWidth(e: Edge): number {
-		return (e.type.length * 6 + (e.proposed ? 26 : 12)) * labelScale;
+		return (e.type.length * 6 + 12) * labelScale;
 	}
 
 	interface GhostCard {
@@ -175,6 +191,10 @@
 		statement: string;
 		confidence?: import('$lib/types').Confidence;
 		source?: string;
+		cs: ChangeSet;
+		op: ProposedOperation;
+		decision: OperationDecision;
+		blocked: string | null;
 	}
 
 	// Only proposed new thoughts need preview cards — existing thoughts are
@@ -187,7 +207,7 @@
 				const pos = ws.displayGhostPositions[`${cs.id}:${pr.ref}`];
 				if (!pos) continue;
 				const op = cs.operations.find((o) => o.clientRef === pr.ref);
-				if (!op || op.decision === 'rejected') continue;
+				if (!op) continue;
 				const p = effectivePayload(op);
 				if (p.op !== 'create_thought') continue;
 				out.push({
@@ -199,7 +219,11 @@
 					title: p.thought.title,
 					statement: p.thought.statement,
 					confidence: p.thought.confidence,
-					source: p.thought.source
+					source: p.thought.source,
+					cs,
+					op,
+					decision: op.decision,
+					blocked: ws.acceptBlockReason(cs, op)
 				});
 			}
 		}
@@ -437,7 +461,7 @@
 		if (ws.layoutPreview) { if (e.key === 'Escape' && !ws.applying) ws.cancelLayoutPreview(); return; }
 		const t = e.target as HTMLElement;
 		if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable) return;
-		if (e.key === 'Escape' && ws.selectedIds.length) {
+		if (e.key === 'Escape' && (ws.selectedIds.length || ws.selectedProposalId)) {
 			ws.clearSelection();
 		} else if (e.key === 'a' && (e.metaKey || e.ctrlKey)) {
 			e.preventDefault();
@@ -462,6 +486,47 @@
 		const n = stageable.length;
 		const err = await ws.addToSet([...ws.selectedIds]);
 		ws.notice = err ?? `Added ${n} thought${n === 1 ? '' : 's'} to the working set.`;
+	}
+
+	// --- reviewing proposals in place ---
+	// The same decisions the tray makes, taken on the canvas: nothing enters the
+	// graph until the change set is applied, which is still one deliberate act.
+
+	const reviewLocked = $derived(!!ws.layoutPreview || ws.applying);
+
+	async function decide(cs: ChangeSet, op: ProposedOperation, decision: OperationDecision) {
+		const err = await ws.setDecision(cs, op, decision);
+		if (err) ws.notice = err;
+	}
+
+	async function decideAll(cs: ChangeSet, decision: 'accepted' | 'rejected') {
+		const err = await ws.decideAll(cs, decision);
+		if (err) ws.notice = err;
+	}
+
+	async function applyChangeSet(cs: ChangeSet) {
+		const err = await ws.applyChangeSet(cs);
+		if (err) ws.notice = err;
+	}
+
+	/** A decided batch that adds cards can be previewed before it lands. */
+	function previewable(cs: ChangeSet): boolean {
+		return (
+			ws.allDecided(cs) &&
+			cs.operations.some(
+				(op) => op.decision === 'accepted' && effectivePayload(op).op === 'create_thought'
+			)
+		);
+	}
+
+	function counts(cs: ChangeSet) {
+		let a = 0, r = 0, p = 0;
+		for (const op of cs.operations) {
+			if (op.decision === 'accepted') a++;
+			else if (op.decision === 'rejected') r++;
+			else p++;
+		}
+		return { a, r, p };
 	}
 
 	function provenance(thoughtId: string) {
@@ -505,16 +570,41 @@
 			</div>
 		</div>
 	{/if}
-	{#if ws.selectedIds.length > 1}
-		<div class="selection-bar" role="toolbar" aria-label="Selection actions">
-			<span class="selection-count">{ws.selectedIds.length} selected</span>
-			<button onclick={setFromSelection} title="Open a new working set holding the selected thoughts">New working set</button>
-			{#if ws.lensActive && stageable.length > 0}
-				<button onclick={addSelectionToSet} title="Add the selected thoughts to the active working set">Add {stageable.length} to set</button>
-			{/if}
-			<button class="quiet" onclick={() => ws.clearSelection()} title="Clear the selection (Esc)">Clear</button>
-		</div>
-	{/if}
+	<div class="top-stack">
+		{#each ws.pendingChangeSets as cs (cs.id)}
+			{@const c = counts(cs)}
+			<div class="review-bar" role="toolbar" aria-label="Proposal review">
+				<span class="action">{ACTION_NAMES[cs.action]}</span>
+				<span class="review-summary" title={cs.summary}>{cs.summary}</span>
+				<span class="tally">{c.a} accepted · {c.r} rejected{c.p > 0 ? ` · ${c.p} to review` : ''}</span>
+				<button disabled={c.p === 0 || reviewLocked} onclick={() => decideAll(cs, 'accepted')} title="Accept every remaining proposal in this batch">Accept all</button>
+				<button disabled={c.p === 0 || reviewLocked} onclick={() => decideAll(cs, 'rejected')} title="Reject every remaining proposal in this batch">Reject all</button>
+				{#if previewable(cs)}
+					<button
+						disabled={ws.applying}
+						title="See where the accepted cards land, and which existing thoughts move — cards you dragged stay where you put them"
+						onclick={() => ws.layoutPreview?.csId === cs.id ? ws.cancelLayoutPreview() : ws.previewPlacement(cs)}
+					>{ws.layoutPreview?.csId === cs.id ? 'Cancel preview' : 'Preview placement'}</button>
+				{/if}
+				<button
+					class="apply"
+					disabled={c.p > 0 || ws.applying}
+					title={c.p > 0 ? 'Decide every proposal before applying' : 'Write the accepted proposals into the graph'}
+					onclick={() => applyChangeSet(cs)}
+				>{c.a === 0 ? 'Dismiss' : c.r === 0 ? 'Apply all' : `Apply ${c.a}`}</button>
+			</div>
+		{/each}
+		{#if ws.selectedIds.length > 1}
+			<div class="selection-bar" role="toolbar" aria-label="Selection actions">
+				<span class="selection-count">{ws.selectedIds.length} selected</span>
+				<button onclick={setFromSelection} title="Open a new working set holding the selected thoughts">New working set</button>
+				{#if ws.lensActive && stageable.length > 0}
+					<button onclick={addSelectionToSet} title="Add the selected thoughts to the active working set">Add {stageable.length} to set</button>
+				{/if}
+				<button class="quiet" onclick={() => ws.clearSelection()} title="Clear the selection (Esc)">Clear</button>
+			</div>
+		{/if}
+	</div>
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
 	class="canvas-viewport"
@@ -536,23 +626,67 @@
 					y2={e.b.y}
 					class="edge"
 					class:proposed={e.proposed}
+					class:accepted={e.decision === 'accepted'}
+					class:rejected={e.decision === 'rejected'}
 				/>
-				<g>
-					<rect
-						x={mid(e).x - labelWidth(e) / 2}
-						y={mid(e).y - 9 * labelScale}
-						width={labelWidth(e)}
-						height={16 * labelScale}
-						rx={8 * labelScale}
-						class="edge-label-bg"
-						class:proposed={e.proposed}
-					/>
-					<text x={mid(e).x} y={mid(e).y + 3 * labelScale} class="edge-label" class:proposed={e.proposed}>
-						{e.type.replace('_', ' ')}{e.proposed ? ' ◇' : ''}
-					</text>
-				</g>
+				<!-- Proposed connections carry an interactive chip instead (below). -->
+				{#if !e.proposed}
+					<g>
+						<rect
+							x={mid(e).x - labelWidth(e) / 2}
+							y={mid(e).y - 9 * labelScale}
+							width={labelWidth(e)}
+							height={16 * labelScale}
+							rx={8 * labelScale}
+							class="edge-label-bg"
+						/>
+						<text x={mid(e).x} y={mid(e).y + 3 * labelScale} class="edge-label">
+							{e.type.replace('_', ' ')}
+						</text>
+					</g>
+				{/if}
 			{/each}
 		</svg>
+
+		{#each edges as e (e.id)}
+			{#if e.proposed && e.cs && e.op}
+				{@const m = mid(e)}
+				<div
+					class="rel-chip decision-{e.decision}"
+					class:selected={ws.selectedProposalId === e.op.id}
+					style="left: 0; top: 0; transform: translate({m.x}px, {m.y}px) translate(-50%, -50%);"
+				>
+					<button
+						class="rel-type"
+						title="Show this connection in the proposals panel"
+						onclick={() => ws.selectProposal(e.op!.id)}
+					>{e.decision === 'accepted' ? '✓' : e.decision === 'rejected' ? '✕' : '◇'} {e.type.replace('_', ' ')}</button>
+					{#if e.decision === 'pending'}
+						<button
+							class="accept"
+							disabled={e.blocked !== null || reviewLocked}
+							title={e.blocked ?? 'Accept this connection'}
+							aria-label="Accept connection"
+							onclick={() => decide(e.cs!, e.op!, 'accepted')}>✓</button
+						>
+						<button
+							class="reject"
+							disabled={reviewLocked}
+							title="Reject this connection"
+							aria-label="Reject connection"
+							onclick={() => decide(e.cs!, e.op!, 'rejected')}>✕</button
+						>
+					{:else}
+						<button
+							class="undo"
+							disabled={reviewLocked}
+							title="Return this connection to the review queue"
+							onclick={() => decide(e.cs!, e.op!, 'pending')}>Reconsider</button
+						>
+					{/if}
+				</div>
+			{/if}
+		{/each}
 
 		{#each cards as { t, pos } (t.id)}
 			{@const member = ws.inWorkingSet(t.id)}
@@ -604,6 +738,12 @@
 				zoom={ws.zoom}
 				scale={cam.scale}
 				ghost={g.kind}
+				selected={ws.selectedProposalId === g.op.id}
+				onselect={() => ws.selectProposal(g.op.id)}
+				decision={g.decision}
+				blocked={g.blocked}
+				ondecide={(d) => decide(g.cs, g.op, d)}
+				reviewBusy={reviewLocked}
 				provenance="agent"
 				onmove={ws.layoutPreview || ws.applying ? undefined : (x, y) => ws.moveGhost(g.key, x, y)}
 			/>
@@ -648,9 +788,24 @@
 	.canvas-tools label { display: flex; align-items: center; gap: 8px; font-size: var(--fs-12); color: var(--ink-faded); }
 	.canvas-tools .find { margin-left: auto; }
 	.find span { color: var(--ink-muted); }
+	/* Top-center column: pending batches first, then the selection bar — the two
+	   bars that appear in response to what you just did. */
+	/* Below the workspace bar, and centered in whatever strip the open panels
+	   leave — the same insets the radial focus respects. */
+	.top-stack { position: absolute; top: 76px; left: var(--focus-left, 16px); right: var(--focus-right, 16px); margin-inline: auto; z-index: 21; width: fit-content; max-width: 100%; display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; }
+	.top-stack > * { pointer-events: auto; }
 	/* Floats top-center when several thoughts are selected: the moment a
 	   multi-selection exists, so does the way to make it a working set. */
-	.selection-bar { position: absolute; top: 12px; left: 0; right: 0; margin-inline: auto; z-index: 21; width: fit-content; max-width: calc(100% - 24px); display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--paper-raised); border: 1px solid var(--hairline); border-radius: 10px; box-shadow: var(--shadow-menu); }
+	.selection-bar { max-width: 100%; display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--paper-raised); border: 1px solid var(--hairline); border-radius: 10px; box-shadow: var(--shadow-menu); }
+	/* Ratifying a batch without leaving the canvas: the tray's footer, in place. */
+	.review-bar { max-width: 100%; display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--parchment); border: 1.5px dashed var(--gold-soft); border-radius: 10px; box-shadow: var(--shadow-menu); }
+	.review-bar .action { font-size: var(--fs-10); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700; color: var(--gold-ink); background: var(--gold-tag); border-radius: 4px; padding: 2px 7px; white-space: nowrap; }
+	.review-summary { font-size: var(--fs-12); font-weight: 600; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; max-width: 44ch; }
+	.review-bar .tally { font-size: var(--fs-11); color: var(--ink-muted); white-space: nowrap; }
+	.review-bar button { font: inherit; font-size: var(--fs-12); color: var(--ink-soft); background: var(--card-white); border: 1px solid var(--card-border); border-radius: 6px; padding: 5px 10px; cursor: pointer; white-space: nowrap; }
+	.review-bar button:hover:not(:disabled) { border-color: var(--blue); color: var(--blue); }
+	.review-bar button:disabled { opacity: .45; cursor: not-allowed; }
+	.review-bar button.apply { font-weight: 600; }
 	.selection-count { font-size: var(--fs-12); font-weight: 600; color: var(--ink-soft); white-space: nowrap; }
 	.selection-bar button { font: inherit; font-size: var(--fs-12); color: var(--ink-soft); background: var(--card-white); border: 1px solid var(--card-border); border-radius: 6px; padding: 5px 10px; cursor: pointer; white-space: nowrap; }
 	.selection-bar button:hover { border-color: var(--blue); color: var(--blue); }
@@ -778,14 +933,87 @@
 		stroke: var(--gold);
 		stroke-dasharray: 5 4;
 	}
+	.edge.proposed.accepted {
+		stroke: var(--accept-green);
+	}
+	.edge.proposed.rejected {
+		stroke: var(--edge-ink);
+		opacity: 0.35;
+	}
+	/* Review chip on a proposed connection: the relation label, plus the two
+	   decisions, at the midpoint of the edge it belongs to. */
+	.rel-chip {
+		position: absolute;
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		padding: 2px 4px 2px 8px;
+		background: var(--parchment);
+		border: 1px solid var(--gold-soft);
+		border-radius: 999px;
+		box-shadow: var(--shadow-rest);
+		white-space: nowrap;
+		z-index: 5;
+	}
+	.rel-chip.decision-accepted {
+		border-color: var(--accept-green);
+		background: var(--accept-fill);
+	}
+	.rel-chip.decision-rejected {
+		border-color: var(--control-border);
+		background: var(--inset-fill);
+		opacity: 0.5;
+	}
+	.rel-chip.decision-rejected:hover,
+	.rel-chip.decision-rejected.selected {
+		opacity: 1;
+	}
+	/* The label doubles as the way to open this connection in the tray. */
+	.rel-type {
+		font: inherit;
+		font-size: var(--fs-9);
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--gold-deep);
+		border: none;
+		background: none;
+		padding: 0;
+		cursor: pointer;
+	}
+	.rel-type:hover {
+		text-decoration: underline;
+		text-underline-offset: 2px;
+	}
+	.rel-chip.selected {
+		border-color: var(--blue);
+		box-shadow: var(--ring-selection);
+	}
+	.decision-accepted .rel-type { color: var(--moss-ink); }
+	.decision-rejected .rel-type { color: var(--ink-muted); text-decoration: line-through; }
+	.rel-chip button {
+		font: inherit;
+		font-size: var(--fs-10);
+		font-weight: 700;
+		line-height: 1;
+		border: 1px solid var(--control-border);
+		background: var(--card-white);
+		color: var(--ink-soft);
+		border-radius: 999px;
+		padding: 3px 6px;
+		cursor: pointer;
+	}
+	.rel-chip button:disabled { opacity: .45; cursor: not-allowed; }
+	.rel-chip .accept { border-color: var(--accept-green); color: var(--moss-ink); }
+	.rel-chip .accept:hover:not(:disabled) { background: var(--accept-fill); }
+	.rel-chip .reject { color: var(--clay-ink); }
+	.rel-chip .reject:hover:not(:disabled) { border-color: var(--rust); color: var(--rust); }
+	.rel-chip .undo { font-weight: 600; text-transform: none; }
+	.rel-chip .undo:hover:not(:disabled) { border-color: var(--blue); color: var(--blue); }
 	.edge-label-bg {
 		fill: var(--divider);
 		stroke: var(--construction);
 		stroke-width: 0.5;
-	}
-	.edge-label-bg.proposed {
-		fill: var(--parchment);
-		stroke: var(--gold-soft);
 	}
 	.edge-label {
 		font-size: var(--fs-9);
@@ -796,8 +1024,9 @@
 		text-anchor: middle;
 		font-family: inherit;
 	}
-	.edge-label.proposed {
-		fill: var(--gold-deep);
+	/* The workspace bar wraps to two rows in narrow windows; the stack clears it. */
+	@media (max-width: 1000px) {
+		.top-stack { top: 120px; }
 	}
 	@media (max-width: 600px) {
 		.canvas-tools { bottom: 160px; left: 16px; right: 16px; max-width: calc(100% - 32px); }
