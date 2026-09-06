@@ -166,6 +166,8 @@ Snapshots in `ThoughtRevision` are simpler and safer than event sourcing at this
 
 The application sends: the invoked operation, selected thought IDs, the active working set, relations among those thoughts (plus 1-hop neighbors), any graph-wide search results (Connect/Challenge; disclosed and recorded on the change set), optional scratch content, and concise schema instructions. Context assembly is deterministic — including the search, which is a stable term-overlap ranking, so identical graph state produces an identical request.
 
+It also sends resolved links. Some sources cannot be read by any web-fetch tool — bsky.app is a client-rendered SPA whose served HTML carries no post text and, deliberately, no `og:description` — so links in the scratch input and the focus are resolved server-side before the prompt is built (`agent/links.ts`) and inlined as quoted evidence. Bluesky posts and profiles go through the public AT Protocol read API; URLs with no resolver are left to the agent's own fetch tool. Resolution failures are reported to the agent as unreadable rather than dropped, so an unreachable source can never be silently invented.
+
 The model returns validated structured output:
 
 ```json

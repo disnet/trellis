@@ -9,6 +9,7 @@
 // state always produces an identical request.
 
 import { activeGraphId, activeWorkingSetId, db } from '../db';
+import type { ResolvedLink } from './links';
 import type { AgentAction, Confidence, RelationType, ThoughtStatus, ThoughtType } from '$lib/types';
 
 export interface ContextThought {
@@ -39,6 +40,12 @@ export interface AgentContext {
 	/** Ids of thoughts the graph-wide search added, in relevance order. */
 	retrievedIds: string[];
 	scratch?: { id: string; body: string };
+	/**
+	 * Links from the scratch input and the focus that the server read on the
+	 * agent's behalf (see links.ts). Populated after buildContext, which stays
+	 * synchronous and network-free.
+	 */
+	links?: ResolvedLink[];
 }
 
 /** How many graph-wide search results may join the context. */

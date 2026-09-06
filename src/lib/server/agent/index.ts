@@ -10,6 +10,7 @@ import type { ModelSelection } from '$lib/models';
 import { activeGraphId, db } from '../db';
 import type { AgentAction } from '$lib/types';
 import { buildContext } from './context';
+import { resolveContextLinks } from './links';
 import {
 	describeGenerationError,
 	selectAdapter,
@@ -88,10 +89,21 @@ export async function generateProposal(
 
 	const adapter = selectAdapter({ thoughtExists: validationDeps.thoughtExists }, selection);
 	const context = buildContext(action, selectedIds, scratch);
+	// Read the links the agent's own fetch tool cannot (see links.ts). Never fatal:
+	// a resolver outage degrades to the prior behavior rather than losing the call.
+	if (adapter.name !== 'fixture') {
+		try {
+			context.links = await resolveContextLinks(context);
+		} catch (e) {
+			log(`link resolution failed, continuing without it — ${(e as Error).message}`);
+		}
+	}
+	const unreadable = context.links?.filter((l) => l.error).length ?? 0;
 	log(
 		`${action} via ${adapter.name} (${adapter.model}) — context: ${context.thoughts.length} thoughts, ` +
 			`${context.relations.length} relations, ${selectedIds.length} selected` +
 			`${context.retrievedIds.length ? `, ${context.retrievedIds.length} retrieved by graph search` : ''}` +
+			`${context.links?.length ? `, ${context.links.length} link${context.links.length === 1 ? '' : 's'} resolved${unreadable ? ` (${unreadable} unreadable)` : ''}` : ''}` +
 			`${scratch ? ', scratch input' : ''}`
 	);
 
