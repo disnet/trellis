@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
+	import ActivityLog from '$lib/components/ActivityLog.svelte';
 	import AppDialog from '$lib/components/AppDialog.svelte';
 	import Browse from '$lib/components/Browse.svelte';
 	import Prose from '$lib/components/Prose.svelte';
@@ -176,6 +177,8 @@
 					<Outline />
 				{:else if ws.view === 'prose'}
 					<Prose />
+				{:else if ws.view === 'log'}
+					<ActivityLog />
 				{:else}
 					<Browse />
 				{/if}

@@ -32,8 +32,8 @@ const log = (msg: string) => console.log(`\x1b[36m[trellis:agent]\x1b[0m ${msg}`
 const insertCall = () =>
 	db.prepare(
 		`INSERT INTO agent_calls
-		   (id, action, adapter, model, attempt, request, raw_output, validation_errors, error, latency_ms, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		   (id, action, adapter, model, attempt, request, raw_output, validation_errors, error, latency_ms, usage, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	);
 
 function logAttempt(fields: {
@@ -45,6 +45,7 @@ function logAttempt(fields: {
 	validationErrors: string[] | null;
 	error: string | null;
 	latencyMs: number;
+	usage?: string;
 }): string {
 	const id = `call-${crypto.randomUUID().slice(0, 8)}`;
 	insertCall().run(
@@ -58,6 +59,7 @@ function logAttempt(fields: {
 		fields.validationErrors ? JSON.stringify(fields.validationErrors) : null,
 		fields.error,
 		fields.latencyMs,
+		fields.usage ?? null,
 		Date.now()
 	);
 	return id;
@@ -151,7 +153,8 @@ export async function generateProposal(
 			rawOutput: raw,
 			validationErrors: validated.ok ? null : validated.errors,
 			error: null,
-			latencyMs
+			latencyMs,
+			usage
 		});
 
 		if (validated.ok) {

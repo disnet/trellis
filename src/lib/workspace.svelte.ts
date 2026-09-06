@@ -87,9 +87,10 @@ class Workspace {
 	/** Operation ids of the proposals in the selection. */
 	selectedProposalIds = $state<string[]>([]);
 	zoom = $state<'overview' | 'reading'>('overview');
-	/** What the center pane shows: two projections of the working set, plus a
-	 *  graph-wide browse table. View-only, never persisted. */
-	view = $state<'canvas' | 'outline' | 'browse' | 'prose'>('canvas');
+	/** What the center pane shows: two projections of the working set, a
+	 *  graph-wide browse table, prose, and the agent activity log. View-only,
+	 *  never persisted. */
+	view = $state<'canvas' | 'outline' | 'browse' | 'prose' | 'log'>('canvas');
 	prose = $state<ProseTreatment[]>([]);
 	proseGenerating = $state(false);
 	proseDrafts = $state<ProseDraftSummary[]>([]);

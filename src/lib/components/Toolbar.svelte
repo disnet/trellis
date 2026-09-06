@@ -238,6 +238,15 @@
 			>
 				<span aria-hidden="true">¶</span><span class="label">Prose</span>
 			</button>
+			<button
+				class:active={ws.view === 'log'}
+				title="Agent activity — every invocation, its outcome, and any errors"
+				aria-label="Activity"
+				aria-pressed={ws.view === 'log'}
+				onclick={() => (ws.view = 'log')}
+			>
+				<Icon name="activity" /><span class="label">Activity</span>
+			</button>
 		</div>
 		{#if utilsInMenu}
 			<div class="menu" bind:this={moreMenuEl}>

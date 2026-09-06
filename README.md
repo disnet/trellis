@@ -35,6 +35,11 @@ end-to-end:
   the selected agent. Inline thought references open the Inspector while you
   read. Treatments are saved separately from the graph, with a history of
   drafts kept for each group and style.
+- **Activity view** — the agent log, surfaced. Every model call (operations and
+  prose, across all graphs) with its adapter, model, outcome, latency, token
+  usage, and any error — rate limits (with retry-after when the API sends it),
+  missing credentials, invalid output. Filter to problems,
+  and expand a row for the full error, request, and raw model output.
 
 ## Read a group as prose
 

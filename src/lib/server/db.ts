@@ -161,9 +161,11 @@ CREATE TABLE IF NOT EXISTS agent_calls (
   validation_errors TEXT,
   error TEXT,
   latency_ms INTEGER NOT NULL,
+  usage TEXT,
   change_set_id TEXT,
   created_at INTEGER NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_agent_calls_created ON agent_calls(created_at);
 
 -- Generated prose is a derived artifact. Deliberately no foreign key to a
 -- working set: undo restores working-set rows and must not erase treatments.
@@ -204,6 +206,7 @@ function open(): Database.Database {
 	migrateToNoteAnchoredChangeSets(db);
 	migrateToResizableNotes(db);
 	migrateToProseDraftHistory(db);
+	migrateToCallUsage(db);
 	seedIfEmpty(db);
 	return db;
 }
@@ -308,6 +311,14 @@ function migrateToWholeGraphCanvas(db: Database.Database) {
 		).run();
 	})();
 	db.pragma('foreign_keys = ON');
+}
+
+// Agent calls gained a usage column (the adapter's human-readable token/cost
+// line, previously logged only to the dev console) when the activity view
+// started showing per-call spend. NULL where the adapter reports none.
+function migrateToCallUsage(db: Database.Database) {
+	const cols = db.pragma('table_info(agent_calls)') as { name: string }[];
+	if (!cols.some((c) => c.name === 'usage')) db.exec('ALTER TABLE agent_calls ADD COLUMN usage TEXT');
 }
 
 // Canvas notes gained user-set dimensions when they became resizable.

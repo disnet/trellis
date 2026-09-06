@@ -186,6 +186,17 @@ export function selectAdapter(deps: FixtureDeps, selection: ModelSelection = def
 	}
 }
 
+// The SDK's error headers have been both a Headers instance and a plain object
+// across versions; read either shape without trusting it.
+function headerValue(headers: unknown, name: string): string | null {
+	if (headers instanceof Headers) return headers.get(name);
+	if (headers && typeof headers === 'object') {
+		const value = (headers as Record<string, unknown>)[name];
+		if (typeof value === 'string') return value;
+	}
+	return null;
+}
+
 /** A short, user-facing description of what went wrong with a live call. */
 export function describeGenerationError(e: unknown): string {
 	if (
@@ -193,8 +204,13 @@ export function describeGenerationError(e: unknown): string {
 		(e instanceof Error && /authentication method/i.test(e.message))
 	)
 		return 'The model call was rejected: no valid Anthropic credentials. Set ANTHROPIC_API_KEY (or run with TRELLIS_AGENT=fixture).';
-	if (e instanceof Anthropic.RateLimitError)
-		return 'The model is rate-limited right now. Wait a moment and invoke the operation again.';
+	if (e instanceof Anthropic.RateLimitError) {
+		const retry = headerValue(e.headers, 'retry-after');
+		return (
+			`The model is rate-limited right now (429${retry ? `, retry after ${/^\d+$/.test(retry) ? `${retry}s` : retry}` : ''}). ` +
+			'Wait a moment and invoke the operation again.'
+		);
+	}
 	if (e instanceof Anthropic.APIConnectionError)
 		return 'Could not reach the model. Check the network, or run with TRELLIS_AGENT=fixture.';
 	if (e instanceof Anthropic.APIError) return `The model call failed (${e.status}): ${e.message}`;
