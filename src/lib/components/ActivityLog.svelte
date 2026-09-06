@@ -19,6 +19,7 @@
 		error: string | null;
 		latencyMs: number;
 		usage: string | null;
+		effort: string | null;
 		changeSetId: string | null;
 		createdAt: number;
 	}
@@ -197,6 +198,7 @@
 						<th class="col-time">When</th>
 						<th class="col-action">Operation</th>
 						<th class="col-model">Model</th>
+						<th class="col-effort">Effort</th>
 						<th class="col-outcome">Outcome</th>
 						<th class="col-usage">Tokens</th>
 						<th class="col-latency">Latency</th>
@@ -220,6 +222,11 @@
 							<td class="col-model" title="{c.adapter} · {c.model}">
 								<span class="adapter">{c.adapter}</span> {c.model}
 							</td>
+							<td class="col-effort" title={c.effort
+								? `Sent at ${c.effort} reasoning effort`
+								: 'Ran at the provider’s default effort'}>
+								{c.effort ?? '—'}
+							</td>
 							<td class="col-outcome">
 								<span class="outcome outcome-{o}">{OUTCOME_LABEL[o]}</span>
 								{#if trouble}<span class="trouble">{trouble}</span>{/if}
@@ -231,7 +238,7 @@
 						</tr>
 						{#if expandedId === c.id}
 							<tr class="detail-row">
-								<td colspan="6">
+								<td colspan="7">
 									<div class="detail">
 										<dl class="meta">
 											<div><dt>Call</dt><dd>{c.id}</dd></div>
@@ -435,10 +442,15 @@
 	.col-time,
 	.col-action,
 	.col-model,
+	.col-effort,
 	.col-usage,
 	.col-latency {
 		white-space: nowrap;
 		width: 1%;
+	}
+	.col-effort {
+		color: var(--ink-quiet);
+		font-size: var(--fs-11-5);
 	}
 	.col-usage {
 		text-align: right;

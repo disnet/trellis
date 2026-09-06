@@ -19,7 +19,7 @@ import type { AgentContext } from './context';
 import { makeClaudeCliAdapter } from './claude-cli';
 import { makeCodexCliAdapter } from './codex-cli';
 import { defaultSelection } from './settings';
-import type { ModelSelection } from '$lib/models';
+import { supportsEffort, type ModelSelection, type ReasoningEffort } from '$lib/models';
 import { runFixture, type FixtureDeps } from './fixtures';
 import { SYSTEM_PROMPT, buildUserPrompt } from './prompt';
 import { proposalSchema } from './wire';
@@ -45,6 +45,8 @@ export interface AdapterResult {
 export interface ModelAdapter {
 	name: string;
 	model: string;
+	/** The effort actually sent — undefined where the provider default stands. */
+	effort?: ReasoningEffort;
 	generate(req: AdapterRequest): Promise<AdapterResult>;
 }
 
@@ -89,6 +91,8 @@ export interface AnthropicStructuredRequest {
 	schema: ZodType;
 	/** Graph proposals can browse; closed-context prose passes false. */
 	allowWebTools: boolean;
+	/** Undefined leaves the API default (high) in place. */
+	effort?: ReasoningEffort;
 }
 
 export interface AnthropicStructuredResult {
@@ -105,14 +109,20 @@ export async function generateAnthropicStructured({
 	systemPrompt,
 	messages,
 	schema,
-	allowWebTools
+	allowWebTools,
+	effort
 }: AnthropicStructuredRequest): Promise<AnthropicStructuredResult> {
 	const common = {
 		model,
 		max_tokens: maxTokens,
 		system: systemPrompt,
 		messages,
-		output_config: { format: zodOutputFormat(schema) }
+		output_config: {
+			format: zodOutputFormat(schema),
+			// Dropped rather than sent to a model that would reject it: an effort
+			// carried over from another provider must not fail the call outright.
+			...(effort && supportsEffort('live', model) ? { effort } : {})
+		}
 	};
 	// Omit the tools property completely for closed-context work. This is both
 	// stricter and easier to audit than passing an empty or disabled tool list.
@@ -131,14 +141,18 @@ export async function generateAnthropicStructured({
 	};
 }
 
-export function makeLiveAdapter(model = 'claude-sonnet-5'): ModelAdapter {
+export function makeLiveAdapter(model = 'claude-sonnet-5', effort?: ReasoningEffort): ModelAdapter {
 	// Localhost tool: fail visibly after three minutes (matching the CLI
 	// adapters — web fetches add latency) rather than hanging the UI.
 	const client = new Anthropic({ timeout: 180_000 });
+	// Report only what the transport will actually send, so the activity log
+	// never claims an effort the model silently ignored.
+	const sentEffort = effort && supportsEffort('live', model) ? effort : undefined;
 
 	return {
 		name: 'live',
 		model,
+		effort: sentEffort,
 		async generate({ action, context, feedback }) {
 			const userPrompt = buildUserPrompt(action, context);
 			const messages: Anthropic.MessageParam[] = [{ role: 'user', content: userPrompt }];
@@ -161,7 +175,8 @@ export function makeLiveAdapter(model = 'claude-sonnet-5'): ModelAdapter {
 				systemPrompt: SYSTEM_PROMPT,
 				messages,
 				schema: proposalSchema,
-				allowWebTools: true
+				allowWebTools: true,
+				effort
 			});
 			return {
 				raw: response.raw,
@@ -178,11 +193,11 @@ export function selectAdapter(deps: FixtureDeps, selection: ModelSelection = def
 		case 'fixture':
 			return makeFixtureAdapter(deps);
 		case 'claude-cli':
-			return makeClaudeCliAdapter(selection.model || undefined);
+			return makeClaudeCliAdapter(selection.model || undefined, selection.effort);
 		case 'codex-cli':
-			return makeCodexCliAdapter(selection.model || undefined);
+			return makeCodexCliAdapter(selection.model || undefined, selection.effort);
 		default:
-			return makeLiveAdapter(selection.model || undefined);
+			return makeLiveAdapter(selection.model || undefined, selection.effort);
 	}
 }
 

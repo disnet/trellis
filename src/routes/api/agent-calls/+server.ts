@@ -21,6 +21,7 @@ interface CallRow {
 	error: string | null;
 	latency_ms: number;
 	usage: string | null;
+	effort: string | null;
 	change_set_id: string | null;
 	created_at: number;
 }
@@ -41,7 +42,7 @@ export const GET: RequestHandler = async ({ url }) => {
 		const row = db
 			.prepare(
 				`SELECT id, action, adapter, model, attempt, request, raw_output,
-				        validation_errors, error, latency_ms, usage, change_set_id, created_at
+				        validation_errors, error, latency_ms, usage, effort, change_set_id, created_at
 				 FROM agent_calls WHERE id = ?`
 			)
 			.get(id) as CallRow | undefined;
@@ -59,6 +60,7 @@ export const GET: RequestHandler = async ({ url }) => {
 				error: row.error,
 				latencyMs: row.latency_ms,
 				usage: row.usage,
+				effort: row.effort,
 				changeSetId: row.change_set_id,
 				createdAt: row.created_at
 			}
@@ -69,7 +71,7 @@ export const GET: RequestHandler = async ({ url }) => {
 	const rows = db
 		.prepare(
 			`SELECT id, action, adapter, model, attempt, validation_errors, error,
-			        latency_ms, usage, change_set_id, created_at
+			        latency_ms, usage, effort, change_set_id, created_at
 			 FROM agent_calls ORDER BY created_at DESC, rowid DESC LIMIT ?`
 		)
 		.all(limit) as CallRow[];
@@ -84,6 +86,7 @@ export const GET: RequestHandler = async ({ url }) => {
 			error: row.error,
 			latencyMs: row.latency_ms,
 			usage: row.usage,
+			effort: row.effort,
 			changeSetId: row.change_set_id,
 			createdAt: row.created_at
 		}))

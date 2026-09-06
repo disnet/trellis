@@ -32,8 +32,8 @@ const log = (msg: string) => console.log(`\x1b[36m[trellis:agent]\x1b[0m ${msg}`
 const insertCall = () =>
 	db.prepare(
 		`INSERT INTO agent_calls
-		   (id, action, adapter, model, attempt, request, raw_output, validation_errors, error, latency_ms, usage, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		   (id, action, adapter, model, attempt, request, raw_output, validation_errors, error, latency_ms, usage, effort, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	);
 
 function logAttempt(fields: {
@@ -60,6 +60,7 @@ function logAttempt(fields: {
 		fields.error,
 		fields.latencyMs,
 		fields.usage ?? null,
+		fields.adapter.effort ?? null,
 		Date.now()
 	);
 	return id;

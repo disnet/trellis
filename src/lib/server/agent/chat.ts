@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import type Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import type { Conversation } from '$lib/types';
-import type { ModelSelection } from '$lib/models';
+import { supportsEffort, type ModelSelection } from '$lib/models';
 import { db } from '../db';
 import { describeGenerationError, generateAnthropicStructured } from './adapter';
 import { generateClaudeStructured } from './claude-cli';
@@ -13,6 +13,9 @@ const schema = z.object({ body: z.string().trim().min(1).max(12000) }).strict();
 
 export async function generateReply(material: unknown, conversation: Conversation, selection: ModelSelection, options: { anthropicClient?: Anthropic } = {}) {
 	const model = selection.model || ({ live: 'claude-sonnet-5', 'claude-cli': 'sonnet', 'codex-cli': 'default', fixture: 'fixture' }[selection.provider]);
+	// Logged as the effort actually sent: fixtures take none, and the live
+	// transport drops it for models that predate the parameter.
+	const sentEffort = (selection.provider !== 'fixture' && supportsEffort(selection.provider, model) && selection.effort) || null;
 	const request = JSON.stringify({ subject: material, conversation });
 	let feedback = '';
 	for (let attempt = 1; attempt <= 2; attempt++) {
@@ -28,11 +31,11 @@ export async function generateReply(material: unknown, conversation: Conversatio
 				const value = { body: `Thinking about “${conversation.title}”: what would count as a concrete example, and where would this idea stop applying?\n\nThis is an offline fixture reply. Your discussion is saved as context; the graph has not changed.` };
 				result = { raw: JSON.stringify(value), value };
 			} else if (selection.provider === 'live') {
-				result = await generateAnthropicStructured({ client: options.anthropicClient, model, maxTokens: 4000, systemPrompt: CHAT_SYSTEM_PROMPT, messages: [{ role: 'user', content: prompt }], schema, allowWebTools: false });
+				result = await generateAnthropicStructured({ client: options.anthropicClient, model, maxTokens: 4000, systemPrompt: CHAT_SYSTEM_PROMPT, messages: [{ role: 'user', content: prompt }], schema, allowWebTools: false, effort: selection.effort });
 			} else if (selection.provider === 'claude-cli') {
-				result = await generateClaudeStructured({ model, systemPrompt: CHAT_SYSTEM_PROMPT, userPrompt: prompt, jsonSchema: z.toJSONSchema(schema, { target: 'draft-7' }), allowWebTools: false });
+				result = await generateClaudeStructured({ model, systemPrompt: CHAT_SYSTEM_PROMPT, userPrompt: prompt, jsonSchema: z.toJSONSchema(schema, { target: 'draft-7' }), allowWebTools: false, effort: selection.effort });
 			} else {
-				result = await generateCodexStructured({ model: selection.model || undefined, systemPrompt: CHAT_SYSTEM_PROMPT, userPrompt: prompt, jsonSchema: z.toJSONSchema(schema), allowWebSearch: false });
+				result = await generateCodexStructured({ model: selection.model || undefined, systemPrompt: CHAT_SYSTEM_PROMPT, userPrompt: prompt, jsonSchema: z.toJSONSchema(schema), allowWebSearch: false, effort: selection.effort });
 			}
 			raw = result.raw;
 			usage = result.usage;
@@ -44,7 +47,7 @@ export async function generateReply(material: unknown, conversation: Conversatio
 			failure = describeGenerationError(e);
 			throw new Error(failure);
 		} finally {
-			db.prepare(`INSERT INTO agent_calls (id, action, adapter, model, attempt, request, raw_output, validation_errors, error, latency_ms, usage, created_at) VALUES (?, 'chat', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(crypto.randomUUID(), selection.provider, model, attempt, prompt, raw, errors ? JSON.stringify(errors) : null, failure, Date.now() - started, usage ?? null, Date.now());
+			db.prepare(`INSERT INTO agent_calls (id, action, adapter, model, attempt, request, raw_output, validation_errors, error, latency_ms, usage, effort, created_at) VALUES (?, 'chat', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(crypto.randomUUID(), selection.provider, model, attempt, prompt, raw, errors ? JSON.stringify(errors) : null, failure, Date.now() - started, usage ?? null, sentEffort, Date.now());
 		}
 	}
 	throw new Error('The model returned an invalid reply. Your message is saved; retry to continue.');

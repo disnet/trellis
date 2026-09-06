@@ -2,7 +2,7 @@
 	import LocalAgentSetup from "./LocalAgentSetup.svelte";
 	let setup = $state(false);
 	import Icon from './Icon.svelte';
-	import { PROVIDERS, type AgentProvider } from '$lib/models';
+	import { PROVIDERS, REASONING_EFFORTS, supportsEffort, type AgentProvider, type ReasoningEffort } from '$lib/models';
 	import { workspace as ws } from '$lib/workspace.svelte';
 	/** Narrows the trigger to the provider alone when the toolbar is short of room. */
 	let { compact = false }: { compact?: boolean } = $props();
@@ -18,10 +18,19 @@
 	const modelGroups = $derived([...new Set(provider.models.map((m) => m.group))]);
 	const modelLabel = $derived(selectedPreset?.label ?? (ws.modelSelection.model || 'Default'));
 	const triggerLabel = $derived(compact ? provider.label : `${provider.label} · ${modelLabel}`);
+	// Effort travels across a provider switch: the vocabulary is shared, so a
+	// deliberate choice of "how hard to think" outlives the choice of who thinks.
+	const effortUsed = $derived(supportsEffort(ws.modelSelection.provider, ws.modelSelection.model));
+	const EFFORT_LABELS: Record<ReasoningEffort, string> = {
+		low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra high', max: 'Max'
+	};
 	function changeProvider(value: string) {
-		ws.selectModel({ provider: value as AgentProvider, model: '' });
+		ws.selectModel({ ...ws.modelSelection, provider: value as AgentProvider, model: '' });
 		custom = '';
 		invalid = false;
+	}
+	function changeEffort(value: string) {
+		ws.selectModel({ ...ws.modelSelection, effort: (value || undefined) as ReasoningEffort | undefined });
 	}
 </script>
 
@@ -44,7 +53,7 @@
 			{#if provider.id !== 'fixture'}
 				<label>Model
 					<select value={ws.modelSelection.model} disabled={ws.invoking !== null}
-						onchange={(e) => ws.selectModel({ provider: provider.id, model: e.currentTarget.value })}>
+						onchange={(e) => ws.selectModel({ ...ws.modelSelection, provider: provider.id, model: e.currentTarget.value })}>
 						<option value="">Provider default</option>
 						{#each modelGroups as group}
 							<optgroup label={group}>
@@ -63,7 +72,7 @@
 					e.preventDefault();
 					const model = custom.trim();
 					invalid = !/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/.test(model);
-					if (!invalid) { ws.selectModel({ provider: provider.id, model }); custom = ''; }
+					if (!invalid) { ws.selectModel({ ...ws.modelSelection, provider: provider.id, model }); custom = ''; }
 				}}>
 					<label for="custom-model">Other model ID</label>
 					<div class="custom"><input id="custom-model" bind:value={custom} placeholder="Enter a model ID"
@@ -71,6 +80,18 @@
 						<button disabled={!custom.trim() || ws.invoking !== null}>Use</button></div>
 					{#if invalid}<p role="alert">Enter a valid model ID.</p>{/if}
 				</form>
+				<label>Reasoning effort
+					<select value={ws.modelSelection.effort ?? ''} disabled={ws.invoking !== null}
+						onchange={(e) => changeEffort(e.currentTarget.value)}>
+						<option value="">Provider default</option>
+						{#each REASONING_EFFORTS as level}
+							<option value={level}>{EFFORT_LABELS[level]}</option>
+						{/each}
+					</select>
+				</label>
+				<p>{ws.modelSelection.effort && !effortUsed
+					? `${modelLabel} predates reasoning effort, so this model ignores the setting.`
+					: 'How much the model deliberates before answering. Higher costs more and takes longer.'}</p>
 			{/if}
 			<p>{provider.id === 'codex-cli' ? 'Uses your Codex CLI login. Run codex login to connect.' :
 				provider.id === 'claude-cli' ? 'Uses your Claude Code login.' :

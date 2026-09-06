@@ -1,7 +1,7 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import crypto from 'node:crypto';
 import { z } from 'zod';
-import type { ModelSelection } from '$lib/models';
+import { supportsEffort, type ModelSelection } from '$lib/models';
 import { parseProseReference } from '$lib/prose-format';
 import {
 	formatConfidence,
@@ -110,6 +110,8 @@ interface ProviderResult {
 interface ProseAdapter {
 	name: ModelSelection['provider'];
 	model: string;
+	/** The effort actually sent — undefined where the provider default stands. */
+	effort?: ModelSelection['effort'];
 	generate(request: string): Promise<ProviderResult>;
 }
 
@@ -412,6 +414,7 @@ function selectProseAdapter(
 			return {
 				name: 'live',
 				model,
+				effort: selection.effort && supportsEffort('live', model) ? selection.effort : undefined,
 				async generate(request) {
 					const result = await generateAnthropicStructured({
 						client: options.anthropicClient,
@@ -420,7 +423,8 @@ function selectProseAdapter(
 						systemPrompt: PROSE_SYSTEM_PROMPT,
 						messages: [{ role: 'user', content: request }],
 						schema: PROSE_SCHEMA,
-						allowWebTools: false
+						allowWebTools: false,
+						effort: selection.effort
 					});
 					return { raw: result.raw, value: result.value, usage: result.usage };
 				}
@@ -431,13 +435,15 @@ function selectProseAdapter(
 			return {
 				name: 'claude-cli',
 				model,
+				effort: selection.effort,
 				async generate(request) {
 					return generateClaudeStructured({
 						model,
 						systemPrompt: PROSE_SYSTEM_PROMPT,
 						userPrompt: request,
 						jsonSchema: claudeSchema,
-						allowWebTools: false
+						allowWebTools: false,
+						effort: selection.effort
 					});
 				}
 			};
@@ -447,13 +453,15 @@ function selectProseAdapter(
 			return {
 				name: 'codex-cli',
 				model,
+				effort: selection.effort,
 				async generate(request) {
 					return generateCodexStructured({
 						...(selection.model ? { model: selection.model } : {}),
 						systemPrompt: PROSE_SYSTEM_PROMPT,
 						userPrompt: request,
 						jsonSchema: codexSchema,
-						allowWebSearch: false
+						allowWebSearch: false,
+						effort: selection.effort
 					});
 				}
 			};
@@ -475,8 +483,8 @@ function insertAttempt(fields: {
 }): void {
 	db.prepare(
 		`INSERT INTO agent_calls
-		   (id, action, adapter, model, attempt, request, raw_output, validation_errors, error, latency_ms, usage, created_at)
-		 VALUES (?, 'prose', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		   (id, action, adapter, model, attempt, request, raw_output, validation_errors, error, latency_ms, usage, effort, created_at)
+		 VALUES (?, 'prose', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	).run(
 		`call-${crypto.randomUUID().slice(0, 8)}`,
 		fields.adapter.name,
@@ -488,6 +496,7 @@ function insertAttempt(fields: {
 		fields.error,
 		fields.latencyMs,
 		fields.usage ?? null,
+		fields.adapter.effort ?? null,
 		Date.now()
 	);
 }

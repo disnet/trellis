@@ -14,6 +14,7 @@ import { spawn } from 'node:child_process';
 import os from 'node:os';
 import { z } from 'zod';
 import type { ModelAdapter } from './adapter';
+import type { ReasoningEffort } from '$lib/models';
 import { SYSTEM_PROMPT, buildUserPrompt } from './prompt';
 import { proposalSchema } from './wire';
 
@@ -78,6 +79,8 @@ export interface ClaudeStructuredRequest {
 	jsonSchema: object;
 	/** Proposal generation may browse; closed-context prose passes false. */
 	allowWebTools: boolean;
+	/** Undefined leaves the CLI's own default effort in place. */
+	effort?: ReasoningEffort;
 }
 
 export interface ClaudeStructuredResult {
@@ -98,7 +101,8 @@ export async function generateClaudeStructured({
 	systemPrompt,
 	userPrompt,
 	jsonSchema,
-	allowWebTools
+	allowWebTools,
+	effort
 }: ClaudeStructuredRequest): Promise<ClaudeStructuredResult> {
 	await prepareCliEnvironment();
 	const bin = resolveCli('claude-cli');
@@ -122,7 +126,8 @@ export async function generateClaudeStructured({
 			'--system-prompt',
 			systemPrompt,
 			'--json-schema',
-			JSON.stringify(jsonSchema)
+			JSON.stringify(jsonSchema),
+			...(effort ? ['--effort', effort] : [])
 		],
 		userPrompt
 	);
@@ -169,12 +174,13 @@ export async function generateClaudeStructured({
 	return { raw, value, parseError, usage };
 }
 
-export function makeClaudeCliAdapter(model = 'sonnet'): ModelAdapter {
+export function makeClaudeCliAdapter(model = 'sonnet', effort?: ReasoningEffort): ModelAdapter {
 	// The CLI accepts aliases (sonnet, opus, haiku) as well as full model ids.
 
 	return {
 		name: 'claude-cli',
 		model,
+		effort,
 		async generate({ action, context, feedback }) {
 			let userPrompt = buildUserPrompt(action, context);
 			if (feedback) {
@@ -190,7 +196,8 @@ export function makeClaudeCliAdapter(model = 'sonnet'): ModelAdapter {
 				systemPrompt: SYSTEM_PROMPT,
 				userPrompt,
 				jsonSchema: JSON_SCHEMA,
-				allowWebTools: true
+				allowWebTools: true,
+				effort
 			});
 			// Preserve the proposal adapter's prior error behavior. Prose uses the
 			// parseError as validation feedback and can therefore repair it.

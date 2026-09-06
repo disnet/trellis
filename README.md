@@ -91,9 +91,11 @@ npm run dev
 ```
 
 Use the model switcher beside the agent operations to choose Anthropic API,
-Claude Code, Codex, or offline fixtures. Choose a preset or enter a model ID;
-the selection applies to all operations and survives reloads in this browser.
-Environment settings supply the initial selection until you make a choice.
+Claude Code, Codex, or offline fixtures. Choose a preset or enter a model ID,
+and set the reasoning effort (`low` … `max`) the model should spend before
+answering; the selection applies to all operations and survives reloads in this
+browser. Environment settings supply the initial selection until you make a
+choice.
 
 Codex requires the `codex` CLI on PATH and a login (`codex login`). It runs
 ephemerally in a temporary directory with a read-only sandbox, shell tools
@@ -117,6 +119,11 @@ Anthropic API generation needs Anthropic credentials (`ANTHROPIC_API_KEY`, or an
   - `codex-cli` — local Codex CLI (`codex exec`), using its existing login.
 - `TRELLIS_MODEL` — model for generation (live default `claude-sonnet-5`;
   claude-cli default `sonnet`, aliases accepted; Codex uses its CLI default).
+- `TRELLIS_EFFORT` — reasoning effort: `low`, `medium`, `high`, `xhigh` or
+  `max`. Unset leaves each provider's own default. Sent as
+  `output_config.effort` (live), `--effort` (claude-cli) and
+  `model_reasoning_effort` (codex-cli); dropped for Anthropic API models that
+  predate the parameter, such as Haiku 4.5.
 - `TRELLIS_CLAUDE_BIN` — path to the `claude` binary if not on PATH.
 - `TRELLIS_CODEX_BIN` — path to the `codex` binary if not on PATH.
 - `TRELLIS_DB` — SQLite path (default `data/trellis.db`; `:memory:` works).

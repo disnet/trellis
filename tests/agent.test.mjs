@@ -26,6 +26,97 @@ test('provider selections validate and do not inherit another provider’s envir
 	assert.equal(isModelSelection({ provider: 'unknown', model: '' }), false);
 	assert.equal(isModelSelection({ provider: 'codex-cli', model: '--dangerous' }), false);
 	assert.equal(isModelSelection({ provider: 'codex-cli', model: 'custom-model' }), true);
+	assert.equal(isModelSelection({ provider: 'live', model: '', effort: 'xhigh' }), true);
+	assert.equal(isModelSelection({ provider: 'live', model: '', effort: 'ludicrous' }), false);
+	assert.equal(isModelSelection({ provider: 'live', model: '', effort: '' }), false);
+});
+
+test('reasoning effort reaches each provider, and only models that accept it', async () => {
+	const { generateAnthropicStructured } = await load('lib/server/agent/adapter.ts');
+	const { z } = await import('zod');
+	const sent = [];
+	const client = { messages: { parse: async (request) => {
+		sent.push(request);
+		return { content: [{ type: 'text', text: '{}' }], parsed_output: {}, usage: { input_tokens: 1, output_tokens: 1 } };
+	} } };
+	const call = (model, effort) => generateAnthropicStructured({
+		client, model, effort, maxTokens: 100, systemPrompt: 'S',
+		messages: [{ role: 'user', content: 'U' }], schema: z.object({}), allowWebTools: false
+	});
+	await call('claude-sonnet-5', 'xhigh');
+	await call('claude-haiku-4-5-20251001', 'xhigh');
+	await call('claude-sonnet-5', undefined);
+	// Haiku 4.5 predates output_config.effort and would 400 on it, so the
+	// setting is dropped rather than allowed to fail the call.
+	assert.deepEqual(sent.map((r) => r.output_config.effort), ['xhigh', undefined, undefined]);
+
+	const bin = join(directory, 'effort-codex');
+	await writeFile(bin, `#!/usr/bin/env node
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+const configs = args.flatMap((a, i) => a === '-c' ? [args[i + 1]] : []);
+process.stdin.resume();
+process.stdin.on('end', () => {
+  fs.writeFileSync(args[args.indexOf('--output-last-message') + 1],
+    JSON.stringify({ summary: configs.join('|'), operations: [] }));
+});
+`, { mode: 0o755 });
+	process.env.TRELLIS_CODEX_BIN = bin;
+	const codex = (effort) => selectAdapter(deps, { provider: 'codex-cli', model: '', effort })
+		.generate({ action: 'decompose', context });
+	assert.match((await codex('low')).proposal.summary, /model_reasoning_effort="low"/);
+	assert.doesNotMatch((await codex(undefined)).proposal.summary, /model_reasoning_effort/);
+
+	const claudeBin = join(directory, 'effort-claude');
+	await writeFile(claudeBin, `#!/usr/bin/env node
+const args = process.argv.slice(2);
+const effort = args.includes('--effort') ? args[args.indexOf('--effort') + 1] : 'unset';
+process.stdin.resume();
+process.stdin.on('end', () => {
+  console.log(JSON.stringify({ structured_output: { summary: effort, operations: [] } }));
+});
+`, { mode: 0o755 });
+	process.env.TRELLIS_CLAUDE_BIN = claudeBin;
+	const claude = (effort) => selectAdapter(deps, { provider: 'claude-cli', model: 'sonnet', effort })
+		.generate({ action: 'decompose', context });
+	assert.equal((await claude('max')).proposal.summary, 'max');
+	assert.equal((await claude(undefined)).proposal.summary, 'unset');
+});
+
+test('the activity log records the effort actually sent, not the one requested', async () => {
+	const { generateProposal } = await load('lib/server/agent/index.ts');
+	const { getState } = await load('lib/server/store.ts');
+	const { db } = await load('lib/server/db.ts');
+	const thoughtId = Object.keys(getState().thoughts)[0];
+	const valid = { summary: 'Refined the claim.', operations: [{
+		op: 'revise_thought', client_ref: 'r1', depends_on: [], evidence_refs: [thoughtId], rationale: 'Clarify.',
+		thought_id: thoughtId, thought: { title: 'Clearer title', type: null, status: null, statement: null, confidence: null, source: null }
+	}] };
+	const bin = join(directory, 'logged-codex');
+	await writeFile(bin, `#!/usr/bin/env node
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+process.stdin.resume();
+process.stdin.on('end', () => {
+  fs.writeFileSync(args[args.indexOf('--output-last-message') + 1], ${JSON.stringify(JSON.stringify(valid))});
+});
+`, { mode: 0o755 });
+	process.env.TRELLIS_CODEX_BIN = bin;
+	const effortOf = (model) =>
+		db.prepare('SELECT effort FROM agent_calls WHERE model = ? ORDER BY rowid DESC').get(model)?.effort;
+
+	assert.equal((await generateProposal('develop', [thoughtId], undefined,
+		{ provider: 'codex-cli', model: 'logged-high', effort: 'high' })).ok, true);
+	assert.equal(effortOf('logged-high'), 'high');
+
+	assert.equal((await generateProposal('develop', [thoughtId], undefined,
+		{ provider: 'codex-cli', model: 'logged-plain' })).ok, true);
+	assert.equal(effortOf('logged-plain'), null);
+
+	// Fixtures never call a model, so nothing was sent at any effort.
+	assert.equal((await generateProposal('develop', [thoughtId], undefined,
+		{ provider: 'fixture', model: '', effort: 'max' })).ok, true);
+	assert.equal(effortOf('fixture'), null);
 });
 
 test('Codex uses isolated structured output, normalizes nullable revisions, and cleans up', async () => {

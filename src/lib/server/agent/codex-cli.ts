@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
 import type { ModelAdapter } from './adapter';
+import type { ReasoningEffort } from '$lib/models';
 import { SYSTEM_PROMPT, buildUserPrompt } from './prompt';
 import { codexProposalSchema } from './wire';
 
@@ -47,6 +48,8 @@ export interface CodexStructuredRequest {
 	jsonSchema: object;
 	/** Proposal generation may browse; closed-context prose passes false. */
 	allowWebSearch: boolean;
+	/** Undefined leaves the Codex config's own default effort in place. */
+	effort?: ReasoningEffort;
 }
 
 export interface CodexStructuredResult {
@@ -63,7 +66,8 @@ export async function generateCodexStructured({
 	systemPrompt,
 	userPrompt,
 	jsonSchema,
-	allowWebSearch
+	allowWebSearch,
+	effort
 }: CodexStructuredRequest): Promise<CodexStructuredResult> {
 	await prepareCliEnvironment();
 	const directory = await mkdtemp(join(tmpdir(), 'trellis-codex-'));
@@ -86,6 +90,8 @@ export async function generateCodexStructured({
 				'features.shell_tool=false',
 				'-c',
 				`web_search="${allowWebSearch ? 'live' : 'disabled'}"`,
+				// Safe to interpolate: effort is one of a closed set of literals.
+				...(effort ? ['-c', `model_reasoning_effort="${effort}"`] : []),
 				'--output-schema',
 				schema,
 				'--output-last-message',
@@ -110,10 +116,11 @@ export async function generateCodexStructured({
 	}
 }
 
-export function makeCodexCliAdapter(model?: string): ModelAdapter {
+export function makeCodexCliAdapter(model?: string, effort?: ReasoningEffort): ModelAdapter {
 	return {
 		name: 'codex-cli',
 		model: model ?? 'default',
+		effort,
 		async generate({ action, context, feedback }) {
 			let request = buildUserPrompt(action, context);
 			if (feedback) request += `\n\nPrevious proposal:\n${feedback.raw}\nValidation errors:\n${feedback.errors.join('\n')}\nReturn a corrected change set.`;
@@ -123,7 +130,8 @@ export function makeCodexCliAdapter(model?: string): ModelAdapter {
 					`${SYSTEM_PROMPT}\n\nUse only the supplied context, plus the web search tool to fetch URLs from the context or find sources that would ground evidence; use no other tools. For revised thoughts, use null for unchanged fields.`,
 				userPrompt: request,
 				jsonSchema: z.toJSONSchema(codexProposalSchema),
-				allowWebSearch: true
+				allowWebSearch: true,
+				effort
 			});
 			let proposal = result.value;
 			const parsed = codexProposalSchema.safeParse(proposal);

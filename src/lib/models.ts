@@ -1,9 +1,20 @@
 export const AGENT_PROVIDERS = ['live', 'claude-cli', 'codex-cli', 'fixture'] as const;
 export type AgentProvider = (typeof AGENT_PROVIDERS)[number];
+
+// One vocabulary for all three live providers: the Anthropic API's
+// output_config.effort, `claude --effort`, and Codex's model_reasoning_effort
+// all accept exactly these levels. Codex also accepts none/minimal and the API
+// defaults to high; keeping the shared five means the switcher means the same
+// thing wherever you point it.
+export const REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
+
 export interface ModelSelection {
 	provider: AgentProvider;
 	/** Empty means use the provider's configured default. */
 	model: string;
+	/** Undefined means use the provider's default effort. */
+	effort?: ReasoningEffort;
 }
 
 export interface ModelPreset {
@@ -48,9 +59,20 @@ export const PROVIDERS: { id: AgentProvider; label: string; models: ModelPreset[
 	{ id: 'fixture', label: 'Fixtures (offline)', models: [] }
 ];
 
+// Reasoning effort predates neither provider uniformly: the Anthropic API
+// rejects output_config.effort on models older than the 4.6 generation (Haiku
+// 4.5 and earlier), while both CLIs accept the flag for every model they offer.
+export function supportsEffort(provider: AgentProvider, model: string): boolean {
+	if (provider === 'fixture') return false;
+	if (provider !== 'live') return true;
+	// The live default (claude-sonnet-5) supports effort, so '' qualifies.
+	return model === '' || /^claude-(fable-5|mythos-5|opus-5|opus-4-[678]|sonnet-5|sonnet-4-6)/.test(model);
+}
+
 export function isModelSelection(value: unknown): value is ModelSelection {
 	if (!value || typeof value !== 'object') return false;
-	const { provider, model } = value as ModelSelection;
+	const { provider, model, effort } = value as ModelSelection;
 	return AGENT_PROVIDERS.includes(provider) && typeof model === 'string' &&
-		(model === '' || /^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/.test(model));
+		(model === '' || /^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/.test(model)) &&
+		(effort === undefined || REASONING_EFFORTS.includes(effort));
 }

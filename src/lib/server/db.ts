@@ -164,6 +164,7 @@ CREATE TABLE IF NOT EXISTS agent_calls (
   error TEXT,
   latency_ms INTEGER NOT NULL,
   usage TEXT,
+  effort TEXT,
   change_set_id TEXT,
   created_at INTEGER NOT NULL
 );
@@ -232,6 +233,7 @@ function open(): Database.Database {
 	migrateToResizableNotes(db);
 	migrateToProseDraftHistory(db);
 	migrateToCallUsage(db);
+	migrateToCallEffort(db);
 	seedIfEmpty(db);
 	return db;
 }
@@ -344,6 +346,16 @@ function migrateToWholeGraphCanvas(db: Database.Database) {
 function migrateToCallUsage(db: Database.Database) {
 	const cols = db.pragma('table_info(agent_calls)') as { name: string }[];
 	if (!cols.some((c) => c.name === 'usage')) db.exec('ALTER TABLE agent_calls ADD COLUMN usage TEXT');
+}
+
+// Agent calls gained an effort column when reasoning effort became selectable
+// alongside provider and model. It records the effort actually sent, so it is
+// NULL both for calls that left the provider default alone and for ones whose
+// model predates the parameter — and for every row written before the setting
+// existed.
+function migrateToCallEffort(db: Database.Database) {
+	const cols = db.pragma('table_info(agent_calls)') as { name: string }[];
+	if (!cols.some((c) => c.name === 'effort')) db.exec('ALTER TABLE agent_calls ADD COLUMN effort TEXT');
 }
 
 // Canvas notes gained user-set dimensions when they became resizable.
