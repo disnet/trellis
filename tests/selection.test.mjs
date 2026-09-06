@@ -128,3 +128,21 @@ test('deleted notes and ratified proposals leave the selection behind them', asy
 	assert.equal(ws.selectedIds, selection, 'surviving thoughts keep the same array — the inspector stays put');
 	ws.clearSelection();
 });
+
+// The proposals tray names thoughts; clicking one asks the canvas to go there.
+test('asking the canvas for an item switches to it, and asks again on every click', async () => {
+	const ws = await canvas();
+	ws.view = 'outline';
+	ws.revealOnCanvas('a');
+	assert.equal(ws.view, 'canvas', 'you cannot look at the canvas from the outline');
+	assert.deepEqual(ws.canvasReveal.ids, ['a']);
+	const first = ws.canvasReveal.n;
+	ws.revealOnCanvas('a');
+	assert.equal(ws.canvasReveal.n, first + 1, 'the same thought twice moves the camera twice');
+	ws.revealOnCanvas('a', 'cs:p1');
+	assert.deepEqual(ws.canvasReveal.ids, ['a', 'cs:p1'], 'a connection frames both of its ends');
+	const asked = ws.canvasReveal.n;
+	ws.revealOnCanvas();
+	assert.equal(ws.canvasReveal.n, asked, 'nothing to show, nothing to move');
+	ws.view = 'canvas';
+});

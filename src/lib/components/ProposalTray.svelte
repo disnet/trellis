@@ -34,6 +34,32 @@
 		return () => cancelAnimationFrame(frame);
 	});
 
+	// The return trip: every thought the tray names is a place on the canvas, so
+	// clicking one selects it and brings the camera to it.
+	function revealThought(id: string) {
+		ws.select(id);
+		ws.revealOnCanvas(id);
+	}
+
+	/** Canvas id of a reference in an operation: an existing thought stands for
+	 *  itself, a client_ref for the proposed card the same change set creates. */
+	function canvasRef(cs: ChangeSet, ref: string): string {
+		return ref in ws.thoughts ? ref : `${cs.id}:${ref}`;
+	}
+
+	/** Show an operation where it lives: the proposed card, the thought it
+	 *  revises, or both ends of the connection it draws. */
+	function revealOp(cs: ChangeSet, op: ProposedOperation) {
+		const p = effectivePayload(op);
+		if (p.op === 'revise_thought') {
+			revealThought(p.thoughtId);
+			return;
+		}
+		ws.selectProposal(op.id);
+		if (p.op === 'create_thought') ws.revealOnCanvas(`${cs.id}:${op.clientRef}`);
+		else ws.revealOnCanvas(canvasRef(cs, p.from), canvasRef(cs, p.to));
+	}
+
 	// Edit form state
 	let eTitle = $state('');
 	let eStatement = $state('');
@@ -155,7 +181,11 @@
 					<p class="summary">{cs.summary}</p>
 					{#if cs.invokedOn.length > 0}
 						<p class="using">
-							using: {cs.invokedOn.map((id) => ws.thoughts[id]?.title ?? id).join(', ')}
+							using:
+							{#each cs.invokedOn as id, i (id)}{i > 0 ? ', ' : ''}{#if ws.thoughts[id]}<button
+										class="thought-link"
+										title="Show this thought on the canvas"
+										onclick={() => revealThought(id)}>{ws.thoughts[id].title}</button>{:else}{id}{/if}{/each}
 						</p>
 					{/if}
 					{#if cs.consulted.length > 0}
@@ -167,9 +197,9 @@
 								{#each cs.consulted as cid (cid)}
 									<li>
 										<button
-											class="consulted-link"
-											title="Select this thought"
-											onclick={() => ws.select(cid)}
+											class="thought-link"
+											title="Show this thought on the canvas"
+											onclick={() => revealThought(cid)}
 										>{ws.thoughts[cid]?.title ?? cid}</button>
 									</li>
 								{/each}
@@ -227,7 +257,11 @@
 									</div>
 								</div>
 							{:else}
-								<div class="op-label">{ws.opLabel(op)}</div>
+								<button
+									class="op-label"
+									title="Show this on the canvas"
+									onclick={() => revealOp(cs, op)}>{ws.opLabel(op)}</button
+								>
 								{#if p.op === 'create_thought'}
 									<p class="op-statement">{p.thought.statement}</p>
 								{/if}
@@ -239,7 +273,13 @@
 								{/if}
 								<p class="rationale">{op.rationale}</p>
 								{#if op.evidenceRefs.length > 0}
-									<p class="evidence">evidence: {op.evidenceRefs.map(evidenceLabel).join(', ')}</p>
+									<p class="evidence">
+										evidence:
+										{#each op.evidenceRefs as ref, i (ref)}{i > 0 ? ', ' : ''}{#if ws.thoughts[ref]}<button
+													class="thought-link"
+													title="Show this thought on the canvas"
+													onclick={() => revealThought(ref)}>{ws.thoughts[ref].title}</button>{:else}{evidenceLabel(ref)}{/if}{/each}
+									</p>
 								{/if}
 								{#if op.editedPayload}
 									<p class="edited-note">
@@ -426,7 +466,9 @@
 		flex-direction: column;
 		gap: 2px;
 	}
-	.consulted-link {
+	/* Every thought the tray names is a place on the canvas you can travel to:
+	   it reads as running text until you reach for it. */
+	.thought-link {
 		font: inherit;
 		border: none;
 		background: none;
@@ -438,7 +480,7 @@
 		text-decoration-color: var(--card-border);
 		text-underline-offset: 2px;
 	}
-	.consulted-link:hover {
+	.thought-link:hover {
 		color: var(--blue);
 		text-decoration-color: var(--blue);
 	}
@@ -498,6 +540,25 @@
 		font-weight: 600;
 		color: var(--ink);
 		line-height: 1.3;
+	}
+	/* The proposal's own line is the way to it: the title carries no chrome until
+	   you point at it, then it offers the trip out to the canvas. */
+	.op button.op-label {
+		font: inherit;
+		font-weight: 600;
+		border: none;
+		background: none;
+		border-radius: 0;
+		padding: 0;
+		display: block;
+		width: 100%;
+		text-align: left;
+		cursor: pointer;
+	}
+	.op button.op-label:hover {
+		color: var(--blue);
+		text-decoration: underline;
+		text-underline-offset: 2px;
 	}
 	.op-statement {
 		margin: 4px 0 0;

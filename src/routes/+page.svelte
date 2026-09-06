@@ -55,6 +55,19 @@
 		}
 		previousReveal = ws.proposalReveal;
 	});
+	// The other direction — following a thought out of the tray to its place on
+	// the canvas — is still about the proposals. It selects the thought, which
+	// would otherwise swap the tray for the inspector mid-review, so this runs
+	// after that rule and keeps the tray up.
+	let previousCanvasReveal = 0;
+	$effect(() => {
+		const n = ws.canvasReveal?.n ?? 0;
+		if (n !== previousCanvasReveal) {
+			rightPanel = 'proposals';
+			if (viewportWidth < 800) leftPanel = null;
+		}
+		previousCanvasReveal = n;
+	});
 	function toggleLeft(panel: 'library') {
 		leftPanel = leftPanel === panel ? null : panel;
 		if (viewportWidth < 800) rightPanel = null;

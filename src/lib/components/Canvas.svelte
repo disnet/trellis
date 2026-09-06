@@ -346,6 +346,45 @@
 		});
 		showIndex = false;
 	}
+
+	/** Zoom a reveal never goes below: arriving at a card you cannot read is not
+	 *  arriving. Zooming further in than the person already was is not our call. */
+	const LEGIBLE_SCALE = 0.8;
+
+	/** Frame the given canvas items: center them, keeping the current zoom when
+	 *  they already fit, pulling back only as far as fitting them needs. */
+	function frame(ids: string[]) {
+		const found = items.filter((i) => ids.includes(i.id));
+		if (found.length === 0 || vp.w === 0) return false;
+		let l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
+		for (const i of found) {
+			l = Math.min(l, i.x); t = Math.min(t, i.y);
+			r = Math.max(r, i.x + (dimensions[i.id]?.width ?? cardW));
+			b = Math.max(b, i.y + (dimensions[i.id]?.height ?? cardH));
+		}
+		const w = r - l;
+		const h = b - t;
+		const fit = Math.min((vp.w - 96) / w, (vp.h - 240) / h);
+		const scale = clamp(Math.min(Math.max(cam.scale, LEGIBLE_SCALE), fit), MIN_SCALE, MAX_SCALE);
+		glide(() => {
+			cam = {
+				x: vp.w / 2 - (l + w / 2) * scale,
+				y: vp.h / 2 - (t + h / 2) * scale,
+				scale
+			};
+		});
+		return true;
+	}
+
+	// A panel (the proposals tray) can send the camera to what it is talking
+	// about. Held until the target is actually placeable — the canvas may have
+	// just mounted, or a proposed card may not have a preview position yet.
+	let revealed = 0;
+	$effect(() => {
+		const ask = ws.canvasReveal;
+		if (!ask || ask.n === revealed) return;
+		if (frame(ask.ids)) revealed = ask.n;
+	});
 	// The item being dragged while the whole selection travels with it — the rest
 	// of the selection borrows its lifted styling.
 	let groupDragAnchor = $state<{ kind: CanvasKind; id: string } | null>(null);

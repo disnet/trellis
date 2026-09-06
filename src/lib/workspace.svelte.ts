@@ -515,6 +515,20 @@ class Workspace {
 	/** Bumped on every reveal so re-picking the same proposal scrolls again. */
 	proposalReveal = $state(0);
 
+	/** The other direction: canvas items a panel asked the camera to travel to,
+	 *  as canvas ids (thought id, note id, or `${changeSetId}:${clientRef}` for a
+	 *  proposed card). Several ids frame all of them — an edge is its endpoints.
+	 *  `n` is bumped on every ask, so clicking the same thing twice moves again. */
+	canvasReveal = $state<{ ids: string[]; n: number } | null>(null);
+
+	/** Bring the canvas to these items, switching to it from another projection:
+	 *  naming a thought in a panel should be enough to go and look at it. */
+	revealOnCanvas(...ids: string[]) {
+		if (ids.length === 0) return;
+		this.view = 'canvas';
+		this.canvasReveal = { ids, n: (this.canvasReveal?.n ?? 0) + 1 };
+	}
+
 	selectProposal(opId: string, additive = false) {
 		if (!additive) {
 			this.selectedIds = [];
