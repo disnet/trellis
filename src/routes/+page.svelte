@@ -8,7 +8,6 @@
 	import Inspector from '$lib/components/Inspector.svelte';
 	import Outline from '$lib/components/Outline.svelte';
 	import Library from '$lib/components/Library.svelte';
-	import NewThought from '$lib/components/NewThought.svelte';
 	import PaneResizer from '$lib/components/PaneResizer.svelte';
 	import ProposalTray from '$lib/components/ProposalTray.svelte';
 	import ReentryPanel from '$lib/components/ReentryPanel.svelte';
@@ -178,7 +177,6 @@
 	</aside>
 
 	<ReentryPanel />
-	<NewThought />
 	<AppDialog />
 
 	{#if ws.notice}

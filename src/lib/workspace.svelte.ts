@@ -180,8 +180,15 @@ class Workspace {
 		}
 		return { csId: cs.id, existing: positions, ghosts, moved };
 	}
-	/** Whether the manual "new thought" composer is open. View-only. */
-	composerOpen = $state(false);
+	/** A pending request to write a thought by hand. The composer is a card on
+	 *  the canvas, so the canvas is the one that can open it; this is how the
+	 *  rest of the app asks. View-only. */
+	composeRequest = $state(false);
+	/** Write a thought yourself: show the canvas, and open the composer on it. */
+	compose() {
+		this.view = 'canvas';
+		this.composeRequest = true;
+	}
 	notice = $state<string | null>(null);
 
 	reentry = $state<ReentrySummary | null>(null);
@@ -772,21 +779,24 @@ class Workspace {
 	// --- manual creation (from the composer) ---
 
 	/** Create a human-authored thought directly in the graph; it lands on the
-	 *  canvas at a free position (joining the active lens, if any) and becomes
-	 *  the selection. */
-	async createThought(fields: {
-		type: ThoughtType;
-		status: ThoughtStatus;
-		title: string;
-		statement: string;
-		confidence?: Confidence | null;
-		source?: string | null;
-	}): Promise<string | null> {
+	 *  canvas at `at` — where the inline composer stood — or at a free position
+	 *  (joining the active lens, if any), and becomes the selection. */
+	async createThought(
+		fields: {
+			type: ThoughtType;
+			status: ThoughtStatus;
+			title: string;
+			statement: string;
+			confidence?: Confidence | null;
+			source?: string | null;
+		},
+		at?: GhostPosition
+	): Promise<string | null> {
 		const taken: GhostPosition[] = [
 			...Object.values(this.positions),
 			...Object.values(this.ghostPositions)
 		];
-		const pos = this.freePosition(taken);
+		const pos = at ?? this.freePosition(taken);
 		await this.flushMoves();
 		try {
 			const res = await fetch('/api/thoughts', {

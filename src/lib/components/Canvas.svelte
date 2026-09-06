@@ -10,6 +10,7 @@
 		type ProposedOperation
 	} from '$lib/types';
 	import ThoughtCard from './ThoughtCard.svelte';
+	import DraftThought from './DraftThought.svelte';
 	import RadialFocus from './RadialFocus.svelte';
 	import Icon from './Icon.svelte';
 	import { tick, untrack } from 'svelte';
@@ -454,6 +455,86 @@
 		el.addEventListener('pointerup', up);
 	}
 
+	// --- writing a thought in place ---
+	// Double-click the background (or press N) and the composer appears as a card
+	// on the canvas, at the spot you picked. No modal: the graph you are adding
+	// to stays visible while you write.
+
+	const DRAFT_W = 290;
+	/** The draft's resting height, used to center it on the chosen point. */
+	const DRAFT_H = 166;
+	let draft = $state<Pt | null>(null);
+	/** Bumped to send the caret back to an open draft's title. */
+	let draftFocus = $state(0);
+
+	function surfacePoint(clientX: number, clientY: number): Pt {
+		const rect = viewportEl!.getBoundingClientRect();
+		return {
+			x: (clientX - rect.left - cam.x) / cam.scale,
+			y: (clientY - rect.top - cam.y) / cam.scale
+		};
+	}
+
+	/** Open the composer centered on a surface point, and bring the camera to it. */
+	function startDraft(sx: number, sy: number) {
+		// An open draft holds typed text; a second request must not discard it,
+		// so it answers by taking the caret back instead.
+		if (draft) return void draftFocus++;
+		if (focusId || ws.layoutPreview || ws.applying) return;
+		draft = { x: Math.round(sx - DRAFT_W / 2), y: Math.round(sy - DRAFT_H / 2) };
+		stopPan();
+		// Center it, at a legible zoom: a card you type into is only useful if you
+		// can read what you are typing.
+		glide(() => {
+			const scale = Math.max(cam.scale, 1);
+			cam = { x: vp.w / 2 - sx * scale, y: vp.h / 2 - sy * scale, scale };
+		});
+	}
+
+	function onCanvasDblClick(e: MouseEvent) {
+		const target = e.target as HTMLElement;
+		if (target !== viewportEl && !target.classList.contains('canvas-surface')) return;
+		const p = surfacePoint(e.clientX, e.clientY);
+		startDraft(p.x, p.y);
+	}
+
+	function draftAtCenter() {
+		startDraft((vp.w / 2 - cam.x) / cam.scale, (vp.h / 2 - cam.y) / cam.scale);
+	}
+
+	async function saveDraft(fields: {
+		type: import('$lib/types').ThoughtType;
+		title: string;
+		statement: string;
+	}): Promise<string | null> {
+		const at = draft;
+		if (!at) return null;
+		const err = await ws.createThought({ ...fields, status: 'tentative' }, at);
+		if (err) {
+			ws.notice = err;
+			return err;
+		}
+		draft = null;
+		return null;
+	}
+
+	// A draft belongs to the canvas it was opened on; leaving takes it with you.
+	$effect(() => {
+		ws.activeGraphId;
+		untrack(() => (draft = null));
+	});
+	$effect(() => { if (ws.layoutPreview) draft = null; });
+
+	// The toolbar's New thought asks for a composer; answer once the viewport has
+	// been measured, so the draft can be centered in it. Declared after the two
+	// effects that clear the draft, so a request made while the canvas was hidden
+	// survives the mount they run on.
+	$effect(() => {
+		if (!ws.composeRequest || vp.w === 0) return;
+		untrack(() => draftAtCenter());
+		ws.composeRequest = false;
+	});
+
 	// WASD pans the camera for as long as the keys are held, at a steady rate in
 	// screen space (so a nudge covers the same visible distance at any zoom).
 	// Shift doubles it. Each key names the direction the viewpoint travels, so
@@ -509,8 +590,9 @@
 	// down; the cleanup also stops the loop when the canvas goes away.
 	$effect(() => { if (focusId) stopPan(); return stopPan; });
 
-	// Keyboard: WASD pans; Escape clears the selection; ⌘/Ctrl+A selects the
-	// focus (lens members when one is active, the whole canvas otherwise).
+	// Keyboard: WASD pans; N writes a thought; Escape clears the selection;
+	// ⌘/Ctrl+A selects the focus (lens members when one is active, the whole
+	// canvas otherwise).
 	function onKeydown(e: KeyboardEvent) {
 		if (focusId) return;
 		const t = e.target as HTMLElement;
@@ -518,8 +600,13 @@
 		if (!typing && panKeydown(e)) return;
 		if (ws.layoutPreview) { if (e.key === 'Escape' && !ws.applying) ws.cancelLayoutPreview(); return; }
 		if (typing) return;
-		if (e.key === 'Escape' && (ws.selectedIds.length || ws.selectedProposalId)) {
+		if (e.key === 'Escape' && draft) {
+			draft = null;
+		} else if (e.key === 'Escape' && (ws.selectedIds.length || ws.selectedProposalId)) {
 			ws.clearSelection();
+		} else if (e.key.toLowerCase() === 'n' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+			e.preventDefault();
+			draftAtCenter();
 		} else if (e.key === 'a' && (e.metaKey || e.ctrlKey)) {
 			e.preventDefault();
 			const all = cards.map(({ t: thought }) => thought.id);
@@ -670,6 +757,7 @@
 	class:gliding
 	bind:this={viewportEl}
 	onpointerdown={onCanvasPointerDown}
+	ondblclick={onCanvasDblClick}
 	oncontextmenu={(e) => e.preventDefault()}
 	style="background-position: {cam.x}px {cam.y}px; background-size: {24 * cam.scale}px {24 * cam.scale}px;"
 >
@@ -805,6 +893,17 @@
 				onmove={ws.layoutPreview || ws.applying ? undefined : (x, y) => ws.moveGhost(g.key, x, y)}
 			/>
 		{/each}
+
+		{#if draft}
+			<DraftThought
+				x={draft.x}
+				y={draft.y}
+				width={DRAFT_W}
+				focusSignal={draftFocus}
+				onsave={saveDraft}
+				oncancel={() => (draft = null)}
+			/>
+		{/if}
 	</div>
 
 	{#if marquee}
@@ -814,10 +913,10 @@
 		></div>
 	{/if}
 
-	{#if items.length === 0}
+	{#if items.length === 0 && !draft}
 		<div class="canvas-empty">
 			<p><strong>Your canvas is empty.</strong></p>
-			<p>Write a thought, or paste something messy into Scratch and decompose it. Everything you keep lives here, spatially — working sets come later, when you want the agent focused.</p>
+			<p>Double-click anywhere (or press <kbd>N</kbd>) to write a thought, or paste something messy into Scratch and decompose it. Everything you keep lives here, spatially — working sets come later, when you want the agent focused.</p>
 		</div>
 	{/if}
 </div>
@@ -946,6 +1045,14 @@
 	}
 	.canvas-empty strong {
 		color: var(--ink-muted);
+	}
+	.canvas-empty kbd {
+		font: inherit;
+		font-size: var(--fs-11);
+		border: 1px solid var(--control-border);
+		border-radius: 4px;
+		padding: 0 4px;
+		background: var(--pill-fill);
 	}
 	.canvas-zoom {
 		position: absolute;

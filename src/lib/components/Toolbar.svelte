@@ -147,9 +147,9 @@
 	{#if !ws.loading && !ws.loadError}
 		<button
 			class="new-thought"
-			title="Write a thought yourself — straight into the graph, no proposal"
+			title="Write a thought yourself — straight into the graph, no proposal. On the canvas: press N, or double-click where you want it."
 			aria-label="New thought"
-			onclick={() => (ws.composerOpen = true)}
+			onclick={() => ws.compose()}
 		>
 			<Icon name="plus" /><span class="label">New thought</span>
 		</button>
