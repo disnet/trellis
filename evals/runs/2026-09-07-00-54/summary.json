@@ -1,0 +1,40 @@
+{
+  "input": "https://openai.com/index/an-alien-mind/",
+  "startedAt": "2026-09-07T00:54:55.234Z",
+  "runs": [
+    {
+      "case": "fable",
+      "effort": "low",
+      "selection": {
+        "provider": "claude-cli",
+        "model": "fable",
+        "effort": "low"
+      },
+      "graph": "fable - low",
+      "file": "trellis-fable-low.json",
+      "changeSetId": "cs-a788b31e",
+      "wallMs": 66675,
+      "attempts": 1,
+      "latencyMs": 66643,
+      "usage": "103 in / 4657 out tokens, $0.4468",
+      "validationErrors": []
+    },
+    {
+      "case": "fable",
+      "effort": "high",
+      "selection": {
+        "provider": "claude-cli",
+        "model": "fable",
+        "effort": "high"
+      },
+      "graph": "fable - high",
+      "file": "trellis-fable-high.json",
+      "changeSetId": "cs-9c2494de",
+      "wallMs": 89025,
+      "attempts": 1,
+      "latencyMs": 89005,
+      "usage": "98 in / 6192 out tokens, $0.4318",
+      "validationErrors": []
+    }
+  ]
+}

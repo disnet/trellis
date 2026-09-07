@@ -1,0 +1,126 @@
+{
+  "exportedAt": 1788741466564,
+  "graph": {
+    "id": "g-ad500bd9",
+    "name": "astra - low"
+  },
+  "conversations": [],
+  "thoughts": [],
+  "thought_revisions": [],
+  "relations": [],
+  "working_sets": [],
+  "working_set_items": [],
+  "canvas_positions": [],
+  "canvas_notes": [
+    {
+      "id": "note-14a5e4ab",
+      "body": "https://openai.com/index/an-alien-mind/",
+      "graph_id": "g-ad500bd9",
+      "x": 734,
+      "y": 48,
+      "w": null,
+      "h": null,
+      "created_at": 1788741384982
+    }
+  ],
+  "pinned_thoughts": [],
+  "change_sets": [
+    {
+      "id": "cs-44346fb2",
+      "action": "decompose",
+      "status": "pending",
+      "summary": "Proposed 1 concept, 2 claims, and 1 evidence thought, with a supporting relation.",
+      "invoked_on": "[]",
+      "consulted": "[]",
+      "conversation_context": "[]",
+      "scratch_id": "scratch-b6fef3ff",
+      "note_id": "note-14a5e4ab",
+      "graph_id": "g-ad500bd9",
+      "created_at": 1788741429799,
+      "applied_by": null,
+      "applied_at": null
+    }
+  ],
+  "proposed_operations": [
+    {
+      "id": "op-8714eec0",
+      "change_set_id": "cs-44346fb2",
+      "client_ref": "alignment",
+      "sequence": 0,
+      "depends_on": "[]",
+      "evidence_refs": "[\"scratch-b6fef3ff\"]",
+      "payload": "{\"op\":\"create_thought\",\"thought\":{\"type\":\"concept\",\"status\":\"tentative\",\"title\":\"Goal alignment and value alignment\",\"statement\":\"Goal alignment concerns pursuing assigned objectives. Value alignment concerns applying human principles under ambiguity or unfamiliar conditions. The boundary overlaps because interpreting goals requires inferring values. [Source](https://openai.com/index/an-alien-mind/)\"}}",
+      "edited_payload": null,
+      "rationale": "Preserves the essay’s central distinction.",
+      "decision": "pending",
+      "applied_thought_id": null,
+      "decided_at": null
+    },
+    {
+      "id": "op-3e568b62",
+      "change_set_id": "cs-44346fb2",
+      "client_ref": "generalization",
+      "sequence": 1,
+      "depends_on": "[]",
+      "evidence_refs": "[\"scratch-b6fef3ff\"]",
+      "payload": "{\"op\":\"create_thought\",\"thought\":{\"type\":\"claim\",\"status\":\"tentative\",\"title\":\"Alignment requires generalization beyond training\",\"statement\":\"Aligned training behavior does not establish alignment in unfamiliar environments. Greater capability introduces situations where learned values may generalize incorrectly. Alignment must also persist when models believe supervision is absent. [Source](https://openai.com/index/an-alien-mind/)\"}}",
+      "edited_payload": null,
+      "rationale": "Isolates the proposed failure mechanism.",
+      "decision": "pending",
+      "applied_thought_id": null,
+      "decided_at": null
+    },
+    {
+      "id": "op-fa99a77a",
+      "change_set_id": "cs-44346fb2",
+      "client_ref": "monitoring",
+      "sequence": 2,
+      "depends_on": "[]",
+      "evidence_refs": "[\"scratch-b6fef3ff\"]",
+      "payload": "{\"op\":\"create_thought\",\"thought\":{\"type\":\"evidence\",\"status\":\"tentative\",\"title\":\"OpenAI reports declining reasoning monitorability\",\"statement\":\"Pachocki reports evaluations showing diminishing reliance on chain-of-thought monitoring. He attributes this to supervised interactions, reasoning manipulation, and capability without verbalized reasoning. The essay supplies no quantitative results.\",\"source\":\"https://openai.com/index/an-alien-mind/\"}}",
+      "edited_payload": null,
+      "rationale": "Records a reported observation with its evidential limit.",
+      "decision": "pending",
+      "applied_thought_id": null,
+      "decided_at": null
+    },
+    {
+      "id": "op-9aff4299",
+      "change_set_id": "cs-44346fb2",
+      "client_ref": "scaling",
+      "sequence": 3,
+      "depends_on": "[]",
+      "evidence_refs": "[\"scratch-b6fef3ff\"]",
+      "payload": "{\"op\":\"create_thought\",\"thought\":{\"type\":\"claim\",\"status\":\"tentative\",\"title\":\"Further scaling should require demonstrated safety\",\"statement\":\"Pachocki argues that confidence in safety should constrain scaling. Shared, enforceable safety thresholds would make continued development conditional on adequate safeguards. Defensive needs do not remove this constraint. [Source](https://openai.com/index/an-alien-mind/)\"}}",
+      "edited_payload": null,
+      "rationale": "Extracts the actionable governance claim.",
+      "decision": "pending",
+      "applied_thought_id": null,
+      "decided_at": null
+    },
+    {
+      "id": "op-6717a98d",
+      "change_set_id": "cs-44346fb2",
+      "client_ref": "monitoring-supports-scaling",
+      "sequence": 4,
+      "depends_on": "[\"monitoring\",\"scaling\"]",
+      "evidence_refs": "[\"monitoring\",\"scaling\"]",
+      "payload": "{\"op\":\"add_relation\",\"from\":\"monitoring\",\"to\":\"scaling\",\"relationType\":\"supports\"}",
+      "edited_payload": null,
+      "rationale": "Weakening monitoring strengthens the case for conditional scaling.",
+      "decision": "pending",
+      "applied_thought_id": null,
+      "decided_at": null
+    }
+  ],
+  "scratch_notes": [
+    {
+      "id": "scratch-b6fef3ff",
+      "body": "https://openai.com/index/an-alien-mind/",
+      "graph_id": "g-ad500bd9",
+      "created_at": 1788741394349,
+      "distilled_change_set_id": "cs-44346fb2"
+    }
+  ],
+  "prose_treatments": []
+}

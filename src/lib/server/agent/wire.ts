@@ -60,9 +60,11 @@ const confidenceSchema = z.object({
 const thoughtFields = z.object({
 	type: z.enum(THOUGHT_TYPES),
 	status: z.enum(THOUGHT_STATUSES),
-	title: z.string().describe(`One-line resolution, at most ${TITLE_LIMIT} characters.`),
+	title: z.string().describe(
+		`Compact handle shown on the canvas node — aim for under 80 characters (hard cap ${TITLE_LIMIT}). The statement, not the title, carries the full assertion.`
+	),
 	statement: z.string().describe(
-		`Standalone development of one independently challengeable idea: state it, explain the mechanism or reasoning where relevant, and preserve meaningful conditions or qualifications. Include a concrete example when helpful. Substantive claims typically need 3–6 sentences; simple questions may need less. Ground details in supplied context or consulted sources, and label hypotheses or illustrative examples. Do not invent facts or pad to a sentence count. Put the substantive explanation here; the rationale explains why the operation belongs in the graph. At most ${STATEMENT_LIMIT} characters.`
+		`Standalone statement of one independently challengeable idea, in as few sentences as it needs: state it, then add only the mechanism, conditions, or concrete example that would change a reader's understanding. Substantive claims typically need 2–4 sentences; simple questions one. Ground details in supplied context or consulted sources, and label hypotheses or illustrative examples. Do not invent facts or pad; if a sentence can be cut without changing what the thought asserts, cut it. Put the substantive explanation here; the rationale explains why the operation belongs in the graph. At most ${STATEMENT_LIMIT} characters.`
 	),
 	confidence: confidenceSchema
 		.nullish()
