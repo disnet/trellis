@@ -19,7 +19,7 @@ import type { AgentContext } from './context';
 import { makeClaudeCliAdapter } from './claude-cli';
 import { makeCodexCliAdapter } from './codex-cli';
 import { defaultSelection } from './settings';
-import { supportsEffort, type ModelSelection, type ReasoningEffort } from '$lib/models';
+import { formatUsage, supportsEffort, type ModelSelection, type ReasoningEffort } from '$lib/models';
 import { runFixture, type FixtureDeps } from './fixtures';
 import { SYSTEM_PROMPT, buildUserPrompt } from './prompt';
 import { proposalSchema } from './wire';
@@ -137,7 +137,14 @@ export async function generateAnthropicStructured({
 	return {
 		raw,
 		value: response.parsed_output,
-		usage: `${u.input_tokens} in / ${u.output_tokens} out tokens`
+		// The API's input_tokens excludes the two cache buckets, so the three
+		// are already disjoint — exactly what estimateCostUsd wants.
+		usage: formatUsage(model, {
+			input: u.input_tokens,
+			cachedInput: u.cache_read_input_tokens ?? 0,
+			cacheWrite: u.cache_creation_input_tokens ?? 0,
+			output: u.output_tokens
+		})
 	};
 }
 

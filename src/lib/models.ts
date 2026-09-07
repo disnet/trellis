@@ -59,6 +59,95 @@ export const PROVIDERS: { id: AgentProvider; label: string; models: ModelPreset[
 	{ id: 'fixture', label: 'Fixtures (offline)', models: [] }
 ];
 
+// Per-million-token list prices in USD, checked against the provider pricing
+// pages on 2026-09-07:
+//   https://platform.claude.com/docs/en/about-claude/pricing
+//   https://developers.openai.com/api/docs/pricing
+// These drive an *estimate*. They ignore long-context surcharges, batch and
+// priority tiers, and promotional rates — and they mean nothing at all for a
+// subscription login (Claude Pro/Max, ChatGPT Plus/Pro), where a call costs no
+// marginal dollars. Where a provider reports a real figure (the Claude CLI's
+// total_cost_usd) that number is used instead; this table is the fallback.
+export interface ModelPrice {
+	/** Input tokens neither read from nor written to the prompt cache. */
+	input: number;
+	/** Input tokens served from the cache. */
+	cachedInput: number;
+	/** Input tokens written into the cache — both providers bill 1.25x input. */
+	cacheWrite: number;
+	output: number;
+}
+
+const price = (input: number, output: number, cachedInput = input / 10): ModelPrice => ({
+	input,
+	cachedInput,
+	cacheWrite: input * 1.25,
+	output
+});
+
+const MODEL_PRICES: Record<string, ModelPrice> = {
+	// Anthropic. Fable 5.1 reads cache at a flat $0.25/MTok rather than the
+	// usual tenth of input.
+	'claude-fable-5-1': price(10, 50, 0.25),
+	'claude-fable-5': price(10, 50),
+	'claude-opus-5': price(5, 25),
+	'claude-sonnet-5': price(2, 10),
+	'claude-haiku-4-5': price(1, 5),
+	'claude-haiku-4-5-20251001': price(1, 5),
+	// OpenAI. gpt-5.3-codex-spark is deliberately absent: it is a subscription
+	// preview with no published per-token rate, so it reports tokens only.
+	'gpt-6-astra': price(10, 50, 1),
+	'gpt-5.6-sol': price(4, 20, 0.4),
+	'gpt-5.6-terra': price(2, 12, 0.2),
+	'gpt-5.6-luna': price(0.2, 1.2, 0.02),
+	'gpt-5.5': price(5, 30, 0.5),
+	'gpt-5.4': price(2.5, 15, 0.25),
+	'gpt-5.4-mini': price(0.75, 4.5, 0.075),
+	'gpt-5.3-codex': price(1.75, 14, 0.175)
+};
+
+// `claude -p --model` also takes the floating aliases, which resolve to
+// whatever is current for that tier.
+const MODEL_ALIASES: Record<string, string> = {
+	fable: 'claude-fable-5-1',
+	opus: 'claude-opus-5',
+	sonnet: 'claude-sonnet-5',
+	haiku: 'claude-haiku-4-5'
+};
+
+/** Token counts as the pricing table wants them: three disjoint input buckets. */
+export interface TokenUsage {
+	input: number;
+	output: number;
+	cachedInput?: number;
+	cacheWrite?: number;
+}
+
+/** Undefined where the model has no published per-token price. */
+export function estimateCostUsd(model: string, usage: TokenUsage): number | undefined {
+	const p = MODEL_PRICES[model] ?? MODEL_PRICES[MODEL_ALIASES[model] ?? ''];
+	if (!p) return undefined;
+	return (
+		(usage.input * p.input +
+			(usage.cachedInput ?? 0) * p.cachedInput +
+			(usage.cacheWrite ?? 0) * p.cacheWrite +
+			usage.output * p.output) /
+		1_000_000
+	);
+}
+
+/**
+ * The activity log's usage line. `exactCostUsd` is for providers that bill the
+ * call and tell us what it cost; everything else falls back to the estimate,
+ * marked as one so nobody reconciles it against an invoice.
+ */
+export function formatUsage(model: string, usage: TokenUsage, exactCostUsd?: number): string {
+	const line = `${usage.input + (usage.cachedInput ?? 0) + (usage.cacheWrite ?? 0)} in / ${usage.output} out tokens`;
+	if (exactCostUsd !== undefined) return `${line}, $${exactCostUsd.toFixed(4)}`;
+	const estimate = estimateCostUsd(model, usage);
+	return estimate === undefined ? line : `${line}, ~$${estimate.toFixed(4)} (est.)`;
+}
+
 // Reasoning effort predates neither provider uniformly: the Anthropic API
 // rejects output_config.effort on models older than the 4.6 generation (Haiku
 // 4.5 and earlier), while both CLIs accept the flag for every model they offer.

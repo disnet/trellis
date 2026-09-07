@@ -5,21 +5,25 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
 import type { ModelAdapter } from './adapter';
-import type { ReasoningEffort } from '$lib/models';
+import { formatUsage, type ReasoningEffort, type TokenUsage } from '$lib/models';
 import { SYSTEM_PROMPT, buildUserPrompt } from './prompt';
 import { codexProposalSchema } from './wire';
 
 const TIMEOUT_MS = 300_000;
 const MAX_OUTPUT = 2 * 1024 * 1024;
 
-function runCodex(bin: string, args: string[], cwd: string, prompt: string): Promise<void> {
+function runCodex(bin: string, args: string[], cwd: string, prompt: string): Promise<string> {
 	return new Promise((resolve, reject) => {
-		const child = trackCli(spawn(bin, args, { cwd, env: cliEnvironment(), stdio: ['pipe', 'ignore', 'pipe'] }));
+		const child = trackCli(spawn(bin, args, { cwd, env: cliEnvironment(), stdio: ['pipe', 'pipe', 'pipe'] }));
+		let stdout = '';
 		let stderr = '';
 		const timer = setTimeout(() => {
 			child.kill('SIGKILL');
 			reject(new Error(`Codex timed out after ${TIMEOUT_MS / 1000}s. Try the operation again.`));
 		}, TIMEOUT_MS);
+		child.stdout.on('data', (chunk) => {
+			stdout = (stdout + chunk).slice(-MAX_OUTPUT);
+		});
 		child.stderr.on('data', (chunk) => {
 			stderr = (stderr + chunk).slice(-MAX_OUTPUT);
 		});
@@ -34,11 +38,51 @@ function runCodex(bin: string, args: string[], cwd: string, prompt: string): Pro
 		});
 		child.on('close', (code) => {
 			clearTimeout(timer);
-			if (code === 0) resolve();
+			if (code === 0) resolve(stdout);
 			else reject(new Error(`Codex exited with code ${code}: ${stderr.trim().slice(-2000) || 'no output'}`));
 		});
 		child.stdin.end(prompt);
 	});
+}
+
+// The shape `codex exec --json` reports on its final `turn.completed` event.
+// Codex counts cached and cache-written tokens inside input_tokens, unlike the
+// Anthropic API, where the three are separate fields.
+interface CodexEvent {
+	type?: string;
+	usage?: {
+		input_tokens?: number;
+		cached_input_tokens?: number;
+		cache_write_input_tokens?: number;
+		output_tokens?: number;
+	};
+}
+
+/**
+ * Pull token counts out of the JSONL event stream. `codex exec` runs exactly
+ * one turn, so the last `turn.completed` is the whole call; a missing or
+ * malformed event costs the usage line, never the result.
+ */
+function parseCodexUsage(stdout: string): TokenUsage | undefined {
+	let usage: CodexEvent['usage'];
+	for (const line of stdout.split('\n')) {
+		if (!line.startsWith('{')) continue;
+		try {
+			const event = JSON.parse(line) as CodexEvent;
+			if (event.type === 'turn.completed' && event.usage) usage = event.usage;
+		} catch {
+			// Codex may interleave non-JSON diagnostics; skip them.
+		}
+	}
+	if (!usage) return undefined;
+	const cachedInput = usage.cached_input_tokens ?? 0;
+	const cacheWrite = usage.cache_write_input_tokens ?? 0;
+	return {
+		input: Math.max(0, (usage.input_tokens ?? 0) - cachedInput - cacheWrite),
+		cachedInput,
+		cacheWrite,
+		output: usage.output_tokens ?? 0
+	};
 }
 
 export interface CodexStructuredRequest {
@@ -55,6 +99,7 @@ export interface CodexStructuredRequest {
 export interface CodexStructuredResult {
 	raw: string;
 	value: unknown;
+	usage?: string;
 }
 
 /**
@@ -75,10 +120,13 @@ export async function generateCodexStructured({
 		const schema = join(directory, 'schema.json');
 		const output = join(directory, 'output.json');
 		await writeFile(schema, JSON.stringify(jsonSchema));
-		await runCodex(
+		const stdout = await runCodex(
 			resolveCli('codex-cli'),
 			[
 				'exec',
+				// Token counts arrive only on the JSONL event stream; the last
+				// message still goes to --output-last-message, not stdout.
+				'--json',
 				'--ignore-user-config',
 				'--ephemeral',
 				'--skip-git-repo-check',
@@ -110,7 +158,11 @@ export async function generateCodexStructured({
 			// The caller's validator records a useful error and can retry with the
 			// verbatim output. Keeping parsing non-throwing also preserves telemetry.
 		}
-		return { raw, value };
+		const tokens = parseCodexUsage(stdout);
+		// Codex never reports a dollar figure, and it does not name the model it
+		// ran; with no --model flag the config's default is in play and there is
+		// nothing to price against, so the line falls back to token counts.
+		return { raw, value, usage: tokens && formatUsage(model ?? '', tokens) };
 	} finally {
 		await rm(directory, { recursive: true, force: true });
 	}
@@ -150,7 +202,7 @@ export function makeCodexCliAdapter(model?: string, effort?: ReasoningEffort): M
 					)
 				};
 			}
-			return { raw: result.raw, proposal, request };
+			return { raw: result.raw, proposal, request, usage: result.usage };
 		}
 	};
 }

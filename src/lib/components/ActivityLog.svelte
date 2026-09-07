@@ -127,9 +127,13 @@
 		return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
 	}
 
-	/** The adapter's usage line, without the wordy suffix: "1.2K in / 300 out". */
+	/**
+	 * The adapter's usage line without its wordy parts: "1200 in / 300 out,
+	 * ~$0.0165". The leading tilde already marks an estimate; the full line,
+	 * "(est.)" and all, stays in the tooltip and the expanded row.
+	 */
 	function tokens(usage: string | null): string {
-		return usage ? usage.replace(' tokens', '') : '—';
+		return usage ? usage.replace(' tokens', '').replace(' (est.)', '') : '—';
 	}
 </script>
 
@@ -200,7 +204,7 @@
 						<th class="col-model">Model</th>
 						<th class="col-effort">Effort</th>
 						<th class="col-outcome">Outcome</th>
-						<th class="col-usage">Tokens</th>
+						<th class="col-usage">Usage</th>
 						<th class="col-latency">Latency</th>
 					</tr>
 				</thead>
@@ -457,7 +461,7 @@
 		color: var(--ink-quiet);
 		font-size: var(--fs-11-5);
 		font-variant-numeric: tabular-nums;
-		max-width: 18ch;
+		max-width: 28ch;
 		overflow: hidden;
 		text-overflow: ellipsis;
 	}

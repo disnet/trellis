@@ -14,7 +14,7 @@ import { spawn } from 'node:child_process';
 import os from 'node:os';
 import { z } from 'zod';
 import type { ModelAdapter } from './adapter';
-import type { ReasoningEffort } from '$lib/models';
+import { formatUsage, type ReasoningEffort } from '$lib/models';
 import { SYSTEM_PROMPT, buildUserPrompt } from './prompt';
 import { proposalSchema } from './wire';
 
@@ -27,7 +27,12 @@ interface CliEnvelope {
 	is_error?: boolean;
 	result?: string;
 	structured_output?: unknown;
-	usage?: { input_tokens?: number; output_tokens?: number };
+	usage?: {
+		input_tokens?: number;
+		output_tokens?: number;
+		cache_read_input_tokens?: number;
+		cache_creation_input_tokens?: number;
+	};
 	total_cost_usd?: number;
 }
 
@@ -167,9 +172,19 @@ export async function generateClaudeStructured({
 	}
 
 	const u = envelope.usage;
+	// The CLI bills the call and reports what it cost, so prefer its figure and
+	// only estimate when it withholds one (a subscription login reports 0).
 	const usage = u
-		? `${u.input_tokens ?? '?'} in / ${u.output_tokens ?? '?'} out tokens` +
-			(envelope.total_cost_usd ? `, $${envelope.total_cost_usd.toFixed(4)}` : '')
+		? formatUsage(
+				model,
+				{
+					input: u.input_tokens ?? 0,
+					cachedInput: u.cache_read_input_tokens ?? 0,
+					cacheWrite: u.cache_creation_input_tokens ?? 0,
+					output: u.output_tokens ?? 0
+				},
+				envelope.total_cost_usd || undefined
+			)
 		: undefined;
 	return { raw, value, parseError, usage };
 }
