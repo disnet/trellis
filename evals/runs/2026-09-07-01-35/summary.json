@@ -1,0 +1,142 @@
+{
+  "input": "https://openai.com/index/an-alien-mind/",
+  "startedAt": "2026-09-07T01:35:02.455Z",
+  "runs": [
+    {
+      "case": "fable",
+      "effort": "low",
+      "selection": {
+        "provider": "claude-cli",
+        "model": "fable",
+        "effort": "low"
+      },
+      "graph": "fable - low",
+      "file": "trellis-fable-low.json",
+      "changeSetId": "cs-c0bd2ee0",
+      "wallMs": 58913,
+      "attempts": 1,
+      "latencyMs": 58884,
+      "usage": "98 in / 3818 out tokens, $0.3016",
+      "validationErrors": []
+    },
+    {
+      "case": "fable",
+      "effort": "high",
+      "selection": {
+        "provider": "claude-cli",
+        "model": "fable",
+        "effort": "high"
+      },
+      "graph": "fable - high",
+      "file": "trellis-fable-high.json",
+      "changeSetId": "cs-521ef4dd",
+      "wallMs": 122509,
+      "attempts": 1,
+      "latencyMs": 122496,
+      "usage": "98 in / 8938 out tokens, $0.6633",
+      "validationErrors": []
+    },
+    {
+      "case": "sonnet",
+      "effort": "low",
+      "selection": {
+        "provider": "claude-cli",
+        "model": "sonnet",
+        "effort": "low"
+      },
+      "graph": "sonnet - low",
+      "file": "trellis-sonnet-low.json",
+      "changeSetId": "cs-4c2ca886",
+      "wallMs": 57340,
+      "attempts": 1,
+      "latencyMs": 57330,
+      "usage": "10 in / 4629 out tokens, $0.1263",
+      "validationErrors": []
+    },
+    {
+      "case": "sonnet",
+      "effort": "high",
+      "selection": {
+        "provider": "claude-cli",
+        "model": "sonnet",
+        "effort": "high"
+      },
+      "graph": "sonnet - high",
+      "file": "trellis-sonnet-high.json",
+      "changeSetId": "cs-4a600a3e",
+      "wallMs": 98325,
+      "attempts": 1,
+      "latencyMs": 98313,
+      "usage": "10 in / 9670 out tokens, $0.1925",
+      "validationErrors": []
+    },
+    {
+      "case": "astra",
+      "effort": "low",
+      "selection": {
+        "provider": "codex-cli",
+        "model": "gpt-6-astra",
+        "effort": "low"
+      },
+      "graph": "astra - low",
+      "file": "trellis-astra-low.json",
+      "changeSetId": "cs-45a0dead",
+      "wallMs": 39852,
+      "attempts": 1,
+      "latencyMs": 39842,
+      "usage": null,
+      "validationErrors": []
+    },
+    {
+      "case": "astra",
+      "effort": "high",
+      "selection": {
+        "provider": "codex-cli",
+        "model": "gpt-6-astra",
+        "effort": "high"
+      },
+      "graph": "astra - high",
+      "file": "trellis-astra-high.json",
+      "changeSetId": "cs-1ab8b4f1",
+      "wallMs": 58628,
+      "attempts": 1,
+      "latencyMs": 58617,
+      "usage": null,
+      "validationErrors": []
+    },
+    {
+      "case": "sol",
+      "effort": "low",
+      "selection": {
+        "provider": "codex-cli",
+        "model": "gpt-5.6-sol",
+        "effort": "low"
+      },
+      "graph": "sol - low",
+      "file": "trellis-sol-low.json",
+      "changeSetId": "cs-8e268a54",
+      "wallMs": 42377,
+      "attempts": 1,
+      "latencyMs": 42362,
+      "usage": null,
+      "validationErrors": []
+    },
+    {
+      "case": "sol",
+      "effort": "high",
+      "selection": {
+        "provider": "codex-cli",
+        "model": "gpt-5.6-sol",
+        "effort": "high"
+      },
+      "graph": "sol - high",
+      "file": "trellis-sol-high.json",
+      "changeSetId": "cs-97241094",
+      "wallMs": 108822,
+      "attempts": 1,
+      "latencyMs": 108807,
+      "usage": null,
+      "validationErrors": []
+    }
+  ]
+}

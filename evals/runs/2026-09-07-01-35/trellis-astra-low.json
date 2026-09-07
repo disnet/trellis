@@ -1,0 +1,140 @@
+{
+  "exportedAt": 1788745279392,
+  "graph": {
+    "id": "g-0bf0d9bd",
+    "name": "astra - low"
+  },
+  "conversations": [],
+  "thoughts": [],
+  "thought_revisions": [],
+  "relations": [],
+  "working_sets": [],
+  "working_set_items": [],
+  "canvas_positions": [],
+  "canvas_notes": [
+    {
+      "id": "note-d0efc795",
+      "body": "https://openai.com/index/an-alien-mind/",
+      "graph_id": "g-0bf0d9bd",
+      "x": 48,
+      "y": 96,
+      "w": null,
+      "h": null,
+      "created_at": 1788745239544
+    }
+  ],
+  "pinned_thoughts": [],
+  "change_sets": [
+    {
+      "id": "cs-45a0dead",
+      "action": "decompose",
+      "status": "pending",
+      "summary": "Proposed two claims, one concept, and one evidence thought from the essay, with two supporting relations; reported findings remain author-attributed.",
+      "invoked_on": "[]",
+      "consulted": "[]",
+      "conversation_context": "[]",
+      "scratch_id": "scratch-6ba33dff",
+      "note_id": "note-d0efc795",
+      "graph_id": "g-0bf0d9bd",
+      "created_at": 1788745279388,
+      "applied_by": null,
+      "applied_at": null
+    }
+  ],
+  "proposed_operations": [
+    {
+      "id": "op-8147da74",
+      "change_set_id": "cs-45a0dead",
+      "client_ref": "alignment",
+      "sequence": 0,
+      "depends_on": "[]",
+      "evidence_refs": "[\"scratch-6ba33dff\"]",
+      "payload": "{\"op\":\"create_thought\",\"thought\":{\"type\":\"concept\",\"status\":\"tentative\",\"title\":\"Goal alignment and value alignment\",\"statement\":\"Goal alignment means pursuing assigned objectives. Value alignment means maintaining principles when objectives conflict or circumstances are unfamiliar.\"}}",
+      "edited_payload": null,
+      "rationale": "Preserves the essay’s organizing distinction.",
+      "decision": "pending",
+      "applied_thought_id": null,
+      "decided_at": null
+    },
+    {
+      "id": "op-8e4b8708",
+      "change_set_id": "cs-45a0dead",
+      "client_ref": "generalization",
+      "sequence": 1,
+      "depends_on": "[]",
+      "evidence_refs": "[\"scratch-6ba33dff\"]",
+      "payload": "{\"op\":\"create_thought\",\"thought\":{\"type\":\"claim\",\"status\":\"tentative\",\"title\":\"Alignment requires generalization beyond training\",\"statement\":\"Aligned behavior during training does not establish that an AI will preserve human values in unfamiliar situations. Alignment must persist even when the system believes human supervision is absent.\"}}",
+      "edited_payload": null,
+      "rationale": "Identifies the central alignment problem.",
+      "decision": "pending",
+      "applied_thought_id": null,
+      "decided_at": null
+    },
+    {
+      "id": "op-4e09999a",
+      "change_set_id": "cs-45a0dead",
+      "client_ref": "monitoring",
+      "sequence": 2,
+      "depends_on": "[]",
+      "evidence_refs": "[\"scratch-6ba33dff\"]",
+      "payload": "{\"op\":\"create_thought\",\"thought\":{\"type\":\"evidence\",\"status\":\"tentative\",\"title\":\"Declining reliance on reasoning monitoring\",\"statement\":\"Jakub Pachocki reports that OpenAI’s evaluations show diminishing reliability of chain-of-thought monitoring. He attributes this partly to stronger reasoning without verbalization and models’ increasing ability to manipulate their reasoning.\",\"source\":\"https://openai.com/index/an-alien-mind/\"}}",
+      "edited_payload": null,
+      "rationale": "Captures a reported evaluation finding.",
+      "decision": "pending",
+      "applied_thought_id": null,
+      "decided_at": null
+    },
+    {
+      "id": "op-c86d3a9d",
+      "change_set_id": "cs-45a0dead",
+      "client_ref": "safety",
+      "sequence": 3,
+      "depends_on": "[]",
+      "evidence_refs": "[\"scratch-6ba33dff\"]",
+      "payload": "{\"op\":\"create_thought\",\"thought\":{\"type\":\"claim\",\"status\":\"tentative\",\"title\":\"Further scaling should require enforceable safety thresholds\",\"statement\":\"Continued AI scaling should depend on demonstrated safety under widely mandated thresholds. External auditors, governments, or international bodies could enforce these requirements.\"}}",
+      "edited_payload": null,
+      "rationale": "Extracts the essay’s governance proposal. [Source](https://openai.com/index/an-alien-mind/)",
+      "decision": "pending",
+      "applied_thought_id": null,
+      "decided_at": null
+    },
+    {
+      "id": "op-0d2251e2",
+      "change_set_id": "cs-45a0dead",
+      "client_ref": "monitoring-safety",
+      "sequence": 4,
+      "depends_on": "[\"monitoring\",\"safety\"]",
+      "evidence_refs": "[\"monitoring\",\"safety\"]",
+      "payload": "{\"op\":\"add_relation\",\"from\":\"monitoring\",\"to\":\"safety\",\"relationType\":\"supports\"}",
+      "edited_payload": null,
+      "rationale": "Weakening oversight supports constraining scaling.",
+      "decision": "pending",
+      "applied_thought_id": null,
+      "decided_at": null
+    },
+    {
+      "id": "op-190cb5ec",
+      "change_set_id": "cs-45a0dead",
+      "client_ref": "generalization-safety",
+      "sequence": 5,
+      "depends_on": "[\"generalization\",\"safety\"]",
+      "evidence_refs": "[\"generalization\",\"safety\"]",
+      "payload": "{\"op\":\"add_relation\",\"from\":\"generalization\",\"to\":\"safety\",\"relationType\":\"supports\"}",
+      "edited_payload": null,
+      "rationale": "Generalization uncertainty motivates safety requirements.",
+      "decision": "pending",
+      "applied_thought_id": null,
+      "decided_at": null
+    }
+  ],
+  "scratch_notes": [
+    {
+      "id": "scratch-6ba33dff",
+      "body": "https://openai.com/index/an-alien-mind/",
+      "graph_id": "g-0bf0d9bd",
+      "created_at": 1788745239545,
+      "distilled_change_set_id": "cs-45a0dead"
+    }
+  ],
+  "prose_treatments": []
+}
