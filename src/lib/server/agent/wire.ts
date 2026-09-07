@@ -61,7 +61,9 @@ const thoughtFields = z.object({
 	type: z.enum(THOUGHT_TYPES),
 	status: z.enum(THOUGHT_STATUSES),
 	title: z.string().describe(`One-line resolution, at most ${TITLE_LIMIT} characters.`),
-	statement: z.string().describe(`Full resolution, at most ${STATEMENT_LIMIT} characters.`),
+	statement: z.string().describe(
+		`Standalone development of one independently challengeable idea: state it, explain the mechanism or reasoning where relevant, and preserve meaningful conditions or qualifications. Include a concrete example when helpful. Substantive claims typically need 3–6 sentences; simple questions may need less. Ground details in supplied context or consulted sources, and label hypotheses or illustrative examples. Do not invent facts or pad to a sentence count. Put the substantive explanation here; the rationale explains why the operation belongs in the graph. At most ${STATEMENT_LIMIT} characters.`
+	),
 	confidence: confidenceSchema
 		.nullish()
 		.describe(
