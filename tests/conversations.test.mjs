@@ -68,7 +68,7 @@ test('a proposed-thought discussion follows acceptance, undo, and reapplication'
 	assert.equal(chat.getConversations({ thoughtId: acceptedId })[0].id, conversation.id);
 	assert(buildContext('challenge', [acceptedId]).conversations.some(c => c.id === conversation.id));
 	await chat.sendMessage({ thoughtId: acceptedId }, 'Now clarify the accepted version.', 'after-accept', fixture);
-	assert.equal(store.undoLastApply(), null);
+	assert.equal(store.undoLast().kind, 'apply');
 	assert.equal(chat.getConversations({ operationId: op.id })[0].thoughtId, null);
 	assert.equal(chat.getConversations({ operationId: op.id })[0].messages.length, 4);
 	assert(!store.applyChangeSet(cs.id, {}).error);
@@ -85,7 +85,7 @@ test('a discussion first started after acceptance also survives undo on its prop
 	const op = cs.operations.find(o => o.payload.op === 'create_thought');
 	const tid = db.prepare('SELECT applied_thought_id FROM proposed_operations WHERE id = ?').get(op.id).applied_thought_id;
 	await chat.sendMessage({ thoughtId: tid }, 'First discussion after applying.', 'after-apply', fixture);
-	assert.equal(store.undoLastApply(), null);
+	assert.equal(store.undoLast().kind, 'apply');
 	assert.equal(chat.getConversations({ operationId: op.id })[0].messages.length, 2);
 });
 

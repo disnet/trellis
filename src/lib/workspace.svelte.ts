@@ -1216,13 +1216,36 @@ class Workspace {
 		return this.post(`/api/thoughts/${id}/revise`, fields);
 	}
 
+	// --- deletion ---
+
+	/** Take thoughts out of the graph, with every relation and revision they
+	 *  carry. Undo covers it: the server snapshots the graph first. */
+	async deleteThoughts(ids: string[]): Promise<string | null> {
+		const known = ids.filter((id) => id in this.thoughts);
+		if (known.length === 0) return null;
+		for (const id of known) this.pendingMoves.delete(id);
+		return this.post('/api/thoughts', { action: 'delete', thoughtIds: known });
+	}
+
 	// --- undo ---
 
-	async undoLastApply(): Promise<string | null> {
+	/** Revert the last snapshotted change: an applied change set, or a deletion. */
+	async undoLast(): Promise<string | null> {
 		this.animateLayout();
-		const err = await this.post('/api/undo');
-		if (!err) this.notice = 'Reverted the last applied change set; it is back in the tray.';
-		return err;
+		await this.flushMoves();
+		try {
+			const res = await fetch('/api/undo', { method: 'POST' });
+			const data = await res.json().catch(() => ({}));
+			if (!res.ok) return data.error ?? `Request failed (${res.status}).`;
+			if (data.state) this.applyState(data.state);
+			this.notice =
+				data.undone?.kind === 'delete'
+					? 'Brought back what was deleted, relations and all.'
+					: 'Reverted the last applied change set; it is back in the tray.';
+			return null;
+		} catch {
+			return 'Could not reach the Trellis server.';
+		}
 	}
 
 	dismissReentry() {

@@ -57,6 +57,8 @@ Two types carry structured, revisioned fields. A **prediction** is a falsifiable
 
 **Change set:** an immutable record of proposed operations (create/revise/retire a thought, add/change/remove a relation). Accepting applies a new revision; rejecting records the decision without mutating the graph.
 
+**Deletion:** retiring is the normal end of a thought's life — the graph keeps what it once believed, and the status change is itself part of the history. Deleting is the escape hatch for what should never have been written down: it takes the thought, its revisions, and every relation touching it. Like pinning and working-set membership it is a direct human action, never agent-proposed and never routed through the tray, but because it removes knowledge it snapshots the graph first — the same one-deep undo that covers an applied change set covers a deletion.
+
 ### Transient primitives
 
 | Primitive | What it is |

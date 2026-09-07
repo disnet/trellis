@@ -790,6 +790,7 @@ export function applyChangeSet(
 
 	setMeta(`undo_snapshot:${graphId}`, snapshot);
 	setMeta(`undo_label:${graphId}`, cs.summary);
+	setMeta(`undo_kind:${graphId}`, 'apply');
 
 	const status = accepted.length === 0 ? 'rejected' : accepted.length === cs.operations.length ? 'applied' : 'partially_applied';
 	return { applied: accepted.length, total: cs.operations.length, status };
@@ -797,18 +798,23 @@ export function applyChangeSet(
 
 // --- undo (last applied change set) ---
 
-export function undoLastApply(): string | null {
+/** Undo the last snapshotted change — an applied change set, or a deletion.
+ *  Reports which, so the caller can say what came back. */
+export function undoLast(): { error: string } | { label: string; kind: 'apply' | 'delete' } {
 	const graphId = activeGraphId();
 	const snapshot = getMeta(`undo_snapshot:${graphId}`);
-	if (!snapshot) return 'Nothing to undo.';
+	if (!snapshot) return { error: 'Nothing to undo.' };
+	const label = getMeta(`undo_label:${graphId}`) ?? '';
+	const kind = getMeta(`undo_kind:${graphId}`) === 'delete' ? 'delete' : 'apply';
 	try {
 		restore(graphId, JSON.parse(snapshot));
 	} catch (e) {
-		return e instanceof Error ? e.message : 'Undo failed.';
+		return { error: e instanceof Error ? e.message : 'Undo failed.' };
 	}
 	setMeta(`undo_snapshot:${graphId}`, null);
 	setMeta(`undo_label:${graphId}`, null);
-	return null;
+	setMeta(`undo_kind:${graphId}`, null);
+	return { label, kind };
 }
 
 // --- manual creation (from the composer) ---
@@ -879,6 +885,54 @@ export function createThought(fields: {
 			).run(activeSet, tid);
 	})();
 	return { thoughtId: tid };
+}
+
+// --- deletion (from the inspector or the canvas selection) ---
+// Retiring a thought is the usual move — the graph keeps what it once believed.
+// Deleting is for what should never have been written down at all: it takes the
+// thought, its revision history, and every relation touching it. Human-only and
+// immediate, like every other direct edit, but it snapshots the graph first, so
+// the one Undo covers a deletion exactly as it covers an apply.
+
+export function deleteThoughts(thoughtIds: unknown): { error: string } | { deleted: number } {
+	if (!Array.isArray(thoughtIds) || thoughtIds.some((t) => typeof t !== 'string'))
+		return { error: 'Invalid thought ids.' };
+	const graphId = activeGraphId();
+	const rows = (thoughtIds as string[]).filter((tid) =>
+		db.prepare('SELECT 1 FROM thoughts WHERE id = ? AND graph_id = ?').get(tid, graphId)
+	);
+	if (rows.length === 0) return { error: 'Unknown thought.' };
+
+	const first = db.prepare('SELECT title FROM thoughts WHERE id = ?').get(rows[0]) as {
+		title: string;
+	};
+	const snapshot = JSON.stringify(exportState(graphId, { includeProse: false }));
+	const list = rows.map(() => '?').join(', ');
+	try {
+		db.transaction(() => {
+			db.prepare(`DELETE FROM pinned_thoughts WHERE graph_id = ? AND thought_id IN (${list})`).run(graphId, ...rows);
+			db.prepare(`DELETE FROM working_set_items WHERE thought_id IN (${list})`).run(...rows);
+			db.prepare(`DELETE FROM canvas_positions WHERE graph_id = ? AND thought_id IN (${list})`).run(graphId, ...rows);
+			db.prepare(
+				`DELETE FROM relations WHERE graph_id = ? AND (from_thought_id IN (${list}) OR to_thought_id IN (${list}))`
+			).run(graphId, ...rows, ...rows);
+			db.prepare(`DELETE FROM thought_revisions WHERE thought_id IN (${list})`).run(...rows);
+			db.prepare(`DELETE FROM thoughts WHERE id IN (${list})`).run(...rows);
+			// Discussions are left pointing at the gone thought, exactly as undo
+			// leaves them: they carry no foreign key, stay out of every query while
+			// the thought is absent, and come back with it.
+		})();
+	} catch (e) {
+		return { error: e instanceof Error ? e.message : 'Deleting failed.' };
+	}
+
+	setMeta(`undo_snapshot:${graphId}`, snapshot);
+	setMeta(
+		`undo_label:${graphId}`,
+		rows.length === 1 ? `Deleted “${first.title}”` : `Deleted ${rows.length} thoughts`
+	);
+	setMeta(`undo_kind:${graphId}`, 'delete');
+	return { deleted: rows.length };
 }
 
 // --- canvas notes ---
@@ -1466,11 +1520,18 @@ function restore(graphId: string, snapshot: ReturnType<typeof exportState>) {
 		const treatmentRows = db.prepare('SELECT * FROM prose_treatments WHERE graph_id = ?').all(graphId) as any[];
 		// Pins are attention state no change set can touch, so undoing an apply
 		// keeps the *current* pins rather than reverting to the snapshot's —
-		// minus any pin whose thought does not survive the restore.
+		// minus any pin whose thought does not survive the restore. A thought that
+		// is absent right now has no current pin state to keep, so it comes back
+		// pinned as the snapshot had it — undoing a deletion restores the pin too.
 		const restoredThoughtIds = new Set((snapshot.thoughts as any[]).map((t) => t.id));
+		const presentThoughtIds = new Set(
+			(db.prepare('SELECT id FROM thoughts WHERE graph_id = ?').all(graphId) as any[]).map((t) => t.id)
+		);
 		const pins = (
 			db.prepare('SELECT * FROM pinned_thoughts WHERE graph_id = ?').all(graphId) as any[]
 		).filter((p) => restoredThoughtIds.has(p.thought_id));
+		for (const p of snapshot.pinned_thoughts as any[])
+			if (restoredThoughtIds.has(p.thought_id) && !presentThoughtIds.has(p.thought_id)) pins.push(p);
 		db.prepare('DELETE FROM pinned_thoughts WHERE graph_id = ?').run(graphId);
 		db.prepare(
 			'DELETE FROM proposed_operations WHERE change_set_id IN (SELECT id FROM change_sets WHERE graph_id = ?)'

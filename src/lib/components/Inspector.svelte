@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { workspace } from '$lib/workspace.svelte';
+	import { dialogs } from '$lib/dialogs.svelte';
 	import SideConversation from './SideConversation.svelte';
 	import { formatConfidence, type Confidence, type ThoughtStatus } from '$lib/types';
 
@@ -87,6 +88,23 @@
 	async function run(fn: () => Promise<string | null>) {
 		const err = await fn();
 		if (err) ws.notice = err;
+	}
+
+	/** Deleting is the last resort — retiring keeps what the graph once believed.
+	 *  Say what goes with it, and how much of the graph it touches. */
+	async function remove() {
+		if (!thought) return;
+		const n = relations.length;
+		const loses = n
+			? `Its revision history and ${n} relation${n === 1 ? '' : 's'} go with it.`
+			: 'Its revision history goes with it.';
+		const ok = await dialogs.confirm(
+			`Delete “${thought.title}”? ${loses} Undo can bring it back; retiring keeps it in the graph.`,
+			'Delete thought'
+		);
+		if (!ok) return;
+		const err = await ws.deleteThoughts([thought.id]);
+		ws.notice = err ?? 'Deleted. Undo brings it back.';
 	}
 
 	function fmt(ts: number): string {
@@ -220,6 +238,13 @@
 						<button onclick={() => run(() => ws.addToSet([thought.id]))}>Add to group</button>
 					{/if}
 				{/if}
+				<button
+					class="delete"
+					title="Remove it from the graph entirely — relations and history included"
+					onclick={remove}
+				>
+					Delete…
+				</button>
 			</div>
 		{/if}
 
@@ -308,6 +333,18 @@
 		font-size: var(--fs-10);
 		font-weight: 700;
 		color: var(--gold-ink);
+	}
+	/* Destructive, so it sits apart from the reversible actions and stays quiet
+	   until reached for. */
+	.actions button.delete {
+		margin-left: auto;
+		border-color: transparent;
+		color: var(--ink-quiet);
+	}
+	.actions button.delete:hover {
+		border-color: var(--rust);
+		background: var(--rust-wash);
+		color: var(--rust);
 	}
 	.actions button.pinned {
 		border-color: var(--gold-soft);

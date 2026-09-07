@@ -639,6 +639,59 @@
 		if (err) ws.notice = err;
 	}
 
+	/** Delete everything selected that can be deleted: thoughts (with their
+	 *  relations and history) and notes. Proposals are not the graph's to lose —
+	 *  they are dismissed in review, not here. */
+	async function removeSelection() {
+		const thoughtIds = [...ws.selectedIds];
+		const noteIds = [...ws.selectedNoteIds];
+		if (thoughtIds.length === 0 && noteIds.length === 0) return;
+		const relationCount = ws.relations.filter(
+			(r) => thoughtIds.includes(r.fromThoughtId) || thoughtIds.includes(r.toThoughtId)
+		).length;
+		const parts = [
+			[thoughtIds.length, 'thought'] as const,
+			[noteIds.length, 'note'] as const
+		]
+			.filter(([n]) => n > 0)
+			.map(([n, word]) => `${n} ${word}${n === 1 ? '' : 's'}`)
+			.join(' and ');
+		// Say exactly what is lost, and what can be had back: undo covers the
+		// graph, never the notes beside it.
+		const lines = [`Delete ${parts}?`];
+		if (relationCount)
+			lines.push(`${relationCount} relation${relationCount === 1 ? '' : 's'} go with them.`);
+		if (thoughtIds.length && noteIds.length)
+			lines.push(
+				`Undo brings the thoughts back; the note${noteIds.length === 1 ? ' is' : 's are'} gone for good.`
+			);
+		else if (thoughtIds.length) lines.push('Undo brings them back.');
+		else lines.push('Note text is not in the graph.');
+		const ok = await dialogs.confirm(lines.join(' '), 'Delete');
+		if (!ok) return;
+		if (thoughtIds.length) {
+			const err = await ws.deleteThoughts(thoughtIds);
+			if (err) {
+				ws.notice = err;
+				return;
+			}
+		}
+		for (const id of noteIds) {
+			if (converting === id) converting = null;
+			if (focusNoteId === id) focusNoteId = null;
+			const err = await ws.deleteNote(id);
+			if (err) {
+				ws.notice = err;
+				return;
+			}
+		}
+		ws.notice = !thoughtIds.length
+			? `Deleted ${parts}.`
+			: noteIds.length
+				? `Deleted ${parts}. Undo brings the thoughts back.`
+				: `Deleted ${parts}. Undo brings them back.`;
+	}
+
 	async function decomposeNote(id: string) {
 		decomposingNoteId = id;
 		try {
@@ -735,9 +788,9 @@
 	// down; the cleanup also stops the loop when the canvas goes away.
 	$effect(() => { if (focusId) stopPan(); return stopPan; });
 
-	// Keyboard: WASD pans; N jots a note; Escape clears the selection;
-	// ⌘/Ctrl+A selects the focus (lens members when one is active, the whole
-	// canvas otherwise).
+	// Keyboard: WASD pans; N jots a note; Delete/Backspace removes what is
+	// selected (asking first); Escape clears the selection; ⌘/Ctrl+A selects the
+	// focus (lens members when one is active, the whole canvas otherwise).
 	function onKeydown(e: KeyboardEvent) {
 		if (focusId) return;
 		const t = e.target as HTMLElement;
@@ -749,6 +802,13 @@
 			converting = null;
 		} else if (e.key === 'Escape' && ws.selectionSize) {
 			ws.clearSelection();
+		} else if (
+			(e.key === 'Delete' || e.key === 'Backspace') &&
+			!converting &&
+			(ws.selectedIds.length || ws.selectedNoteIds.length)
+		) {
+			e.preventDefault();
+			void removeSelection();
 		} else if (e.key.toLowerCase() === 'n' && !e.metaKey && !e.ctrlKey && !e.altKey) {
 			e.preventDefault();
 			noteAtCenter();
@@ -944,6 +1004,15 @@
 				{/if}
 				{#if ws.lensActive && stageable.length > 0}
 					<button onclick={addSelectionToSet} title="Add the selected thoughts to the active group">Add {stageable.length} to group</button>
+				{/if}
+				{#if ws.selectedIds.length || ws.selectedNoteIds.length}
+					<button
+						class="quiet danger"
+						onclick={removeSelection}
+						title="Delete what is selected — thoughts take their relations and history with them (Del)"
+					>
+						Delete
+					</button>
 				{/if}
 				<button class="quiet" onclick={() => ws.clearSelection()} title="Clear the selection (Esc)">Clear</button>
 			</div>
@@ -1203,6 +1272,8 @@
 	.selection-bar button { font: inherit; font-size: var(--fs-12); color: var(--ink-soft); background: var(--card-white); border: 1px solid var(--card-border); border-radius: 6px; padding: 5px 10px; cursor: pointer; white-space: nowrap; }
 	.selection-bar button:hover { border-color: var(--blue); color: var(--blue); }
 	.selection-bar button.quiet { border-color: transparent; background: transparent; color: var(--ink-muted); }
+	/* Destructive: quiet at rest, unmistakable once reached for. */
+	.selection-bar button.danger:hover { border-color: var(--rust); background: var(--rust-wash); color: var(--rust); }
 	.canvas-index { position: absolute; left: 0; right: 0; margin-inline: auto; width: min(360px, calc(100% - 24px)); max-height: calc(100% - 72px); display: flex; flex-direction: column; background: var(--paper-raised); border: 1px solid var(--card-border); border-radius: 8px; padding: 12px; box-sizing: border-box; z-index: 20; box-shadow: var(--shadow-menu); }
 	.canvas-index input { font: inherit; font-size: var(--fs-13); padding: 6px 8px; border: 1px solid var(--control-border); border-radius: 6px; min-width: 0; background: var(--paper-raised); color: var(--ink); }
 	.canvas-index input:focus { outline: 2px solid var(--focus-glow); border-color: var(--blue); }

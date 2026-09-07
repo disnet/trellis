@@ -28,7 +28,7 @@
 	}
 
 	async function undo() {
-		const err = await ws.undoLastApply();
+		const err = await ws.undoLast();
 		if (err) ws.notice = err;
 	}
 
@@ -274,7 +274,7 @@
 							<span class="item-hint">Membership only — every thought stays on the canvas</span>
 						</button>
 						<button class="item" disabled={ws.undoLabel === null} onclick={() => run(undo)}>
-							<span class="item-label"><Icon name="undo" /> Undo last apply</span>
+							<span class="item-label"><Icon name="undo" /> Undo last change</span>
 							{#if ws.undoLabel}<span class="item-hint">{ws.undoLabel}</span>{/if}
 						</button>
 						<a class="item" href="/api/export" download onclick={() => (openMenu = null)}>
@@ -305,11 +305,11 @@
 			<button
 				class="undo"
 				disabled={ws.undoLabel === null}
-				title={ws.undoLabel ?? 'Undo last apply'}
-				aria-label="Undo last apply"
+				title={ws.undoLabel ?? 'Undo last change'}
+				aria-label="Undo last change"
 				onclick={undo}
 			>
-				<Icon name="undo" /><span class="label">Undo last apply</span>
+				<Icon name="undo" /><span class="label">Undo last change</span>
 			</button>
 			<a
 				class="export"

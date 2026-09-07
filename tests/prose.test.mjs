@@ -92,7 +92,7 @@ test('undoing an applied proposal preserves a treatment for a surviving group', 
 	const { db } = await server.ssrLoadModule('/src/lib/server/db.ts');
 	const snapshot = JSON.parse(db.prepare('SELECT value FROM meta WHERE key = ?').get(`undo_snapshot:${store.getState().activeGraphId}`).value);
 	assert.deepEqual(snapshot.prose_treatments, [], 'undo does not duplicate derived draft bodies');
-	assert.equal(store.undoLastApply(), null);
+	assert.equal(store.undoLast().kind, 'apply');
 	assert.equal(treatments(group).length, 1);
 });
 

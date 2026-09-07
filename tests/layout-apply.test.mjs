@@ -25,7 +25,7 @@ test('accepted thoughts and displaced cards commit together, and undo restores t
 	assert(!result.error, result.error);
 	assert.equal(store.getState().canvas.find(p => p.thoughtId === thoughtId).x, 300);
 	assert(Object.keys(store.getState().thoughts).length > Object.keys(before.thoughts).length);
-	assert.equal(store.undoLastApply(), null);
+	assert.equal(store.undoLast().kind, 'apply');
 	assert.deepEqual(store.getState().canvas, before.canvas);
 	assert.deepEqual(store.getState().thoughts, before.thoughts);
 });
