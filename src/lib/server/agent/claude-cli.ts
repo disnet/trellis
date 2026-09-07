@@ -21,7 +21,7 @@ import { proposalSchema } from './wire';
 // The CLI's --json-schema validator speaks draft-07.
 const JSON_SCHEMA = z.toJSONSchema(proposalSchema, { target: 'draft-7' });
 
-const TIMEOUT_MS = 180_000;
+const TIMEOUT_MS = 300_000;
 
 interface CliEnvelope {
 	is_error?: boolean;

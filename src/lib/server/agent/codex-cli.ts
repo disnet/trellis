@@ -9,7 +9,7 @@ import type { ReasoningEffort } from '$lib/models';
 import { SYSTEM_PROMPT, buildUserPrompt } from './prompt';
 import { codexProposalSchema } from './wire';
 
-const TIMEOUT_MS = 180_000;
+const TIMEOUT_MS = 300_000;
 const MAX_OUTPUT = 2 * 1024 * 1024;
 
 function runCodex(bin: string, args: string[], cwd: string, prompt: string): Promise<void> {
@@ -18,7 +18,7 @@ function runCodex(bin: string, args: string[], cwd: string, prompt: string): Pro
 		let stderr = '';
 		const timer = setTimeout(() => {
 			child.kill('SIGKILL');
-			reject(new Error('Codex timed out after 180s. Try the operation again.'));
+			reject(new Error(`Codex timed out after ${TIMEOUT_MS / 1000}s. Try the operation again.`));
 		}, TIMEOUT_MS);
 		child.stderr.on('data', (chunk) => {
 			stderr = (stderr + chunk).slice(-MAX_OUTPUT);

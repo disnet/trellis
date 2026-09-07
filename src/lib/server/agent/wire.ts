@@ -36,7 +36,7 @@ export const STATEMENT_LIMIT = 4000;
 export const SUMMARY_LIMIT = 500;
 export const RATIONALE_LIMIT = 1000;
 export const SOURCE_LIMIT = 500;
-export const MAX_OPERATIONS = 20;
+export const MAX_OPERATIONS = 25;
 
 const confidenceSchema = z.object({
 	probability: z
