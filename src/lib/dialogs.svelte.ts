@@ -8,6 +8,8 @@ export interface DialogState {
 	confirmLabel: string;
 	/** Prompt only: initial input value. */
 	initial: string;
+	/** Prompt only: keep input within the receiving field's limit. */
+	maxLength?: number;
 	resolve: (value: boolean | string | null) => void;
 }
 
@@ -27,11 +29,12 @@ class Dialogs {
 		});
 	}
 
-	prompt(message: string, initial = '', confirmLabel = 'Save'): Promise<string | null> {
+	prompt(message: string, initial = '', confirmLabel = 'Save', maxLength = 80): Promise<string | null> {
 		this.current?.resolve(this.current.kind === 'confirm' ? false : null);
 		return new Promise((resolve) => {
 			this.current = {
 				kind: 'prompt',
+				maxLength,
 				message,
 				confirmLabel,
 				initial,

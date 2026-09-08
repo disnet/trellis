@@ -2,6 +2,7 @@
 	import { dialogs } from '$lib/dialogs.svelte';
 	import { workspace } from '$lib/workspace.svelte';
 	import Icon from './Icon.svelte';
+	import ControlPopover from './ControlPopover.svelte';
 
 	const ws = workspace;
 
@@ -44,19 +45,21 @@
 	class="graph-switcher"
 	title="Graphs are isolated knowledge bases — search, Connect, and agent context never cross between them"
 >
+	<span class="scope-label">Graph</span>
 	<select class:compact aria-label="Active graph" value={ws.activeGraphId} onchange={onSelect}>
 		{#each ws.graphs as g (g.id)}
 			<option value={g.id}>{g.name}</option>
 		{/each}
 	</select>
-	<button title="Rename this graph" aria-label="Rename this graph" onclick={rename}>
-		<Icon name="pencil" />
-	</button>
-	<button
-		title="New graph — a separate, isolated knowledge base"
-		aria-label="New graph"
-		onclick={create}
-	><Icon name="plus" /></button>
+	<ControlPopover label="Graph actions" width={240} chevron={false}>
+		{#snippet trigger()}<Icon name="ellipsis" />{/snippet}
+		{#snippet children(close)}
+			<div class="menu-heading">Graph actions</div>
+			<button class="action" onclick={() => { close(); create(); }}><Icon name="plus" /> New graph…</button>
+			<button class="action" onclick={() => { close(); rename(); }}><Icon name="pencil" /> Rename graph…</button>
+			<a class="action" href="/api/export" download onclick={close}><Icon name="download" /> Export graph</a>
+		{/snippet}
+	</ControlPopover>
 </div>
 
 <style>
@@ -65,15 +68,17 @@
 		align-items: center;
 		gap: 4px;
 	}
+	.scope-label { color: var(--ink-muted); font-size: var(--fs-11); padding-left: 8px; }
 	select {
 		font: inherit;
 		font-size: var(--fs-12);
 		font-weight: 600;
 		color: var(--ink-soft);
-		background: var(--card-white);
-		border: 1px solid var(--card-border);
+		background: transparent;
+		border: 1px solid transparent;
 		border-radius: 6px;
-		padding: 4px 6px;
+		padding: 4px;
+		min-height: 32px;
 		max-width: 160px;
 		cursor: pointer;
 	}
@@ -83,19 +88,30 @@
 	select:hover {
 		border-color: var(--blue);
 	}
-	button {
+	.action {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		width: 100%;
+		box-sizing: border-box;
+		text-align: left;
+		text-decoration: none;
 		font: inherit;
 		font-size: var(--fs-12);
-		border: 1px solid var(--control-border);
-		background: var(--card-white);
+		border: 1px solid transparent;
+		background: transparent;
 		border-radius: 6px;
-		padding: 4px 8px;
+		padding: 8px;
+		min-height: 36px;
 		cursor: pointer;
 		color: var(--ink-soft);
 		line-height: 1.2;
 	}
-	button:hover {
-		border-color: var(--blue);
+	.action:hover {
+		background: var(--inset-fill);
 		color: var(--blue);
 	}
+	.menu-heading { padding: 8px; color: var(--ink-muted); font-size: var(--fs-11); font-weight: 600; }
+	.action:focus-visible, select:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
+	@media (max-width: 600px) { .scope-label { display: none; } }
 </style>

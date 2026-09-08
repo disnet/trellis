@@ -14,10 +14,14 @@
 	import ProposalTray from '$lib/components/ProposalTray.svelte';
 	import ReentryPanel from '$lib/components/ReentryPanel.svelte';
 	import Toolbar from '$lib/components/Toolbar.svelte';
-	import WorkingSetTabs from '$lib/components/WorkingSetTabs.svelte';
+	import GroupSwitcher from '$lib/components/GroupSwitcher.svelte';
+	import ViewSwitcher from '$lib/components/ViewSwitcher.svelte';
+	import AppearanceMenu from '$lib/components/AppearanceMenu.svelte';
 	import { workspace } from '$lib/workspace.svelte';
 
 	const ws = workspace;
+	let workspaceBarHeight = $state(48);
+	let dockHeight = $state(80);
 	let leftPanel = $state<'library' | null>(null);
 	let rightPanel = $state<'proposals' | 'inspector' | null>(null);
 	let previousPending = 0;
@@ -69,6 +73,18 @@
 		}
 		previousCanvasReveal = n;
 	});
+	// Activity is a tool, not a view you navigate between: it takes over the
+	// center, so it has to give the center back. Remember where it was opened
+	// from, and let both the toolbar button and the log's own header return there.
+	type ThoughtView = 'canvas' | 'outline' | 'browse' | 'prose';
+	const VIEW_NAMES: Record<ThoughtView, string> = { canvas: 'Canvas', outline: 'Outline', browse: 'Browse', prose: 'Prose' };
+	let lastThoughtView = $state<ThoughtView>('canvas');
+	$effect(() => {
+		if (ws.view !== 'log') lastThoughtView = ws.view;
+	});
+	function closeActivity() { ws.view = lastThoughtView; }
+	function toggleActivity() { ws.view = ws.view === 'log' ? lastThoughtView : 'log'; }
+
 	function toggleLeft(panel: 'library') {
 		leftPanel = leftPanel === panel ? null : panel;
 		if (viewportWidth < 800) rightPanel = null;
@@ -139,23 +155,28 @@
 
 <svelte:window bind:innerWidth={viewportWidth} />
 
-<div class="app" style="--left-w: {left}px; --right-w: {right}px">
-	<div class="workspace-bar">
+<div class="app" style="--left-w: {left}px; --right-w: {right}px; --workspace-top: {workspaceBarHeight + 32}px; --dock-space: {dockHeight + 32}px">
+	<div class="workspace-bar" bind:clientHeight={workspaceBarHeight}>
 		<div class="workspace-identity">
 			<span class="wordmark">Trellis</span>
-			{#if !ws.loading && !ws.loadError}<GraphSwitcher compact={viewportWidth < 1000} />{/if}
-			<details class="sets-menu">
-				<summary>{ws.workingSets.find(set => set.id === ws.activeWorkingSetId)?.name ?? 'All thoughts'} <Icon name="chevron-down" /></summary>
-				<div class="sets-popover"><WorkingSetTabs /></div>
-			</details>
+			{#if !ws.loading && !ws.loadError}
+				<GraphSwitcher compact={viewportWidth < 1000} />
+				<span class="scope-divider" aria-hidden="true">/</span>
+				<GroupSwitcher />
+			{/if}
 		</div>
-		<nav class="panel-switcher" aria-label="Workspace panels">
+		<div class="view-navigation"><ViewSwitcher /></div>
+		<nav class="panel-switcher" aria-label="Workspace panels and settings">
 			<button class:active={leftPanel === 'library'} aria-expanded={leftPanel === 'library'} aria-controls="library-panel" onclick={() => toggleLeft('library')}><Icon name="browse" /> Library</button>
 			<button class:active={rightPanel === 'proposals'} class:pending={ws.pendingChangeSets.length > 0} aria-expanded={rightPanel === 'proposals'} aria-controls="review-panel" onclick={() => toggleRight('proposals')}>◇ Proposals{#if ws.pendingChangeSets.length} <span class="badge">{ws.pendingChangeSets.length}</span>{/if}</button>
 			<button class:active={rightPanel === 'inspector'} aria-expanded={rightPanel === 'inspector'} aria-controls="review-panel" onclick={() => toggleRight('inspector')}><Icon name="outline" /> Inspector{#if ws.selectedIds.length} <span class="badge">{ws.selectedIds.length}</span>{/if}</button>
+			<div class="app-tools">
+				<button class:active={ws.view === 'log'} aria-label="Activity" aria-pressed={ws.view === 'log'} title={ws.view === 'log' ? `Close activity and return to ${VIEW_NAMES[lastThoughtView]}` : 'Agent activity'} onclick={toggleActivity}><Icon name="activity" /></button>
+				<AppearanceMenu />
+			</div>
 		</nav>
 	</div>
-	<div class="tool-dock"><Toolbar /></div>
+	<div class="tool-dock" bind:clientHeight={dockHeight}><Toolbar /></div>
 	<aside id="library-panel" class="floating-panel left" hidden={!leftPanel} aria-label="Library">
 		<button class="close-panel" aria-label="Close library" onclick={() => leftPanel = null}><Icon name="x" /></button>
 		<div class="panel-content" hidden={leftPanel !== 'library'}><Library /></div>
@@ -178,7 +199,7 @@
 				{:else if ws.view === 'prose'}
 					<Prose />
 				{:else if ws.view === 'log'}
-					<ActivityLog />
+					<ActivityLog onclose={closeActivity} backLabel={VIEW_NAMES[lastThoughtView]} />
 				{:else}
 					<Browse />
 				{/if}
@@ -216,18 +237,18 @@
 		background: var(--paper);
 	}
 	.app { position: relative; height: 100dvh; overflow: hidden; }
-	.workspace-bar { position: absolute; inset: 16px 16px auto; z-index: 30; display: flex; justify-content: space-between; gap: 16px; pointer-events: none; }
-	.workspace-identity, .panel-switcher { pointer-events: auto; display: flex; align-items: center; gap: 4px; padding: 6px; background: var(--paper-raised); border: 1px solid var(--hairline); border-radius: 12px; box-shadow: var(--shadow-menu); min-width: 0; }
+	.workspace-bar { position: absolute; inset: 16px 16px auto; z-index: 40; display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px 16px; pointer-events: none; }
+	.workspace-identity, .panel-switcher, .view-navigation { pointer-events: auto; display: flex; align-items: center; gap: 4px; padding: 6px; background: var(--paper-raised); border: 1px solid var(--hairline); border-radius: 12px; box-shadow: var(--shadow-menu); min-width: 0; }
+	.scope-divider { color: var(--card-border); padding-inline: 4px; }
+	.app-tools { display: flex; align-items: center; gap: 4px; padding-left: 8px; margin-left: 4px; border-left: 1px solid var(--hairline); }
+	.panel-switcher { margin-left: auto; }
 	.wordmark { color: var(--moss-ink); font-weight: 800; font-size: var(--fs-16); padding: 0 8px; }
-	.panel-switcher button, summary { display: flex; align-items: center; gap: 6px; font: inherit; font-size: var(--fs-12); color: var(--ink-soft); border: 0; background: transparent; border-radius: 7px; padding: 8px 10px; cursor: pointer; white-space: nowrap; }
-	.panel-switcher button:hover, summary:hover { background: var(--inset-fill); }
+	.panel-switcher button { display: flex; align-items: center; gap: 4px; min-height: 32px; font: inherit; font-size: var(--fs-12); color: var(--ink-soft); border: 0; background: transparent; border-radius: 6px; padding: 4px 8px; cursor: pointer; white-space: nowrap; }
+	.panel-switcher button:hover { background: var(--inset-fill); }
+	.panel-switcher button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 	.panel-switcher button.active { color: var(--blue); background: var(--blue-wash); }
 	.panel-switcher button.pending { color: var(--gold-ink); }
 	.badge { font-size: var(--fs-10); background: var(--inset-fill); border-radius: 999px; padding: 1px 5px; }
-	.sets-menu { position: relative; min-width: 0; }
-	summary { list-style: none; max-width: 220px; overflow: hidden; }
-	summary::-webkit-details-marker { display: none; }
-	.sets-popover { position: absolute; top: calc(100% + 14px); left: 0; width: min(480px, calc(100vw - 40px)); padding: 8px; background: var(--paper-raised); border: 1px solid var(--hairline); border-radius: 12px; box-shadow: var(--shadow-menu); }
 	.tool-dock { position: absolute; bottom: 16px; left: 16px; right: 16px; margin-inline: auto; width: max-content; max-width: calc(100% - 32px); z-index: 35; }
 	.load-state {
 		height: 100%;
@@ -270,7 +291,7 @@
 		--sheet-left: 16px;
 		--sheet-right: 16px;
 		width: min(1100px, max(calc(100% - var(--sheet-left) - var(--sheet-right)), 260px));
-		margin: 80px 0 80px max(var(--sheet-left), calc(50% - 550px + (var(--sheet-left) - var(--sheet-right)) / 2));
+		margin: var(--workspace-top) 0 var(--dock-space) max(var(--sheet-left), calc(50% - 550px + (var(--sheet-left) - var(--sheet-right)) / 2));
 		background: var(--paper-panel);
 		border: 1px solid var(--hairline);
 		border-radius: 14px;
@@ -280,33 +301,31 @@
 	.canvas-pane.alternate.panel-left { --sheet-left: calc(var(--left-w) + 32px); }
 	.canvas-pane.alternate.panel-right { --sheet-right: calc(var(--right-w) + 32px); }
 	/* The canvas owns the viewport; panels never change its geometry. */
-	.floating-panel { position: absolute; top: 80px; bottom: 144px; z-index: 25; background: var(--paper-panel); border: 1px solid var(--hairline); border-radius: 12px; box-shadow: var(--shadow-menu); }
+	.floating-panel { position: absolute; top: var(--workspace-top); bottom: calc(var(--dock-space) + 64px); z-index: 25; background: var(--paper-panel); border: 1px solid var(--hairline); border-radius: 12px; box-shadow: var(--shadow-menu); }
 	.left { left: 16px; width: var(--left-w); }
 	.right-panel { right: 16px; width: var(--right-w); }
 	.panel-content { height: 100%; overflow: auto; border-radius: inherit; }
 	.panel-content[hidden], .floating-panel[hidden] { display: none; }
 	.close-panel { position: absolute; top: 8px; right: 8px; z-index: 2; display: grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: 6px; background: var(--paper-panel); color: var(--ink-muted); cursor: pointer; }
 	.close-panel:hover { color: var(--ink); background: var(--inset-fill); }
-	@media (max-width: 1000px) {
+	@media (max-width: 1300px) {
 		.wordmark { display: none; }
 		.workspace-bar { flex-wrap: wrap; gap: 8px; }
-		.floating-panel { top: 128px; }
-		.canvas-pane.alternate { margin-top: 128px; }
+		.view-navigation { order: 3; }
 	}
 	@media (max-width: 600px) {
 		.workspace-bar { inset: 8px 8px auto; }
 		.workspace-identity, .panel-switcher { max-width: 100%; }
-		summary { max-width: 130px; }
 		.panel-switcher { width: 100%; justify-content: space-between; }
 		.panel-switcher button { padding: 8px 6px; font-size: var(--fs-11); }
-		.left, .right-panel { left: 8px; right: 8px; width: auto; bottom: 232px; }
+		.left, .right-panel { left: 8px; right: 8px; width: auto; }
 		/* Panels are full-width overlays here; yielding would crush the sheet. */
 		.canvas-pane.alternate.panel-left, .canvas-pane.alternate.panel-right { --sheet-left: 16px; --sheet-right: 16px; }
-		.tool-dock { bottom: 8px; max-width: calc(100% - 16px); }
+		.tool-dock { bottom: 8px; left: 8px; right: 8px; max-width: calc(100% - 16px); }
 	}
 	.toast {
 		position: fixed;
-		bottom: 150px;
+		bottom: calc(var(--dock-space) + 64px);
 		z-index: 60;
 		left: 50%;
 		transform: translateX(-50%);

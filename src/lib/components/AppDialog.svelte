@@ -41,7 +41,7 @@
 			<form onsubmit={submit}>
 				<p class="message">{d.message}</p>
 				{#if d.kind === 'prompt'}
-					<input bind:this={inputEl} bind:value={draft} maxlength="80" aria-label={d.message} />
+					<input bind:this={inputEl} bind:value={draft} maxlength={d.maxLength ?? 80} aria-label={d.message} />
 				{/if}
 				<div class="row">
 					<button type="button" onclick={cancel}>Cancel</button>

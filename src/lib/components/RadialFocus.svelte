@@ -100,7 +100,7 @@
 </section>
 
 <style>
-	.radial-focus { position: absolute; inset: 80px var(--focus-right, 16px) 144px var(--focus-left, 16px); z-index: 20; border: 1px solid var(--hairline); border-radius: 12px; min-width: 260px; display: flex; flex-direction: column; background: var(--paper); color: var(--ink); container-type: inline-size; }
+	.radial-focus { position: absolute; inset: var(--workspace-top, 80px) var(--focus-right, 16px) var(--dock-space, 144px) var(--focus-left, 16px); z-index: 20; border: 1px solid var(--hairline); border-radius: 12px; min-width: 260px; display: flex; flex-direction: column; background: var(--paper); color: var(--ink); container-type: inline-size; }
 	header { padding: 20px 24px 0; flex-shrink: 0; }
 	.navigation { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 	button { font: inherit; color: var(--ink-soft); background: var(--paper-raised); border: 1px solid var(--card-border); border-radius: 6px; padding: 7px 12px; cursor: pointer; font-size: var(--fs-12); }
@@ -135,6 +135,6 @@
 	.pagination { display: flex; align-items: center; justify-content: center; gap: 16px; font-size: var(--fs-12); }
 	.pending { color: var(--gold-deep); }
 	.missing { padding: 24px; }
-	@media (max-width: 700px) { .radial-focus { inset: 80px 8px 144px; } }
+	@media (max-width: 700px) { .radial-focus { left: 8px; right: 8px; } }
 	@container (max-width: 600px) { header { padding: 12px 16px 0; } footer { padding-inline: 16px; } }
 </style>

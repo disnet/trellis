@@ -1,7 +1,7 @@
 <script lang="ts">
 	import LocalAgentSetup from "./LocalAgentSetup.svelte";
 	let setup = $state(false);
-	import Icon from './Icon.svelte';
+	import ControlPopover from './ControlPopover.svelte';
 	import { PROVIDERS, REASONING_EFFORTS, supportsEffort, type AgentProvider, type ReasoningEffort } from '$lib/models';
 	import { workspace as ws } from '$lib/workspace.svelte';
 	/** Narrows the trigger to the provider alone when the toolbar is short of room. */
@@ -34,16 +34,10 @@
 	}
 </script>
 
-<svelte:window onkeydown={(event) => { if (event.key === 'Escape') open = false; }} />
-
-<div class="switcher">
-	<button class="trigger" class:compact aria-expanded={open} aria-controls="model-options"
-		disabled={ws.loading || ws.invoking !== null} onclick={() => open = !open}
-		title="Choose the provider and model for agent operations">
-		{triggerLabel} <Icon name="chevron-down" size="0.9em" />
-	</button>
-	{#if open}
-		<div class="options" id="model-options">
+<ControlPopover label="Choose agent model" side="top" align="right" width={360} bind:open disabled={ws.loading || ws.invoking !== null}>
+	{#snippet trigger()}<span class="trigger-label" class:compact title={triggerLabel}>{triggerLabel}</span>{/snippet}
+	{#snippet children(close)}
+		<div class="options">
 			<label>Provider
 				<select value={provider.id} disabled={ws.invoking !== null}
 					onchange={(e) => changeProvider(e.currentTarget.value)}>
@@ -99,20 +93,19 @@
 			<p>Applies to all agent operations. Your selection is remembered.</p>
 			<button class="done" aria-expanded={setup} onclick={() => setup = !setup}>{setup ? "Hide local agent setup" : "Set up local Claude / Codex"}</button>
 			{#if setup}<LocalAgentSetup />{/if}
-			<button class="done" onclick={() => open = false}>Done</button>
+			<button class="done" onclick={close}>Done</button>
 		</div>
-	{/if}
-</div>
+	{/snippet}
+</ControlPopover>
 
 <style>
-	.switcher { position: relative; flex-shrink: 0; }
 	button, select, input { font: inherit; font-size: var(--fs-12); color: var(--ink-soft); background: var(--card-white); border: 1px solid var(--card-border); border-radius: 6px; padding: 5px 8px; }
 	button { cursor: pointer; }
 	button:hover:not(:disabled) { border-color: var(--blue); color: var(--blue); }
 	button:disabled { opacity: .45; cursor: not-allowed; }
-	.trigger { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-	.trigger.compact { max-width: 120px; }
-	.options { position: absolute; bottom: calc(100% + 10px); left: 0; z-index: 100; width: min(340px, calc(100vw - 48px)); max-height: calc(100dvh - 160px); overflow-y: auto; padding: 16px; background: var(--paper-raised); border: 1px solid var(--control-border); border-radius: 8px; box-shadow: var(--shadow-menu); }
+	.trigger-label { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.trigger-label.compact { max-width: 120px; }
+	.options { padding: 8px; }
 	label { display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-12); font-weight: 600; margin-bottom: 12px; }
 	.custom { display: flex; gap: 6px; }
 	input { min-width: 0; flex: 1; }

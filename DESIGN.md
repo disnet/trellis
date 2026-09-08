@@ -66,6 +66,8 @@ rounded:
   chip: "4px"
   control: "6px"
   card: "8px"
+  floating: "12px"
+  dock: "14px"
   pill: "999px"
 spacing:
   xs: "4px"
@@ -179,9 +181,13 @@ Every font-size in the app is a `--fs-*` token (`--fs-9` … `--fs-17`, base px 
 
 ## Layout
 
-A continuous, full-window canvas is the base surface. Workspace identity and a working-set menu float at the upper left; Scratch, Library, Proposals, and Inspector toggles float at the upper right. Creation, agent operations, view switching, and utilities live in a bottom dock. Canvas arrangement, search, and zoom controls float just above the dock.
+A continuous, full-window canvas is the base surface. Navigation floats at the top in three distinct clusters: graph and group scope; Canvas, Outline, Browse, and Prose views; and Library, Proposals, Inspector, Activity, and Appearance. The graph's menu holds creation, rename, and export. The searchable group picker lists groups vertically, shows membership counts and the current group, and keeps rename, empty, and delete beside the group they affect. Deleting a group uses an explicit label and confirmation, never a tab-close icon.
 
-Scratch and Library share a collapsible left panel; Proposals and Inspector share a collapsible right panel. Both retain independent resize controls. Opening a panel never resizes or shifts the canvas. Panels begin closed, with new pending change sets opening Proposals for explicit review. On narrow windows, opening one panel closes the other. Drafts and inspector edits survive hiding their panels.
+The bottom dock is for work on thoughts: New note and Undo; agent operations with visible selection and group context; and the model choice. The canvas's own controls — arrangement, radial focus, search, display options (card detail, connections, group colors), and camera zoom — form a single bar centered directly above the dock, with the camera set off by a hairline as its own segment. The bottom is two deliberate stacked rows, never clusters scattered into the corners. Outline and Browse retain their own thought-detail control beside view navigation. Menu positions stay within the viewport and support outside-click dismissal, Escape, and keyboard focus return.
+
+Activity is a tool, not one of the four thought views: it is reached from the workspace-bar tools, takes over the center, and must give the center back. It names itself in a header and carries a labelled return to the view it covered; its toolbar button toggles back to that same view.
+
+Library occupies a collapsible left panel; Proposals and Inspector share a collapsible right panel. Both retain independent resize controls. Opening a panel never resizes or shifts the canvas. Panels begin closed, with new pending change sets opening Proposals for explicit review. On narrow windows, opening one panel closes the other. Drafts and inspector edits survive hiding their panels. Panels and alternate views follow the measured navigation and dock heights as controls wrap or text scales.
 
 Keep the existing small, scalable system typography, warm paper palette, and semantic proposal styling. Floating chrome uses restrained warm shadows and 12–14px corners, with air between each surface and the window edge. Outline and Browse retain reading space below the workspace controls and above the dock.
 
@@ -241,7 +247,7 @@ Border *style* is semantic: **solid** = accepted knowledge and ordinary chrome; 
 - **Focus:** Fountain-Pen Blue border plus a soft blue glow ring (`outline: 2px solid #3b5bdb33`).
 
 ### Navigation (toolbar)
-- Paper Raised bar, hairline bottom border; moss-green 800-weight wordmark; outlined operation buttons; segmented view switcher; quiet ellipsized selection hint in Ink Quiet; labels shed responsively.
+- Paper Raised floating clusters with warm hairline borders; moss-green 800-weight wordmark; named scope controls and a searchable group list; clearly selected view buttons. The separate action dock uses outlined operation buttons and a visible selection hint. Controls wrap responsively while keeping view and operation labels readable.
 
 ### Canvas & Edges
 - Paper ground with the 24px Dot Grid; accepted relation edges in Edge Ink (1.5px) with small uppercase edge labels; proposed edges dashed in Proposal Gold Soft; faint construction lines #cfc8b8.

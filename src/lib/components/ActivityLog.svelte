@@ -7,6 +7,14 @@
 	import { workspace } from '$lib/workspace.svelte';
 	import Icon from './Icon.svelte';
 
+	// Activity replaces the center rather than sitting beside it, so it names
+	// itself and carries its own way back to the view it covered.
+	interface Props {
+		onclose: () => void;
+		backLabel: string;
+	}
+	let { onclose, backLabel }: Props = $props();
+
 	const ws = workspace;
 
 	interface CallSummary {
@@ -139,6 +147,10 @@
 
 <div class="activity" aria-label="Agent activity log">
 	<header class="controls">
+		<div class="row title-row">
+			<h2>Agent activity</h2>
+			<button class="back" onclick={onclose}>Back to {backLabel}</button>
+		</div>
 		<div class="row">
 			<div class="presets" role="group" aria-label="Outcome filter">
 				<button
@@ -314,6 +326,42 @@
 		align-items: center;
 		gap: 10px;
 		flex-wrap: wrap;
+	}
+	/* The view names itself and offers the way out before any filter chrome. */
+	.title-row {
+		margin-bottom: 10px;
+	}
+	.title-row h2 {
+		margin: 0;
+		font-size: var(--fs-13);
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		color: var(--ink-muted);
+	}
+	.back {
+		margin-left: auto;
+		font: inherit;
+		font-size: var(--fs-12);
+		font-weight: 600;
+		border: 1px solid var(--card-border);
+		background: var(--card-white);
+		border-radius: 6px;
+		padding: 4px 10px;
+		cursor: pointer;
+		color: var(--ink-soft);
+		white-space: nowrap;
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+	}
+	.back:hover {
+		border-color: var(--blue);
+		color: var(--blue);
+	}
+	.back:focus-visible {
+		outline: 2px solid var(--blue);
+		outline-offset: 2px;
 	}
 	.presets {
 		display: flex;

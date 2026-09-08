@@ -14,6 +14,7 @@
 	import NoteCard from './NoteCard.svelte';
 	import RadialFocus from './RadialFocus.svelte';
 	import Icon from './Icon.svelte';
+	import ControlPopover from './ControlPopover.svelte';
 	import { tick, untrack } from 'svelte';
 	import { layoutCanvas } from '$lib/canvas-layout';
 	import { groupColor } from '$lib/group-colors';
@@ -938,22 +939,33 @@
 		<button bind:this={focusButton} onclick={() => focusId = ws.selectedIds[0]} disabled={ws.selectedIds.length !== 1 || !!ws.layoutPreview || ws.applying} title="Select one thought to explore its neighbors">Radial focus</button>
 		<button onclick={arrange} disabled={!items.length || !!ws.layoutPreview || ws.applying} title="Space connected groups using actual card sizes">Arrange groups</button>
 		{#if previous}<button onclick={undoArrange} disabled={!!ws.layoutPreview || ws.applying}>Undo arrangement</button>{/if}
-		<label>Connections <select bind:value={connections} aria-label="Visible connections">
-			<option value="all">All</option><option value="selected">Selected only</option><option value="none">Hidden</option>
-		</select></label>
-		{#if !ws.lensActive && ws.workingSets.length > 0}
-			<button
-				class="groups-toggle"
-				class:on={showGroups}
-				aria-pressed={showGroups}
-				title="Color each thought by the groups it belongs to"
-				onclick={toggleGroups}
-			>Groups: {showGroups ? 'On' : 'Off'}</button>
-		{/if}
-		<button class="find" aria-expanded={showIndex} onclick={() => showIndex = !showIndex}>Find on canvas · {items.length}{#if outside} <span>({outside} offscreen)</span>{/if}</button>
+		<ControlPopover label="Canvas display" side="top" width={280}>
+			{#snippet trigger()}Display{/snippet}
+			{#snippet children()}
+				<div class="display-options">
+					<label>Card detail <select value={ws.zoom} onchange={(event) => ws.zoom = event.currentTarget.value as 'overview' | 'reading'}>
+						<option value="overview">Titles</option><option value="reading">Full statements</option>
+					</select></label>
+					<label>Connections <select bind:value={connections} aria-label="Visible connections">
+						<option value="all">All</option><option value="selected">Selected only</option><option value="none">Hidden</option>
+					</select></label>
+					{#if !ws.lensActive && ws.workingSets.length > 0}
+						<label class="group-colors"><input type="checkbox" checked={showGroups} onchange={toggleGroups} /> Show group colors</label>
+					{/if}
+				</div>
+			{/snippet}
+		</ControlPopover>
+		<button class="find" aria-expanded={showIndex} title={`${items.length} items on canvas${outside ? ` · ${outside} offscreen` : ''}`} onclick={() => showIndex = !showIndex}>Find</button>
+		<span class="tool-divider" aria-hidden="true"></span>
+		<div class="camera" role="group" aria-label="Camera">
+			<button class="icon" title="Zoom out" aria-label="Zoom out" onclick={() => zoomStep(1 / 1.25)}><Icon name="zoom-out" /></button>
+			<button class="zoom-level" title="Reset zoom to 100%" onclick={() => glide(() => zoomAt(vp.w / 2, vp.h / 2, 1 / cam.scale))}>{Math.round(cam.scale * 100)}%</button>
+			<button class="icon" title="Zoom in" aria-label="Zoom in" onclick={() => zoomStep(1.25)}><Icon name="zoom-in" /></button>
+			<button class="icon" title="Center on your thoughts" aria-label="Center on your thoughts" onclick={recenter}><Icon name="recenter" /></button>
+		</div>
 	</div>
 	{#if showIndex}
-		<div class="canvas-index" style="bottom: {toolbarHeight + 88}px; max-height: calc(100% - {toolbarHeight + 180}px);">
+		<div class="canvas-index" style="bottom: calc(var(--dock-space, 96px) + {toolbarHeight + 8}px); max-height: calc(100% - var(--dock-space, 96px) - var(--workspace-top, 80px) - {toolbarHeight + 16}px);">
 			<input bind:this={searchEl} aria-label="Find on canvas" placeholder="Find a title or phrase…" bind:value={query} onkeydown={e => {
 				if (e.key === 'Escape') showIndex = false;
 				if (e.key === 'Enter' && results.length) locate(results[0]);
@@ -1224,35 +1236,38 @@
 	{/if}
 </div>
 
-<div class="canvas-zoom">
-	<button title="Zoom out" aria-label="Zoom out" onclick={() => zoomStep(1 / 1.25)}><Icon name="zoom-out" /></button>
-	<button class="zoom-level" title="Reset zoom to 100%" onclick={() => glide(() => zoomAt(vp.w / 2, vp.h / 2, 1 / cam.scale))}>{Math.round(cam.scale * 100)}%</button>
-	<button title="Zoom in" aria-label="Zoom in" onclick={() => zoomStep(1.25)}><Icon name="zoom-in" /></button>
-	<button title="Center on your thoughts" aria-label="Center on your thoughts" onclick={recenter}><Icon name="recenter" /></button>
-</div>
-
 </div>
 </div>
 
 <style>
 	.map-view { position: absolute; inset: 0; display: flex; flex-direction: column; }
 	.map-view.concealed { visibility: hidden; }
-	/* Canvas controls sit on one baseline 16px above the dock: the arrange bar
-	   centered over it, the zoom cluster in the corner beside it. */
-	.canvas-tools { position: absolute; bottom: 80px; left: 0; right: 0; margin-inline: auto; z-index: 21; width: fit-content; max-width: calc(100% - 380px); border-radius: 10px; box-shadow: var(--shadow-menu); display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 12px; background: var(--paper-raised); border: 1px solid var(--hairline); }
+	/* One bar for everything the canvas itself offers — arrangement, search,
+	   display, and the camera — stacked directly above the action dock and
+	   centered on it, so the bottom reads as two deliberate rows rather than
+	   clusters scattered into the corners. */
+	.canvas-tools { position: absolute; bottom: var(--dock-space, 96px); left: 16px; right: 16px; margin-inline: auto; z-index: 28; width: fit-content; max-width: calc(100% - 32px); border-radius: 10px; box-shadow: var(--shadow-menu); display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px; padding: 8px; background: var(--paper-raised); border: 1px solid var(--hairline); }
 	.canvas-tools button, .canvas-tools select { font: inherit; font-size: var(--fs-12); color: var(--ink-soft); background: var(--card-white); border: 1px solid var(--card-border); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
 	.canvas-tools button:hover:not(:disabled), .canvas-tools select:hover { border-color: var(--blue); color: var(--blue); }
 	.canvas-tools button:disabled { opacity: .45; cursor: not-allowed; }
+	/* Camera controls keep the tool bar's chrome but read as their own segment:
+	   a hairline sets them off from the actions that change the graph. */
+	.tool-divider { flex: 0 0 1px; height: 22px; background: var(--control-border); margin-inline: 2px; }
+	.camera { display: flex; align-items: center; gap: 4px; }
+	.canvas-tools .camera button { display: flex; align-items: center; justify-content: center; }
+	.canvas-tools .camera .icon { padding-inline: 8px; }
+	.canvas-tools .camera .zoom-level { min-width: 46px; font-variant-numeric: tabular-nums; }
 	.preview-note { font-size: var(--fs-12); color: var(--blue); }
-	.canvas-tools .groups-toggle.on { border-color: var(--blue); color: var(--blue-deep); background: var(--blue-wash); }
 	.canvas-tools label { display: flex; align-items: center; gap: 8px; font-size: var(--fs-12); color: var(--ink-faded); }
-	.canvas-tools .find { margin-left: auto; }
-	.find span { color: var(--ink-muted); }
+	.display-options { display: flex; flex-direction: column; gap: 12px; padding: 8px; }
+	.display-options label { justify-content: space-between; }
+	.display-options .group-colors { justify-content: flex-start; }
+	.display-options select { max-width: 155px; }
 	/* Top-center column: pending batches first, then the selection bar — the two
 	   bars that appear in response to what you just did. */
 	/* Below the workspace bar, and centered in whatever strip the open panels
 	   leave — the same insets the radial focus respects. */
-	.top-stack { position: absolute; top: 76px; left: var(--focus-left, 16px); right: var(--focus-right, 16px); margin-inline: auto; z-index: 21; width: fit-content; max-width: 100%; display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; }
+	.top-stack { position: absolute; top: var(--workspace-top, 80px); left: var(--focus-left, 16px); right: var(--focus-right, 16px); margin-inline: auto; z-index: 21; width: fit-content; max-width: 100%; display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; }
 	.top-stack > * { pointer-events: auto; }
 	/* Floats top-center when several thoughts are selected: the moment a
 	   multi-selection exists, so does the way to make it a working set. */
@@ -1362,41 +1377,6 @@
 		padding: 0 4px;
 		background: var(--pill-fill);
 	}
-	.canvas-zoom {
-		position: absolute;
-		right: 16px;
-		bottom: 80px;
-		display: flex;
-		align-items: center;
-		gap: 4px;
-		padding: 8px;
-		background: var(--paper-raised);
-		border: 1px solid var(--hairline);
-		border-radius: 10px;
-		box-shadow: var(--shadow-menu);
-		z-index: 25;
-	}
-	.canvas-zoom button {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		font: inherit;
-		font-size: var(--fs-12);
-		color: var(--ink-soft);
-		background: var(--card-white);
-		border: 1px solid var(--card-border);
-		border-radius: 6px;
-		padding: 5px 8px;
-		cursor: pointer;
-	}
-	.canvas-zoom button:hover {
-		border-color: var(--blue);
-		color: var(--blue);
-	}
-	.canvas-zoom .zoom-level {
-		min-width: 46px;
-		font-variant-numeric: tabular-nums;
-	}
 	.edge {
 		stroke: var(--edge-ink);
 		stroke-width: 1.5;
@@ -1496,13 +1476,9 @@
 		text-anchor: middle;
 		font-family: inherit;
 	}
-	/* The workspace bar wraps to two rows in narrow windows; the stack clears it. */
-	@media (max-width: 1000px) {
-		.top-stack { top: 120px; }
-	}
 	@media (max-width: 600px) {
-		.canvas-tools { bottom: 160px; left: 16px; right: 16px; max-width: calc(100% - 32px); }
-		.canvas-zoom { bottom: 108px; }
-		.canvas-index { bottom: 256px !important; max-height: calc(100% - 380px) !important; }
+		.canvas-tools { bottom: calc(var(--dock-space, 96px) + 56px); left: 8px; right: 8px; max-width: calc(100% - 32px); }
+		.canvas-zoom { right: 8px; }
+		.canvas-index { margin-bottom: 56px; }
 	}
 </style>
