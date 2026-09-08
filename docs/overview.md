@@ -162,3 +162,8 @@ intellectual work toward decisions and commitments: recording why you chose
 something, what predictions the choice rested on, and whether those reasons
 still hold. That direction is explored in
 [post-prototype-direction.md](post-prototype-direction.md).
+
+It also points outward: publishing a graph as a browsable public digital
+garden — status-prominent, provenance-carrying, linkable to other people's
+gardens over atproto. That direction is explored in
+[public-garden-direction.md](public-garden-direction.md).
