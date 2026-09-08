@@ -932,31 +932,32 @@
 	{/if}
 	<div class="map-view" inert={focusId !== null} class:concealed={focusId !== null}>
 	<div class="canvas-tools" bind:clientHeight={toolbarHeight}>
-		{#if ws.layoutPreview}
-			<span class="preview-note" role="status">Placement preview · {ws.layoutPreview.moved} existing thoughts move</span>
-			<button onclick={() => ws.cancelLayoutPreview()} disabled={ws.applying}>Cancel preview</button>
-		{/if}
-		<button bind:this={focusButton} onclick={() => focusId = ws.selectedIds[0]} disabled={ws.selectedIds.length !== 1 || !!ws.layoutPreview || ws.applying} title="Select one thought to explore its neighbors">Radial focus</button>
-		<button onclick={arrange} disabled={!items.length || !!ws.layoutPreview || ws.applying} title="Space connected groups using actual card sizes">Arrange groups</button>
-		{#if previous}<button onclick={undoArrange} disabled={!!ws.layoutPreview || ws.applying}>Undo arrangement</button>{/if}
-		<ControlPopover label="Canvas display" side="top" width={280}>
-			{#snippet trigger()}Display{/snippet}
-			{#snippet children()}
-				<div class="display-options">
-					<label>Card detail <select value={ws.zoom} onchange={(event) => ws.zoom = event.currentTarget.value as 'overview' | 'reading'}>
-						<option value="overview">Titles</option><option value="reading">Full statements</option>
-					</select></label>
-					<label>Connections <select bind:value={connections} aria-label="Visible connections">
-						<option value="all">All</option><option value="selected">Selected only</option><option value="none">Hidden</option>
-					</select></label>
-					{#if !ws.lensActive && ws.workingSets.length > 0}
-						<label class="group-colors"><input type="checkbox" checked={showGroups} onchange={toggleGroups} /> Show group colors</label>
-					{/if}
-				</div>
-			{/snippet}
-		</ControlPopover>
-		<button class="find" aria-expanded={showIndex} title={`${items.length} items on canvas${outside ? ` · ${outside} offscreen` : ''}`} onclick={() => showIndex = !showIndex}>Find</button>
-		<span class="tool-divider" aria-hidden="true"></span>
+		<div class="actions">
+			{#if ws.layoutPreview}
+				<span class="preview-note" role="status">Placement preview · {ws.layoutPreview.moved} existing thoughts move</span>
+				<button onclick={() => ws.cancelLayoutPreview()} disabled={ws.applying}>Cancel preview</button>
+			{/if}
+			<button bind:this={focusButton} onclick={() => focusId = ws.selectedIds[0]} disabled={ws.selectedIds.length !== 1 || !!ws.layoutPreview || ws.applying} title="Select one thought to explore its neighbors">Radial focus</button>
+			<button onclick={arrange} disabled={!items.length || !!ws.layoutPreview || ws.applying} title="Space connected groups using actual card sizes">Arrange groups</button>
+			{#if previous}<button onclick={undoArrange} disabled={!!ws.layoutPreview || ws.applying}>Undo arrangement</button>{/if}
+			<ControlPopover label="Canvas display" side="top" width={280}>
+				{#snippet trigger()}Display{/snippet}
+				{#snippet children()}
+					<div class="display-options">
+						<label>Card detail <select value={ws.zoom} onchange={(event) => ws.zoom = event.currentTarget.value as 'overview' | 'reading'}>
+							<option value="overview">Titles</option><option value="reading">Full statements</option>
+						</select></label>
+						<label>Connections <select bind:value={connections} aria-label="Visible connections">
+							<option value="all">All</option><option value="selected">Selected only</option><option value="none">Hidden</option>
+						</select></label>
+						{#if !ws.lensActive && ws.workingSets.length > 0}
+							<label class="group-colors"><input type="checkbox" checked={showGroups} onchange={toggleGroups} /> Show group colors</label>
+						{/if}
+					</div>
+				{/snippet}
+			</ControlPopover>
+			<button class="find" aria-expanded={showIndex} title={`${items.length} items on canvas${outside ? ` · ${outside} offscreen` : ''}`} onclick={() => showIndex = !showIndex}>Find</button>
+		</div>
 		<div class="camera" role="group" aria-label="Camera">
 			<button class="icon" title="Zoom out" aria-label="Zoom out" onclick={() => zoomStep(1 / 1.25)}><Icon name="zoom-out" /></button>
 			<button class="zoom-level" title="Reset zoom to 100%" onclick={() => glide(() => zoomAt(vp.w / 2, vp.h / 2, 1 / cam.scale))}>{Math.round(cam.scale * 100)}%</button>
@@ -1246,15 +1247,20 @@
 	   display, and the camera — stacked directly above the action dock and
 	   centered on it, so the bottom reads as two deliberate rows rather than
 	   clusters scattered into the corners. */
-	.canvas-tools { position: absolute; bottom: var(--dock-space, 96px); left: 16px; right: 16px; margin-inline: auto; z-index: 28; width: fit-content; max-width: calc(100% - 32px); border-radius: 10px; box-shadow: var(--shadow-menu); display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px; padding: 8px; background: var(--paper-raised); border: 1px solid var(--hairline); }
+	/* Two segments — the actions that change the graph, and the camera — so the
+	   bar can only ever break between them, never mid-group. */
+	.canvas-tools { position: absolute; bottom: var(--dock-space, 96px); left: 16px; right: 16px; margin-inline: auto; z-index: 28; width: fit-content; max-width: calc(100% - 32px); border-radius: 10px; box-shadow: var(--shadow-menu); display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px 12px; padding: 8px; background: var(--paper-raised); border: 1px solid var(--hairline); }
+	.canvas-tools .actions { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px; }
 	.canvas-tools button, .canvas-tools select { font: inherit; font-size: var(--fs-12); color: var(--ink-soft); background: var(--card-white); border: 1px solid var(--card-border); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
 	.canvas-tools button:hover:not(:disabled), .canvas-tools select:hover { border-color: var(--blue); color: var(--blue); }
 	.canvas-tools button:disabled { opacity: .45; cursor: not-allowed; }
-	/* Camera controls keep the tool bar's chrome but read as their own segment:
-	   a hairline sets them off from the actions that change the graph. */
-	.tool-divider { flex: 0 0 1px; height: 22px; background: var(--control-border); margin-inline: 2px; }
-	.camera { display: flex; align-items: center; gap: 4px; }
-	.canvas-tools .camera button { display: flex; align-items: center; justify-content: center; }
+	/* One segmented control rather than four loose buttons behind a hairline:
+	   it holds together as its own thing on one line or wrapped onto its own
+	   row, where a standalone divider would have been left dangling. */
+	.camera { display: flex; align-items: center; background: var(--card-white); border: 1px solid var(--card-border); border-radius: 6px; overflow: hidden; }
+	.canvas-tools .camera button { display: flex; align-items: center; justify-content: center; border: 0; border-radius: 0; background: transparent; padding: 5px 10px; }
+	.canvas-tools .camera button + button { box-shadow: inset 1px 0 0 var(--control-border); }
+	.canvas-tools .camera button:hover:not(:disabled) { background: var(--inset-fill); color: var(--blue); }
 	.canvas-tools .camera .icon { padding-inline: 8px; }
 	.canvas-tools .camera .zoom-level { min-width: 46px; font-variant-numeric: tabular-nums; }
 	.preview-note { font-size: var(--fs-12); color: var(--blue); }
@@ -1477,7 +1483,11 @@
 		font-family: inherit;
 	}
 	@media (max-width: 600px) {
-		.canvas-tools { bottom: calc(var(--dock-space, 96px) + 56px); left: 8px; right: 8px; max-width: calc(100% - 32px); }
+		.canvas-tools { bottom: calc(var(--dock-space, 96px) + 56px); left: 8px; right: 8px; max-width: calc(100% - 32px); padding: 6px; gap: 6px 10px; }
+		/* Tighter on phones so the four actions hold one row instead of
+		   stranding the last one on a line of its own. */
+		.canvas-tools .actions { gap: 6px; }
+		.canvas-tools .actions button { padding-inline: 8px; }
 		.canvas-zoom { right: 8px; }
 		.canvas-index { margin-bottom: 56px; }
 	}
