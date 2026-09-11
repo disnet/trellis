@@ -25,6 +25,10 @@ The builds are unsigned: macOS blocks the first launch, so open the app from
 the right-click menu, and Windows SmartScreen needs *More info*, then *Run
 anyway*. To build from source instead, see [Run it](#run-it).
 
+If Trellis fails to start it says why, and writes the details to
+`trellis.log` in its data folder — `%APPDATA%\com.trellis.desktop` on Windows,
+`~/Library/Application Support/com.trellis.desktop` on macOS.
+
 ## What it does
 
 - **Canvas** — a spatial graph of draggable thought cards connected by typed,

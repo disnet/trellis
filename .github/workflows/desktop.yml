@@ -55,6 +55,11 @@ jobs:
       # Packages this OS's runtime and boots it, so a broken bundled server or
       # native addon fails here rather than inside an installer someone ran.
       - run: npm run test:desktop
+      # The launcher's failure paths are plain Rust, so one platform is enough
+      # to cover them; the release profile still compiles on both below.
+      - name: Test the launcher
+        if: runner.os == 'macOS'
+        run: cargo test --manifest-path src-tauri/Cargo.toml
       - run: npm run desktop:build
       - uses: actions/upload-artifact@v4
         with:
