@@ -140,15 +140,36 @@ fn ready_url(child: &mut Child, ready: &mpsc::Receiver<String>) -> Result<tauri:
         .map_err(|error| format!("The server reported an address Trellis cannot open: {error}"))
 }
 
+/// Strips the Windows verbatim prefix (`\\?\`) that `resource_dir` returns for
+/// an installed build.
+///
+/// Node cannot take such a path as its entry point: its resolver reads the
+/// `\\?\` as the start of a UNC share, and `node \\?\C:\...\server.mjs` dies in
+/// `realpathSync` before the server's first line ever runs. Length is not a
+/// reason to keep the prefix either, since Node applies it itself for the
+/// syscalls that need it.
+fn plain(path: PathBuf) -> PathBuf {
+    let Some(text) = path.to_str() else { return path };
+    // `\\?\UNC\server\share` is the verbatim spelling of `\\server\share`;
+    // dropping the whole prefix there would strip the host off the path.
+    if let Some(share) = text.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{share}"));
+    }
+    if let Some(rest) = text.strip_prefix(r"\\?\") {
+        return PathBuf::from(rest);
+    }
+    path
+}
+
 fn start(app: &tauri::App, data: &Path, journal: &Journal) -> Result<(), String> {
-    let runtime = if cfg!(debug_assertions) {
+    let runtime = plain(if cfg!(debug_assertions) {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("runtime")
     } else {
         app.path()
             .resource_dir()
             .map_err(|error| format!("Trellis could not locate its program files: {error}"))?
             .join("runtime")
-    };
+    });
     let node = runtime.join(if cfg!(windows) { "node.exe" } else { "node" });
     let server = runtime.join("server.mjs");
     // Named plainly here, because a half-installed app otherwise fails as a
@@ -332,5 +353,30 @@ mod tests {
         let written = std::fs::read_to_string(&path).expect("the log is on disk");
         assert!(written.starts_with("line 0"), "{written}");
         std::fs::remove_file(&path).ok();
+    }
+
+    // An installed Windows build handed Node a `\\?\` path and got a window
+    // that never appeared, so the prefix has to be gone before Node sees it.
+    #[test]
+    fn a_verbatim_windows_path_reaches_node_in_its_ordinary_form() {
+        assert_eq!(
+            plain(PathBuf::from(r"\\?\C:\Users\someone\AppData\Local\Trellis\runtime")),
+            PathBuf::from(r"C:\Users\someone\AppData\Local\Trellis\runtime")
+        );
+    }
+
+    #[test]
+    fn a_verbatim_share_keeps_the_host_it_is_served_from() {
+        assert_eq!(
+            plain(PathBuf::from(r"\\?\UNC\build-server\apps\Trellis\runtime")),
+            PathBuf::from(r"\\build-server\apps\Trellis\runtime")
+        );
+    }
+
+    #[test]
+    fn an_ordinary_path_is_left_exactly_as_it_is() {
+        for path in [r"C:\Program Files\Trellis\runtime", "/Applications/Trellis.app/runtime"] {
+            assert_eq!(plain(PathBuf::from(path)), PathBuf::from(path));
+        }
     }
 }
