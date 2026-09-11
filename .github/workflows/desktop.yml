@@ -62,3 +62,48 @@ jobs:
           path: ${{ matrix.bundle }}
           if-no-files-found: error
           retention-days: 14
+
+  # Every green build on main becomes a downloadable release, so the README can
+  # point at one stable link. It waits for both platforms: a release carrying
+  # only half the installers would be worse than no new release at all.
+  release:
+    name: Release
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      # Tauri names its bundles after the version, but the README links to
+      # whatever is newest, so the download names have to stay put.
+      - name: Name the installers after their platform
+        run: |
+          mkdir release
+          cp artifacts/trellis-macos-arm64/*.dmg release/Trellis-macos-arm64.dmg
+          cp artifacts/trellis-windows-x64/*.exe release/Trellis-windows-x64-setup.exe
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          tag="v$version-build.${{ github.run_number }}"
+          # Re-running a build reuses its number, so top up that release
+          # instead of failing on the tag it already published.
+          if gh release view "$tag" > /dev/null 2>&1; then
+            gh release upload "$tag" release/* --clobber
+          else
+            gh release create "$tag" release/* \
+              --target "$GITHUB_SHA" \
+              --title "Trellis $version (build ${{ github.run_number }})" \
+              --latest \
+              --notes "$(printf '%s\n' \
+                "Automated build of [\`${GITHUB_SHA:0:7}\`](${{ github.server_url }}/${{ github.repository }}/commit/$GITHUB_SHA)." \
+                '' \
+                'Pre-alpha and unsigned. macOS blocks the first launch: open it from' \
+                'the right-click menu, or run `xattr -dr com.apple.quarantine /Applications/Trellis.app`.' \
+                'Windows SmartScreen needs More info, then Run anyway.')"
+          fi
