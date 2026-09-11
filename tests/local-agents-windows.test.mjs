@@ -58,13 +58,11 @@ test('launching the unwrapped shim reaches the CLI with its arguments whole', as
 // Node. Reading that target out is what keeps whole system prompts and JSON
 // schemas off a cmd.exe command line, which caps at 8191 characters.
 test('a .cmd shim around a native binary launches that binary directly', async () => {
-  const nested = join(directory, 'native-bin');
-  await mkdir(nested, { recursive: true });
-  const exe = join(nested, 'claude.exe');
+  const exe = join(directory, 'native.exe');
   await writeFile(exe, '');
   const shim = join(directory, 'native.cmd');
   await writeFile(shim, ['@ECHO off', 'SETLOCAL', 'CALL :find_dp0',
-    '"%dp0%\\native-bin\\claude.exe"   %*', ':find_dp0', 'SET dp0=%~dp0', 'EXIT /b', ''].join('\r\n'));
+    '"%dp0%\\native.exe"   %*', ':find_dp0', 'SET dp0=%~dp0', 'EXIT /b', ''].join('\r\n'));
   const command = cliCommand(shim, ['-p', '--system-prompt', 'x'.repeat(9000)]);
   assert.equal(command.file, exe);
   assert.deepEqual(command.args, ['-p', '--system-prompt', 'x'.repeat(9000)]);
