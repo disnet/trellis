@@ -8,7 +8,7 @@
 
 import {
 	COLLECTIONS,
-	GARDEN_RKEY,
+	GARDEN_KEY_RE,
 	parseAtUri,
 	readGardenRecord,
 	readRelationRecord,
@@ -259,6 +259,8 @@ export interface ChangeEntry {
 
 export interface GardenView {
 	identity: GardenIdentity;
+	/** The garden's address under that identity. */
+	key: string;
 	garden: GardenRecord;
 	/** Manifest order. */
 	thoughts: PublicThought[];
@@ -275,19 +277,52 @@ export interface GardenView {
 	changes: ChangeEntry[];
 }
 
-/** Load a garden by handle or DID. Null when the identity does not resolve or
- *  publishes no garden record. */
-export async function loadGarden(ident: string, fetchImpl: Fetch): Promise<GardenView | null> {
-	const identity = await resolveIdentity(ident.trim(), fetchImpl);
-	if (!identity) return null;
+/** One published garden as the index sees it: enough to list it without
+ *  reading the thoughts behind it. */
+export interface GardenSummary {
+	/** The garden's address — its rkey and its URL segment. */
+	key: string;
+	uri: string;
+	record: GardenRecord;
+}
+
+/** Every garden published under an identity, most recently released first.
+ *  A repo can hold several: one per graph its author publishes. */
+export async function listGardens(
+	identity: GardenIdentity,
+	fetchImpl: Fetch
+): Promise<GardenSummary[]> {
+	const rows = await listAllRecords(identity.pds, identity.did, COLLECTIONS.garden, fetchImpl);
+	const gardens: GardenSummary[] = [];
+	for (const row of rows) {
+		const parsed = parseAtUri(row.uri);
+		const record = readGardenRecord(row.value);
+		// The address is also a URL segment, so it is held to the same shape
+		// the publisher writes; anything else is a record we cannot link to.
+		if (!parsed || !record || !GARDEN_KEY_RE.test(parsed.rkey)) continue;
+		gardens.push({ key: parsed.rkey, uri: row.uri, record });
+	}
+	return gardens.sort(
+		(a, b) => Date.parse(b.record.release.publishedAt) - Date.parse(a.record.release.publishedAt)
+	);
+}
+
+/** Load one garden of a resolved identity by its address. Null when no such
+ *  garden is published. */
+export async function loadGardenAt(
+	identity: GardenIdentity,
+	gardenKey: string,
+	fetchImpl: Fetch
+): Promise<GardenView | null> {
 	const { pds, did } = identity;
+	if (!GARDEN_KEY_RE.test(gardenKey)) return null;
 
 	const gardenRes = (await getJson(
 		fetchImpl,
 		`${pds}/xrpc/com.atproto.repo.getRecord?${new URLSearchParams({
 			repo: did,
 			collection: COLLECTIONS.garden,
-			rkey: GARDEN_RKEY
+			rkey: gardenKey
 		})}`
 	)) as { value?: unknown } | null;
 	const garden = gardenRes ? readGardenRecord(gardenRes.value) : null;
@@ -401,7 +436,18 @@ export async function loadGarden(ident: string, fetchImpl: Fetch): Promise<Garde
 		.map((uri) => byUri.get(uri)?.rkey)
 		.filter((r): r is string => r !== undefined);
 
-	return { identity, garden, thoughts, byRkey, relations, pinnedRkeys, treatment, changes };
+	return { identity, key: gardenKey, garden, thoughts, byRkey, relations, pinnedRkeys, treatment, changes };
+}
+
+/** Resolve an identity and load one of its gardens — the whole read in one
+ *  call, for callers that hold no identity yet. */
+export async function loadGarden(
+	ident: string,
+	gardenKey: string,
+	fetchImpl: Fetch
+): Promise<GardenView | null> {
+	const identity = await resolveIdentity(ident.trim(), fetchImpl);
+	return identity ? loadGardenAt(identity, gardenKey, fetchImpl) : null;
 }
 
 function revisionRowThought(

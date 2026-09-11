@@ -1,12 +1,12 @@
 <script lang="ts">
-	// The publication review: connect an atproto account, choose what the
-	// garden shows, read the exact diff that would go public, attach change
-	// notes, and publish. Local state is the source of truth throughout —
+	// The publication review: connect an atproto account, title the garden and
+	// pick its front-door essay, read the exact diff that would go public,
+	// attach change notes, and publish. Local state is the source of truth throughout —
 	// this page only ever writes to the PDS through the publish API.
 	import AppDialog from '$lib/components/AppDialog.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import { dialogs } from '$lib/dialogs.svelte';
-	import type { ProseTreatment, WorkspaceState } from '$lib/types';
+	import type { ProseDraftSummary } from '$lib/types';
 
 	interface Credentials {
 		method?: 'oauth' | 'password';
@@ -44,10 +44,21 @@
 		results: WriteResultDto[];
 		finishedAt: number;
 	}
+	interface LiveGardenDto {
+		graphId: string;
+		graphName: string;
+		key: string;
+		title: string;
+		thoughts: number;
+		lastPublishedAt: number;
+	}
 	interface StatusDto {
 		graphId: string;
+		graphName: string;
 		credentials: Credentials;
-		config: { workingSetId: string; treatmentId: string | null; title: string; summary: string } | null;
+		config: { key: string; treatmentId: string | null; title: string; summary: string };
+		configured: boolean;
+		gardens: LiveGardenDto[];
 		live: {
 			garden: boolean;
 			thoughts: number;
@@ -61,7 +72,6 @@
 	}
 
 	let status = $state<StatusDto | null>(null);
-	let workspace = $state<WorkspaceState | null>(null);
 	let notice = $state('');
 	let busy = $state('');
 
@@ -74,9 +84,9 @@
 	// Release form
 	let title = $state('');
 	let summary = $state('');
-	let workingSetId = $state('');
+	let key = $state('');
 	let treatmentId = $state('');
-	let drafts = $state<ProseTreatment[]>([]);
+	let drafts = $state<ProseDraftSummary[]>([]);
 
 	// Review state
 	let plan = $state<PlanDto | null>(null);
@@ -84,9 +94,16 @@
 	let outcome = $state<OutcomeDto | null>(null);
 
 	const connected = $derived(!!status?.credentials.did);
-	const groups = $derived(workspace?.workingSets ?? []);
-	const graphName = $derived(
-		workspace?.graphs.find((g) => g.id === workspace?.activeGraphId)?.name ?? ''
+	/** Gardens published from other graphs — live beside this one, untouched
+	 *  by this release. */
+	const otherGardens = $derived(
+		(status?.gardens ?? []).filter((g) => g.graphId !== status?.graphId)
+	);
+	const thisGarden = $derived(status?.gardens.find((g) => g.graphId === status?.graphId));
+	const gardenUrl = $derived(
+		status?.gardenIdent
+			? `/garden/${encodeURIComponent(status.gardenIdent)}/${encodeURIComponent(key || 'garden')}`
+			: ''
 	);
 
 	$effect(() => {
@@ -102,27 +119,24 @@
 	});
 
 	async function load() {
-		const [statusRes, stateRes] = await Promise.all([fetch('/api/publish'), fetch('/api/state')]);
-		status = await statusRes.json();
-		workspace = (await stateRes.json()).state;
+		status = await (await fetch('/api/publish')).json();
 		if (status) {
 			service = status.credentials.service;
 			identifier = status.credentials.identifier;
 			oauthHandle = status.credentials.handle ?? '';
-			title = status.config?.title || graphName;
-			summary = status.config?.summary ?? '';
-			workingSetId = status.config?.workingSetId ?? '';
-			treatmentId = status.config?.treatmentId ?? '';
+			title = status.config.title || status.graphName;
+			summary = status.config.summary;
+			key = status.config.key;
+			treatmentId = status.config.treatmentId ?? '';
 		}
-		if (workingSetId) await loadDrafts();
+		await loadDrafts();
 	}
 
+	/** Every essay draft in the graph, whichever group it was written from. */
 	async function loadDrafts() {
-		drafts = [];
-		if (!workingSetId) return;
-		const res = await fetch(`/api/prose?workingSetId=${encodeURIComponent(workingSetId)}`);
+		const res = await fetch('/api/prose?list=1');
 		const data = await res.json();
-		drafts = data.treatments ?? [];
+		drafts = data.drafts ?? [];
 		if (treatmentId && !drafts.some((d) => d.id === treatmentId)) treatmentId = '';
 	}
 
@@ -182,7 +196,7 @@
 		outcome = null;
 		busy = 'preview';
 		const { ok, data } = await post('/api/publish/preview', {
-			workingSetId,
+			key,
 			treatmentId: treatmentId || null,
 			title,
 			summary
@@ -237,8 +251,10 @@
 		status = await statusRes.json();
 	}
 
-	const draftLabel = (d: ProseTreatment) =>
-		`${d.style} — “${d.title}” (${new Date(d.generatedAt).toLocaleDateString()})${d.stale ? ' · no longer matches the group' : ''}`;
+	const draftLabel = (d: ProseDraftSummary) =>
+		`${d.style} — “${d.title}”${d.groupName ? ` · ${d.groupName}` : ''} (${new Date(
+			d.generatedAt
+		).toLocaleDateString()})${d.stale ? ' · no longer matches its thoughts' : ''}`;
 </script>
 
 <svelte:head>
@@ -250,7 +266,7 @@
 		<a class="back" href="/"><Icon name="undo" /> Back to the workspace</a>
 		<h1>Publish garden</h1>
 		<p class="sub">
-			Publishing puts a reviewed selection of this graph into your own atproto repository and
+			Publishing puts this graph — reviewed diff and all — into your own atproto repository and
 			renders it as a public website. Ratifying a thought changes local state; publication is this
 			separate, deliberate act.
 		</p>
@@ -261,16 +277,37 @@
 	{/if}
 
 	{#if status}
-		{#if status.live.garden && status.gardenIdent}
+		{#if status.gardens.length && status.gardenIdent}
 			<section class="card live">
 				<div class="section-head">What's live</div>
-				<p>
+				<p class="hint">
+					Each graph you publish is its own garden; they sit side by side under your identity, and
 					<a class="garden-link" href="/garden/{encodeURIComponent(status.gardenIdent)}"
 						>/garden/{status.gardenIdent}</a
-					>
-					— {status.live.thoughts} thoughts, {status.live.revisions} revisions,
-					{status.live.relations} connections{status.live.treatments ? ', 1 essay' : ''}.
+					> lists them all.
 				</p>
+				<ul class="gardens">
+					{#each status.gardens as garden (garden.graphId)}
+						<li class={garden.graphId === status.graphId ? 'current' : ''}>
+							<a
+								class="garden-link"
+								href="/garden/{encodeURIComponent(status.gardenIdent)}/{encodeURIComponent(
+									garden.key
+								)}">{garden.title}</a
+							>
+							<span class="garden-meta">
+								{garden.graphName}{garden.graphId === status.graphId ? ' · this graph' : ''} ·
+								{garden.thoughts} thoughts
+							</span>
+						</li>
+					{/each}
+				</ul>
+				{#if thisGarden}
+					<p class="hint">
+						This graph's garden holds {status.live.thoughts} thoughts, {status.live.revisions} revisions,
+						{status.live.relations} connections{status.live.treatments ? ', 1 essay' : ''}.
+					</p>
+				{/if}
 				{#if status.lastRelease && status.lastRelease.status !== 'complete'}
 					<p class="warn">
 						The last release {status.lastRelease.status === 'noop'
@@ -279,9 +316,11 @@
 						is missing.
 					</p>
 				{/if}
-				<button class="danger" onclick={withdraw} disabled={busy !== ''}>
-					{busy === 'withdraw' ? 'Withdrawing…' : 'Withdraw the whole garden…'}
-				</button>
+				{#if thisGarden}
+					<button class="danger" onclick={withdraw} disabled={busy !== ''}>
+						{busy === 'withdraw' ? 'Withdrawing…' : 'Withdraw this graph’s garden…'}
+					</button>
+				{/if}
 			</section>
 		{/if}
 
@@ -342,24 +381,17 @@
 			<div class="grid">
 				<label>Garden title <input bind:value={title} maxlength={120} /></label>
 				<label
-					>Group to publish
-					<select
-						bind:value={workingSetId}
-						onchange={() => {
-							plan = null;
-							treatmentId = '';
-							void loadDrafts();
-						}}
-					>
-						<option value="" disabled>Choose a group…</option>
-						{#each groups as g (g.id)}
-							<option value={g.id}>{g.name} ({g.size})</option>
-						{/each}
-					</select></label
+					>Garden address
+					<input
+						bind:value={key}
+						maxlength={63}
+						placeholder="my-garden"
+						onchange={() => (plan = null)}
+					/></label
 				>
 				<label
 					>Front-door essay
-					<select bind:value={treatmentId} onchange={() => (plan = null)} disabled={!workingSetId}>
+					<select bind:value={treatmentId} onchange={() => (plan = null)}>
 						<option value="">None — thoughts only</option>
 						{#each drafts as d (d.id)}
 							<option value={d.id}>{draftLabel(d)}</option>
@@ -372,11 +404,21 @@
 				<textarea bind:value={summary} rows="3" maxlength={3000}></textarea></label
 			>
 			<p class="hint">
-				Only the group's thoughts, connections inside it, and the selected essay publish.
-				Conversations, notes, proposals, writing guidance, and unpublished history stay local.
+				The whole graph publishes — every thought, every connection between them, and the selected
+				essay. Conversations, notes, proposals, writing guidance, and unpublished history stay
+				local. Other graphs you publish keep their own gardens, untouched by this release.
 			</p>
+			{#if gardenUrl}
+				<p class="hint">
+					This garden reads at <code>{gardenUrl}</code>.
+					{#if thisGarden && thisGarden.key !== key}
+						Changing the address moves it: the garden at <code>{thisGarden.key}</code> comes down in
+						this release and old links stop working.
+					{/if}
+				</p>
+			{/if}
 			<div class="row">
-				<button onclick={preview} disabled={busy !== '' || !connected || !workingSetId}>
+				<button onclick={preview} disabled={busy !== '' || !connected}>
 					{busy === 'preview' ? 'Building preview…' : 'Preview the release'}
 				</button>
 				{#if !connected}<span class="hint">Connect the account first.</span>{/if}
@@ -725,5 +767,33 @@
 	.live p {
 		margin: 0 0 10px;
 		line-height: 1.5;
+	}
+	.gardens {
+		list-style: none;
+		padding: 0;
+		margin: 0 0 12px;
+		display: grid;
+		gap: 8px;
+	}
+	.gardens li {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		border-left: 2px solid var(--divider);
+		padding-left: 10px;
+	}
+	.gardens li.current {
+		border-left-color: var(--blue);
+	}
+	.garden-meta {
+		font-size: var(--fs-11);
+		color: var(--ink-quiet);
+	}
+	code {
+		font-size: var(--fs-11-5);
+		background: var(--inset-fill);
+		border: 1px solid var(--divider);
+		border-radius: 4px;
+		padding: 1px 5px;
 	}
 </style>

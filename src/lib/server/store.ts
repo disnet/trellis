@@ -45,6 +45,7 @@ import {
 	type CanvasPosition,
 	type WorkspaceState,
 	type ProseTreatment,
+	type ProseDraftSummary,
 	type ProseStyle
 } from '$lib/types';
 
@@ -1339,14 +1340,42 @@ export function getProseTreatments(workingSetId: string): ProseTreatment[] {
 
 }
 
-/** Lightweight graph-scoped index for reopening saved drafts. */
-export function listProseDrafts(): { id: string; workingSetId: string; style: ProseStyle; title: string; generatedAt: number }[] {
+/** One saved draft by id, wherever in the graph it was written. */
+export function getProseTreatment(id: string): ProseTreatment | null {
 	const graphId = activeGraphId();
+	const row = db
+		.prepare('SELECT working_set_id FROM prose_treatments WHERE id = ? AND graph_id = ?')
+		.get(id, graphId) as { working_set_id: string } | undefined;
+	if (!row) return null;
+	return getProseTreatments(row.working_set_id).find((t) => t.id === id) ?? null;
+}
+
+/** Lightweight graph-scoped index for reopening saved drafts. Staleness is
+ *  per group, so each group's fingerprint is computed once. */
+export function listProseDrafts(): ProseDraftSummary[] {
+	const graphId = activeGraphId();
+	const groupNames = new Map(
+		(db.prepare('SELECT id, name FROM working_sets WHERE graph_id = ?').all(graphId) as {
+			id: string;
+			name: string;
+		}[]).map((g) => [g.id, g.name])
+	);
+	const fingerprints = new Map<string, string>();
+	const fingerprintOf = (workingSetId: string) => {
+		let value = fingerprints.get(workingSetId);
+		if (value === undefined) {
+			value = proseFingerprint(graphId, workingSetId);
+			fingerprints.set(workingSetId, value);
+		}
+		return value;
+	};
 	return (db.prepare(
-		'SELECT id, working_set_id, style, title, generated_at FROM prose_treatments WHERE graph_id = ? ORDER BY generated_at DESC, rowid DESC'
+		'SELECT id, working_set_id, style, title, generated_at, source_fingerprint FROM prose_treatments WHERE graph_id = ? ORDER BY generated_at DESC, rowid DESC'
 	).all(graphId) as any[]).map((row) => ({
 		id: row.id, workingSetId: row.working_set_id, style: row.style as ProseStyle,
-		title: row.title, generatedAt: row.generated_at
+		title: row.title, generatedAt: row.generated_at,
+		groupName: groupNames.get(row.working_set_id) ?? '',
+		stale: fingerprintOf(row.working_set_id) !== row.source_fingerprint
 	}));
 }
 

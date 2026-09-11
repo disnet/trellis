@@ -4,8 +4,8 @@
 	"defs": {
 		"main": {
 			"type": "record",
-			"description": "The garden's front door and release manifest. There is one per repository (record key 'self'). The manifest identifies the coherent set of live records: renderers must show manifest members only, so readers never see a half-published release. It is always written last in a release.",
-			"key": "literal:self",
+			"description": "The garden's front door and release manifest. One per published graph, so a repository can hold several gardens side by side; the record key is the garden's address (a lowercase slug, and the last segment of its public URL). The manifest identifies the coherent set of live records: renderers must show manifest members only, so readers never see a half-published release. It is always written last in a release.",
+			"key": "any",
 			"record": {
 				"type": "object",
 				"required": ["title", "pinned", "release", "createdAt"],

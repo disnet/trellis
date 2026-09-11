@@ -2,7 +2,7 @@
 	import type { LayoutData } from './$types';
 
 	let { data, children }: { data: LayoutData; children: import('svelte').Snippet } = $props();
-	const handle = $derived(data.view.identity.handle ?? data.view.identity.did);
+	const handle = $derived(data.identity.handle ?? data.identity.did);
 </script>
 
 <svelte:head>
@@ -18,6 +18,14 @@
 			>A public garden by <strong>{handle}</strong> — thoughts carry their status, sources, and
 			revisions.</span
 		>
+		{#if data.gardens.length > 1}
+			<span class="others">
+				More from {handle}:
+				{#each data.gardens as garden, i (garden.key)}<a
+						href="{data.identBase}/{encodeURIComponent(garden.key)}">{garden.record.title}</a
+					>{#if i < data.gardens.length - 1}<span class="sep"> · </span>{/if}{/each}
+			</span>
+		{/if}
 		<span class="grown">Grown in Trellis · published on the AT Protocol</span>
 	</footer>
 </div>
@@ -56,6 +64,17 @@
 		text-align: center;
 	}
 	.grown {
+		color: var(--ink-quiet);
+	}
+	.others a {
+		color: var(--ink-muted);
+		text-decoration: none;
+		border-bottom: 1px dotted var(--control-border);
+	}
+	.others a:hover {
+		color: var(--blue);
+	}
+	.sep {
 		color: var(--ink-quiet);
 	}
 </style>

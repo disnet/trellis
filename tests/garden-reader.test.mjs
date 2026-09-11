@@ -119,6 +119,17 @@ const garden = {
 	createdAt: when(1)
 };
 
+// A second graph published into the same repo, plus a garden record whose
+// rkey could never be a URL segment: one repo, several gardens.
+const sideGarden = {
+	$type: lex.COLLECTIONS.garden,
+	title: 'The other garden',
+	pinned: [],
+	release: { publishedAt: when(9), thoughts: [T('t-two')], revisions: [R('rev-2a')], relations: [] },
+	createdAt: when(8)
+};
+const gardens = { self: garden, 'other-garden': sideGarden, 'Not.A.Slug': sideGarden };
+
 const jsonResponse = (value, status = 200) =>
 	new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } });
 
@@ -131,12 +142,24 @@ const fakeFetch = async (input) => {
 			alsoKnownAs: ['at://alice.test'],
 			service: [{ id: '#atproto_pds', type: 'AtprotoPersonalDataServer', serviceEndpoint: pds }]
 		});
-	if (url.href.startsWith(`${pds}/xrpc/com.atproto.repo.getRecord`))
-		return url.searchParams.get('collection') === lex.COLLECTIONS.garden
-			? jsonResponse({ uri: lex.atUri(did, lex.COLLECTIONS.garden, 'self'), value: garden })
+	if (url.href.startsWith(`${pds}/xrpc/com.atproto.repo.getRecord`)) {
+		const rkey = url.searchParams.get('rkey');
+		return url.searchParams.get('collection') === lex.COLLECTIONS.garden && gardens[rkey]
+			? jsonResponse({ uri: lex.atUri(did, lex.COLLECTIONS.garden, rkey), value: gardens[rkey] })
 			: jsonResponse({ error: 'RecordNotFound' }, 400);
-	if (url.href.startsWith(`${pds}/xrpc/com.atproto.repo.listRecords`))
-		return jsonResponse({ records: records[url.searchParams.get('collection')] ?? [] });
+	}
+	if (url.href.startsWith(`${pds}/xrpc/com.atproto.repo.listRecords`)) {
+		const collection = url.searchParams.get('collection');
+		if (collection === lex.COLLECTIONS.garden)
+			return jsonResponse({
+				records: Object.entries(gardens).map(([rkey, value]) => ({
+					uri: lex.atUri(did, lex.COLLECTIONS.garden, rkey),
+					cid: 'cid',
+					value
+				}))
+			});
+		return jsonResponse({ records: records[collection] ?? [] });
+	}
 	return jsonResponse({ error: 'unexpected url ' + url.href }, 500);
 };
 
@@ -149,7 +172,7 @@ test('a handle resolves through the appview and DID document to its PDS', async 
 });
 
 test('the manifest is the release boundary: unlisted records never render', async () => {
-	const view = await reader.loadGarden('alice.test', fakeFetch);
+	const view = await reader.loadGarden('alice.test', 'self', fakeFetch);
 	assert(view, 'the garden loads');
 	assert.deepEqual(view.thoughts.map((t) => t.rkey), ['t-one', 't-two']);
 	assert.equal(view.byRkey['t-hidden'], undefined, 'the unreleased thought is invisible');
@@ -159,7 +182,7 @@ test('the manifest is the release boundary: unlisted records never render', asyn
 });
 
 test('revision history, current pointer, and the change log line up', async () => {
-	const view = await reader.loadGarden('alice.test', fakeFetch);
+	const view = await reader.loadGarden('alice.test', 'self', fakeFetch);
 	const one = view.byRkey['t-one'];
 	assert.deepEqual(one.revisions.map((r) => r.rkey), ['rev-1a', 'rev-1b'], 'oldest first');
 	assert.equal(one.record.currentRevision, R('rev-1b'));
@@ -168,6 +191,25 @@ test('revision history, current pointer, and the change log line up', async () =
 	assert.equal(view.changes[0].prev.status, 'believed', 'the replaced revision is reachable');
 	const two = view.byRkey['t-two'];
 	assert.deepEqual(two.revisions[0].record.authorship, { actor: 'agent', editedFromProposal: true });
+});
+
+test('one identity lists every garden it publishes, newest release first', async () => {
+	const identity = await reader.resolveIdentity('alice.test', fakeFetch);
+	const listed = await reader.listGardens(identity, fakeFetch);
+	assert.deepEqual(listed.map((g) => g.key), ['other-garden', 'self']);
+	assert.deepEqual(listed.map((g) => g.record.title), ['The other garden', 'Reader test garden']);
+	// An rkey that cannot be a URL segment is a garden no reader could reach.
+	assert(!listed.some((g) => g.key === 'Not.A.Slug'), 'unaddressable gardens are skipped');
+});
+
+test('each garden loads at its own address, and an unknown address is a miss', async () => {
+	const other = await reader.loadGarden('alice.test', 'other-garden', fakeFetch);
+	assert.equal(other.key, 'other-garden');
+	assert.equal(other.garden.title, 'The other garden');
+	assert.deepEqual(other.thoughts.map((t) => t.rkey), ['t-two'], 'its own manifest bounds it');
+	assert.equal(other.treatment, undefined);
+	assert.equal(await reader.loadGarden('alice.test', 'no-such-garden', fakeFetch), null);
+	assert.equal(await reader.loadGarden('alice.test', 'Not.A.Slug', fakeFetch), null);
 });
 
 test('the SSRF guard rejects every internal address family', () => {
@@ -204,7 +246,7 @@ test('the guard judges DNS names by their addresses, not by the name', async () 
 });
 
 test('a treatment written against superseded revisions reads as stale', async () => {
-	const view = await reader.loadGarden('alice.test', fakeFetch);
+	const view = await reader.loadGarden('alice.test', 'self', fakeFetch);
 	assert(view.treatment);
 	assert.equal(view.treatment.record.title, 'The essay');
 	assert.equal(view.treatment.stale, true, 'rev-1a is no longer t-one’s current revision');

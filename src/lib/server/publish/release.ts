@@ -1,22 +1,24 @@
 // Building and executing a garden release: the allowlisted public snapshot,
 // the diff against what is already live, and the record writes themselves.
 //
-// The publication boundary lives here. A release carries thoughts, their
-// selected public revisions, internal relations, one approved treatment, and
-// the garden record — nothing else. Conversations, scratch notes, proposed
+// The publication boundary lives here. A release carries the graph's
+// thoughts, their selected public revisions, its relations, one approved
+// treatment, and the garden record — nothing else. Conversations, scratch notes, proposed
 // operations, writing guidance, and unpublished local history have no path
 // into a record. Local state stays the source of truth; publishing is a
 // separate deliberate act on a reviewed diff (docs/public-garden-direction.md).
 
 import crypto from 'node:crypto';
 import { db } from '../db';
-import { getProseTreatments } from '../store';
+import { getProseTreatment } from '../store';
 import { parseProseReference, proseParts } from '$lib/prose-format';
 import {
 	atUri,
 	CHANGE_NOTE_LIMIT,
 	COLLECTIONS,
-	GARDEN_RKEY,
+	DEFAULT_GARDEN_RKEY,
+	GARDEN_KEY_RE,
+	gardenKeyFromTitle,
 	GARDEN_SUMMARY_LIMIT,
 	GARDEN_TITLE_LIMIT,
 	toPublicConfidence,
@@ -33,7 +35,9 @@ import type { RepoWriter } from './xrpc';
 // --- configuration (per graph, in meta) ---
 
 export interface PublishConfig {
-	workingSetId: string;
+	/** The garden's address: its garden-record rkey and the last segment of
+	 *  its public URL. One per graph, so a repo can host several gardens. */
+	key: string;
 	treatmentId: string | null;
 	title: string;
 	summary: string;
@@ -58,7 +62,7 @@ export function getPublishConfig(graphId: string): PublishConfig | null {
 	try {
 		const v = JSON.parse(raw);
 		return {
-			workingSetId: typeof v.workingSetId === 'string' ? v.workingSetId : '',
+			key: typeof v.key === 'string' ? v.key : '',
 			treatmentId: typeof v.treatmentId === 'string' ? v.treatmentId : null,
 			title: typeof v.title === 'string' ? v.title : '',
 			summary: typeof v.summary === 'string' ? v.summary : ''
@@ -70,6 +74,92 @@ export function getPublishConfig(graphId: string): PublishConfig | null {
 
 export function savePublishConfig(graphId: string, config: PublishConfig) {
 	setMeta(`publish_config:${graphId}`, JSON.stringify(config));
+}
+
+const graphName = (graphId: string) =>
+	(db.prepare('SELECT name FROM graphs WHERE id = ?').get(graphId) as { name: string } | undefined)
+		?.name ?? 'another graph';
+
+/** Addresses already spoken for by *other* graphs — live garden records and
+ *  saved configurations both count, so two graphs never race for one. */
+function takenAddresses(graphId: string): Set<string> {
+	const taken = new Set<string>();
+	for (const row of db
+		.prepare('SELECT rkey FROM published_records WHERE collection = ? AND graph_id <> ?')
+		.all(COLLECTIONS.garden, graphId) as { rkey: string }[])
+		taken.add(row.rkey);
+	for (const row of db
+		.prepare("SELECT key, value FROM meta WHERE key LIKE 'publish_config:%'")
+		.all() as { key: string; value: string }[]) {
+		if (row.key === `publish_config:${graphId}`) continue;
+		try {
+			const key = JSON.parse(row.value)?.key;
+			if (typeof key === 'string' && key) taken.add(key);
+		} catch {
+			// A config we cannot read claims no address.
+		}
+	}
+	return taken;
+}
+
+/** This graph's garden address: where it already publishes, else what it has
+ *  been configured with, else a free slug derived from its title. A repo can
+ *  hold many gardens, so the address has to be stable per graph and unique
+ *  across them. */
+export function gardenAddress(graphId: string, title: string): string {
+	const live = db
+		.prepare('SELECT rkey FROM published_records WHERE graph_id = ? AND collection = ? LIMIT 1')
+		.get(graphId, COLLECTIONS.garden) as { rkey: string } | undefined;
+	if (live) return live.rkey;
+	const configured = getPublishConfig(graphId)?.key;
+	if (configured) return configured;
+	const taken = takenAddresses(graphId);
+	// The first garden in a repo keeps the historical `self` address.
+	if (!taken.size) return DEFAULT_GARDEN_RKEY;
+	const base = gardenKeyFromTitle(title.trim() || graphName(graphId));
+	if (!taken.has(base)) return base;
+	for (let n = 2; n < 1000; n++) if (!taken.has(`${base}-${n}`)) return `${base}-${n}`;
+	return `${base}-${Date.now()}`;
+}
+
+export interface LiveGarden {
+	graphId: string;
+	graphName: string;
+	key: string;
+	title: string;
+	thoughts: number;
+	lastPublishedAt: number;
+}
+
+/** Every garden this workspace has live in the connected repo, newest first —
+ *  several graphs can be published side by side. */
+export function liveGardens(): LiveGarden[] {
+	const rows = db
+		.prepare('SELECT graph_id, rkey, record, published_at FROM published_records WHERE collection = ?')
+		.all(COLLECTIONS.garden) as {
+		graph_id: string;
+		rkey: string;
+		record: string;
+		published_at: number;
+	}[];
+	const gardens: LiveGarden[] = [];
+	for (const row of rows) {
+		let record: GardenRecord;
+		try {
+			record = JSON.parse(row.record) as GardenRecord;
+		} catch {
+			continue;
+		}
+		gardens.push({
+			graphId: row.graph_id,
+			graphName: graphName(row.graph_id),
+			key: row.rkey,
+			title: record.title,
+			thoughts: record.release?.thoughts?.length ?? 0,
+			lastPublishedAt: row.published_at
+		});
+	}
+	return gardens.sort((a, b) => b.lastPublishedAt - a.lastPublishedAt);
 }
 
 // --- the plan ---
@@ -179,7 +269,7 @@ const contentOf = (r: {
 	});
 
 /** Compute the full release: what would be written, deleted, and left alone.
- *  Throws with a human-readable message when the selection cannot publish.
+ *  Throws with a human-readable message when the graph cannot publish.
  *  `changeNotes` maps thought id → author explanation for this release's
  *  revision of it (collected in the preview, applied on the run). */
 export function buildReleasePlan(
@@ -194,21 +284,31 @@ export function buildReleasePlan(
 		throw new Error(`The garden title must be at most ${GARDEN_TITLE_LIMIT} characters.`);
 	if (config.summary.length > GARDEN_SUMMARY_LIMIT)
 		throw new Error(`The introduction must be at most ${GARDEN_SUMMARY_LIMIT} characters.`);
-	if (
-		!db
-			.prepare('SELECT 1 FROM working_sets WHERE id = ? AND graph_id = ?')
-			.get(config.workingSetId, graphId)
-	)
-		throw new Error('Choose a group to publish.');
-
+	const gardenKey = config.key.trim();
+	if (!GARDEN_KEY_RE.test(gardenKey))
+		throw new Error(
+			'The garden address must be lowercase letters, digits, and hyphens (at most 63 characters).'
+		);
+	const addressTaken = db
+		.prepare(
+			`SELECT graph_id FROM published_records
+			 WHERE collection = ? AND rkey = ? AND graph_id <> ?`
+		)
+		.get(COLLECTIONS.garden, gardenKey, graphId) as { graph_id: string } | undefined;
+	if (addressTaken)
+		throw new Error(
+			`The address “${gardenKey}” already belongs to the published garden of ${graphName(addressTaken.graph_id)}. Choose another.`
+		);
+	// A garden is the whole graph. Groups organize local work; they never
+	// carve up what goes public — a partial graph publishes edges that point
+	// at thoughts readers cannot see.
 	const thoughts = db
 		.prepare(
-			`SELECT t.id, t.type, t.status, t.title, t.statement, t.confidence, t.source, t.created_at
-			 FROM thoughts t JOIN working_set_items w ON w.thought_id = t.id
-			 WHERE w.working_set_id = ? AND t.graph_id = ? ORDER BY t.id`
+			`SELECT id, type, status, title, statement, confidence, source, created_at
+			 FROM thoughts WHERE graph_id = ? ORDER BY id`
 		)
-		.all(config.workingSetId, graphId) as LocalThoughtRow[];
-	if (!thoughts.length) throw new Error('This group has no thoughts to publish.');
+		.all(graphId) as LocalThoughtRow[];
+	if (!thoughts.length) throw new Error('This graph has no thoughts to publish.');
 	const selected = new Set(thoughts.map((t) => t.id));
 
 	const published = publishedRows(graphId);
@@ -354,8 +454,9 @@ export function buildReleasePlan(
 		}
 	}
 
-	// Relations internal to the selection. A relation that reaches outside the
-	// published group stays local — no half-visible edges.
+	// Every relation in the graph. The endpoints are graph thoughts, so they
+	// are always part of the release; a dangling row is skipped rather than
+	// publishing a half-visible edge.
 	const relationRows = db
 		.prepare(
 			`SELECT id, from_thought_id, to_thought_id, type, created_by, created_at
@@ -424,17 +525,18 @@ export function buildReleasePlan(
 					'The published essay no longer matches its sources; readers see it marked as based on earlier versions until you approve a newer draft.'
 				);
 		} else {
-			const drafts = getProseTreatments(config.workingSetId);
-			const draft = drafts.find((d) => d.id === config.treatmentId);
-			if (!draft) throw new Error('The selected essay draft was not found in this group.');
+			// Essays are still written from a group; the release only needs the
+			// draft itself, wherever it was written.
+			const draft = getProseTreatment(config.treatmentId);
+			if (!draft) throw new Error('The selected essay draft was not found.');
 			if (draft.stale)
 				throw new Error(
-					'The selected essay no longer matches the group’s thoughts. Regenerate it, or pick a draft that reflects the current state.'
+					'The selected essay no longer matches the thoughts it was written from. Regenerate it, or pick a draft that reflects the current state.'
 				);
-			const outside = draft.sourceThoughtIds.filter((tid) => !selected.has(tid));
-			if (outside.length)
+			const missing = draft.sourceThoughtIds.filter((tid) => !selected.has(tid));
+			if (missing.length)
 				throw new Error(
-					`The selected essay draws on ${outside.length} thought(s) outside the published group. Publish from the group the essay was written for.`
+					`The selected essay draws on ${missing.length} thought(s) that are no longer in this graph. Regenerate it before publishing.`
 				);
 			const record: TreatmentRecord = {
 				$type: COLLECTIONS.treatment,
@@ -471,20 +573,17 @@ export function buildReleasePlan(
 		}
 	}
 
-	// Pinned entry points, restricted to the release.
+	// Pinned entry points.
 	const pinnedRows = db
 		.prepare('SELECT thought_id FROM pinned_thoughts WHERE graph_id = ? ORDER BY pinned_at, rowid')
 		.all(graphId) as { thought_id: string }[];
 	const pinnedUris = pinnedRows
 		.filter((p) => selected.has(p.thought_id))
 		.map((p) => atUri(did, COLLECTIONS.thought, p.thought_id));
-	const pinnedOutside = pinnedRows.length - pinnedUris.length;
-	if (pinnedOutside > 0)
-		warnings.push(`${pinnedOutside} pinned thought(s) are outside the published group and stay private.`);
 
 	// The garden record: front door plus the release manifest, always written
 	// last so readers never see a manifest pointing at missing records.
-	const storedGarden = published.get(`${COLLECTIONS.garden}/${GARDEN_RKEY}`);
+	const storedGarden = published.get(`${COLLECTIONS.garden}/${gardenKey}`);
 	const storedGardenRecord = storedGarden ? (JSON.parse(storedGarden.record) as GardenRecord) : null;
 	const gardenRecord: GardenRecord = {
 		$type: COLLECTIONS.garden,
@@ -502,11 +601,11 @@ export function buildReleasePlan(
 	};
 	// The release timestamp alone never forces a rewrite.
 	const gardenHash = hash({ ...gardenRecord, release: { ...gardenRecord.release, publishedAt: '' } });
-	keep(COLLECTIONS.garden, GARDEN_RKEY);
+	keep(COLLECTIONS.garden, gardenKey);
 	if (!storedGarden || storedGarden.content_hash !== gardenHash) {
 		puts.push({
 			collection: COLLECTIONS.garden,
-			rkey: GARDEN_RKEY,
+			rkey: gardenKey,
 			record: gardenRecord,
 			hash: gardenHash,
 			kind: 'garden',
@@ -514,6 +613,18 @@ export function buildReleasePlan(
 			isNew: !storedGarden
 		});
 	} else unchanged++;
+
+	// Several gardens share one repo, so two graphs must never claim the same
+	// record key: a silent overwrite would make each release undo the other.
+	// Local ids are random, so this is a guard against the unlucky case.
+	for (const row of db
+		.prepare('SELECT graph_id, collection, rkey FROM published_records WHERE graph_id <> ?')
+		.all(graphId) as { graph_id: string; collection: string; rkey: string }[]) {
+		if (!desired.has(`${row.collection}/${row.rkey}`)) continue;
+		throw new Error(
+			`The record key “${row.rkey}” is already published by the garden of ${graphName(row.graph_id)}. Publishing would overwrite it.`
+		);
+	}
 
 	// Everything live that the release no longer includes gets withdrawn.
 	const deletes: PlannedDelete[] = [];

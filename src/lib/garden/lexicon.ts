@@ -23,8 +23,25 @@ export const COLLECTIONS = {
 } as const;
 export type CollectionName = (typeof COLLECTIONS)[keyof typeof COLLECTIONS];
 
-/** The one garden record per repo. */
-export const GARDEN_RKEY = 'self';
+/** A repo holds one garden record per published graph, keyed by the garden's
+ *  address — the last path segment of its public URL. `self` is the address
+ *  the first garden was published under, and stays the default. */
+export const DEFAULT_GARDEN_RKEY = 'self';
+
+/** Garden addresses are lowercase slugs: they are rkeys *and* URL segments. */
+export const GARDEN_KEY_RE = /^[a-z0-9][a-z0-9-]{0,62}$/;
+
+/** A readable address derived from a garden's title. */
+export function gardenKeyFromTitle(title: string): string {
+	const slug = title
+		.toLowerCase()
+		.normalize('NFKD')
+		.replace(/[^a-z0-9]+/g, '-')
+		.replace(/^-+|-+$/g, '')
+		.slice(0, 63)
+		.replace(/-+$/, '');
+	return GARDEN_KEY_RE.test(slug) ? slug : 'garden';
+}
 
 // Runtime copies of the closed vocabularies (types.ts holds only the types;
 // the agent wire schema's copies live under server/ and cannot be imported

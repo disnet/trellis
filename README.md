@@ -43,8 +43,9 @@ If Trellis fails to start it says why, and writes the details to
 - **Provenance** — every thought tracks its revision history and whether it
   was human- or agent-authored; every model call is logged and inspectable in
   the Activity view.
-- **Publishing** — put a reviewed selection of the graph into your own atproto
-  repository and render it as a public garden site
+- **Publishing** — put the whole graph, as a reviewed diff, into your own
+  atproto repository and render it as a public garden site; publish several
+  graphs and they read as a list of gardens under one identity
   ([docs/garden-publishing.md](docs/garden-publishing.md)).
 
 Model providers: Anthropic API, the local Claude Code CLI, the local Codex

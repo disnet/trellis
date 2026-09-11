@@ -309,7 +309,13 @@ export interface Conversation {
 	messages: ConversationMessage[];
 }
 export interface ConversationTarget { thoughtId?: string; operationId?: string }
-export type ProseDraftSummary = Pick<ProseTreatment, 'id' | 'workingSetId' | 'style' | 'title' | 'generatedAt'>;
+export type ProseDraftSummary = Pick<
+	ProseTreatment,
+	'id' | 'workingSetId' | 'style' | 'title' | 'generatedAt' | 'stale'
+> & {
+	/** The group the draft was written from, for labelling it outside that group. */
+	groupName: string;
+};
 
 export type ProseStyle = 'overview' | 'paper' | 'blog' | 'polemic';
 /** A generated, group-scoped reading of a set of thoughts. The body is plain

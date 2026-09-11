@@ -395,8 +395,10 @@ class Workspace {
 			if (data.treatment?.graphId === graphId && data.treatment?.workingSetId === workingSetId) {
 				// Append: earlier drafts of the same group and style stay available.
 				const { id, title, generatedAt } = data.treatment;
+				const groupName = this.workingSets.find((group) => group.id === workingSetId)?.name ?? '';
 				this.proseDrafts = [
-					{ id, title, generatedAt, workingSetId, style },
+					// A draft is generated from the group as it stands, so it starts fresh.
+					{ id, title, generatedAt, workingSetId, style, groupName, stale: false },
 					...this.proseDrafts.filter((item) => item.id !== id)
 				];
 				this.prose = [...this.prose.filter((item) => item.id !== id), data.treatment];
