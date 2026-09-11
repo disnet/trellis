@@ -1,243 +1,55 @@
 # Trellis
 
-An agent-native thinking workspace: a person and an agent develop a persistent
-graph of thought objects, where the agent proposes small, inspectable changes
-and the human ratifies them. See [docs/design.md](docs/design.md) for the full
-design.
+> **⚠️ Pre-alpha.** Trellis is an early experiment under active development.
+> Expect rough edges, breaking changes, and data-format churn. Don't trust it
+> with anything you can't afford to lose.
 
-## Status: Phase 2 — live agent proposals
+Trellis is an agent-native thinking workspace. You and an AI agent develop a
+persistent graph of small "thought" cards together: the agent proposes
+inspectable changes, and you accept, edit, or reject each one. Nothing the
+agent does touches your graph until you ratify it.
 
-The graph persists in SQLite (`data/trellis.db`), and agent operations call
-Claude or Codex live through model adapters that can also serve the deterministic
-Phase-0 fixtures. The complete capture-to-ratification scenario works
-end-to-end:
+## What it does
 
-- **Canvas** of draggable thought cards with typed, rendered relations
-  (overview and reading zoom levels).
-- **Scratch composer** — paste messy text and *Decompose* it into proposed
-  thoughts.
-- **Agent operations** (Decompose, Develop, Challenge, Connect) invoked on the
-  selection. Context is assembled deterministically — the selection, the
-  working set, its 1-hop neighborhood, and their side discussions. Connect and
-  Challenge also disclose thoughts retrieved by graph-wide relevance search.
-  These operations return structured change sets. Output is validated
-  server-side (allowed operations, referential integrity, dependency refs,
-  text limits) before it appears in the tray; invalid output gets one
-  corrective retry and can never touch canonical state. Every attempt is
-  logged to the `agent_calls` table (inputs, raw output, validation errors,
-  latency) for evaluation.
-- **Proposal tray** — accept / edit-then-accept / reject each operation,
-  partial acceptance, dependency blocking with cascade rejection, and undo of
-  the last applied change set. Proposed content is visibly provisional
-  (dashed cards at the canvas edge) until ratified.
-- **Inspector** — statement, relations, revision history, provenance
-  (agent-authored vs. human, edited-from-proposal), and human revision.
-- **Prose view** — turn a group into an Overview, Paper, Blog, or Polemic using
-  the selected agent. Inline thought references open the Inspector while you
-  read. Treatments are saved separately from the graph, with a history of
-  drafts kept for each group and style.
-- **Activity view** — the agent log, surfaced. Every model call (operations and
-  prose, across all graphs) with its adapter, model, outcome, latency, token
-  usage, and any error — rate limits (with retry-after when the API sends it),
-  missing credentials, invalid output. Filter to problems,
-  and expand a row for the full error, request, and raw model output.
+- **Canvas** — a spatial graph of draggable thought cards connected by typed,
+  rendered relations.
+- **Agent operations** — paste messy text and *Decompose* it into thoughts, or
+  invoke *Develop*, *Challenge*, and *Connect* on a selection. Results arrive
+  as structured proposals in a review tray, never as direct edits.
+- **Discussion** — chat with the agent about any thought without changing the
+  graph, then turn the conversation into proposals when you're ready.
+- **Prose view** — render a group of thoughts as an overview, paper, blog
+  post, or polemic, with inline references back to the underlying thoughts.
+- **Provenance** — every thought tracks its revision history and whether it
+  was human- or agent-authored; every model call is logged and inspectable in
+  the Activity view.
+- **Publishing** — put a reviewed selection of the graph into your own atproto
+  repository and render it as a public garden site
+  ([docs/garden-publishing.md](docs/garden-publishing.md)).
 
-## Discuss a thought
+Model providers: Anthropic API, the local Claude Code CLI, the local Codex
+CLI, or deterministic offline fixtures (no network, useful for trying the app
+and for tests).
 
-Open **Discuss** in the Inspector, or on a proposed thought in the proposal tray.
-Go back and forth using the selected model without creating proposals or changing
-the graph. Messages persist, failed replies can be retried, and proposed-thought
-discussions follow acceptance and undo. Reviewed proposals retain access to their
-discussions under **Reviewed → Thought discussions**.
-
-Choose **Propose thoughts** when ready to turn a discussion into a change set for
-review, or use the existing revision / proposal edit controls to write changes
-yourself. Decompose, Develop, Challenge, and Connect automatically receive recent
-discussion excerpts attached to thoughts in their context, including discussions
-on pending proposals originating from those thoughts. Each excerpt contains the
-newest 24 messages within 24,000 characters; omitted history is labeled, and the
-full thread remains readable. The proposal tray discloses the exact excerpts used.
-Unrelated graph conversations are excluded. Chat calls appear in Activity and
-work with all four model providers; offline replies are deterministic fixtures.
-
-## Read a group as prose
-
-Choose **Prose** in the view switcher, choose a group, select a style, optionally
-add **Writing guidance** (such as “focus on the practical implications”), and click
-**Generate**. Use **Saved drafts** to reopen a treatment from any group in the
-current graph. Prose remembers your group and style when you switch views. The active group is preselected; from All thoughts, choose a group
-explicitly. Generation uses that group's thoughts and internal relations.
-Overview is the default; Paper gives a formal treatment, Blog a conversational
-one, and Polemic a pointed argument that still preserves uncertainty in its
-sources.
-
-References are optional and appear only where useful. Descriptive links use
-`[[description|thought-id]]` or `[description](<thought-id>)`; existing
-`[[thought-id]]` links still work. Click a reference to inspect its statement, relations, and
-history without leaving the prose. Switching styles opens the newest saved
-draft for that style. **Generate new draft** adds to that group and style's
-history; browse earlier drafts with the Newer/Older controls above the title,
-and delete the ones you no longer need.
-Drafts and their writing guidance survive reloads and show a notice when their source material changes.
-They are agent-authored reading artifacts; generating one does not create or
-revise thoughts, relations, or proposals. Offline fixtures also support this
-flow for testing without a model call.
-
-## Publish a garden
-
-Open **Publish garden…** in the graph menu to put a reviewed selection of the
-graph into your own atproto repository and render it as a public website at
-`/garden/<handle>`: an essay backed by thought permalinks with visible status,
-sources, provenance, and public revision history. Sign in with OAuth through
-your own PDS (an app password remains the fallback). Publication is a separate,
-deliberate act on a reviewed diff — conversations, notes, proposals, writing
-guidance, and unpublished history stay local. See
-[docs/garden-publishing.md](docs/garden-publishing.md).
-
-## Run
+## Run it
 
 ```sh
 npm install
 npm run dev
 ```
 
-Use the model switcher beside the agent operations to choose Anthropic API,
-Claude Code, Codex, or offline fixtures. Choose a preset or enter a model ID,
-and set the reasoning effort (`low` … `max`) the model should spend before
-answering; the selection applies to all operations and survives reloads in this
-browser. Environment settings supply the initial selection until you make a
-choice.
-
-Codex requires the `codex` CLI on PATH and a login (`codex login`). It runs
-ephemerally in a temporary directory with a read-only sandbox, shell tools
-and web search disabled, and user config excluded. Authentication still uses
-your Codex login; choose an explicit model to override the CLI default.
-Uses [Codex non-interactive mode](https://developers.openai.com/codex/noninteractive/).
-
-Anthropic API generation needs Anthropic credentials (`ANTHROPIC_API_KEY`, or an
-`ant auth login` profile). Environment knobs:
-
-- `TRELLIS_AGENT` — which adapter serves proposals:
-  - unset / `live` — Anthropic API (pay-as-you-go; needs credentials).
-  - `claude-cli` — shell out to the local Claude Code CLI (`claude -p`),
-    billed to whatever `claude` is logged in as — for a Pro/Max login, the
-    subscription. Personal-use convenience only: it needs the CLI on PATH,
-    shares your interactive rate limits, may break with CLI updates, and must
-    not be used for anything shared or deployed (Anthropic does not allow
-    products to ride claude.ai logins).
-  - `fixture` — deterministic fixtures (full review flow, no network, no
-    variance).
-  - `codex-cli` — local Codex CLI (`codex exec`), using its existing login.
-- `TRELLIS_MODEL` — model for generation (live default `claude-sonnet-5`;
-  claude-cli default `sonnet`, aliases accepted; Codex uses its CLI default).
-- `TRELLIS_EFFORT` — reasoning effort: `low`, `medium`, `high`, `xhigh` or
-  `max`. Unset leaves each provider's own default. Sent as
-  `output_config.effort` (live), `--effort` (claude-cli) and
-  `model_reasoning_effort` (codex-cli); dropped for Anthropic API models that
-  predate the parameter, such as Haiku 4.5.
-- `TRELLIS_CLAUDE_BIN` — path to the `claude` binary if not on PATH.
-- `TRELLIS_CODEX_BIN` — path to the `codex` binary if not on PATH.
-- `TRELLIS_DB` — SQLite path (default `data/trellis.db`; `:memory:` works).
-
-If a live call fails (no credentials, network, invalid output after retry),
-the error is surfaced as a toast, nothing is staged, and the scratch note is
-preserved — invoke the operation again.
-
-Then walk the primary scenario from the design doc: paste a paragraph into
-Scratch → Decompose → accept one / edit one / reject one → Apply → select a
-card → Connect → Challenge → revise the claim in the inspector → check its
-history.
-
-`npm run check` type-checks the project.
-
-## Desktop (Tauri 2, macOS 13.5+ and Windows 10+)
-
-The desktop app bundles the SvelteKit server, Node runtime, and native SQLite
-addon. End users do not need Node, npm, Rust, or a separately running server.
-Claude Code and Codex remain optional, separately installed CLIs.
-
-To develop or package, install Rust and the platform's C toolchain — Xcode
-Command Line Tools on a Mac, the Visual Studio Build Tools "Desktop development
-with C++" workload on Windows — then:
+A desktop app (Tauri 2, macOS and Windows) bundles everything so end users
+don't need Node or a running server:
 
 ```sh
-npm install
-npm run desktop:dev      # Build the frontend and open the desktop app
-npm run desktop:build    # Package for this machine's OS and architecture
-npm run desktop:build -- --bundles app  # macOS app bundle only
+npm run desktop:dev      # Open the desktop app
+npm run desktop:build    # Package for this machine
 ```
 
-`desktop:build` produces a `.app` and `.dmg` on macOS and an NSIS `.exe`
-installer on Windows, which installs per user and needs no administrator
-rights. It also installs WebView2 if the machine lacks it; Windows 11 ships
-with it. Artifacts land in `src-tauri/target/release/bundle/`. Desktop
-development uses a production frontend build; restart `desktop:dev` to pick up
-frontend changes. Use `npm run dev` for browser development with hot reload.
+`npm run check` type-checks; `npm test` runs the test suite.
 
-On first launch, the model menu opens local agent setup. You can reopen it at
-**model menu → Set up local Claude / Codex**:
+## Learn more
 
-1. Install either CLI using its linked official instructions.
-2. Sign in from Terminal (`claude auth login` or `codex login`).
-3. Choose **Check again**, then **Use Claude Code** or **Use Codex**.
-4. Choose a model in the same menu, or keep the provider default.
-
-Setup discovers CLIs on PATH and in common local, Homebrew, Volta, npm-global,
-and nvm locations, including when launched from Finder. On Windows it applies
-`PATHEXT` and also looks in `%APPDATA%\npm` and `%USERPROFILE%\.local\bin`,
-and it runs an npm `.cmd` shim's entry point on the bundled Node rather than
-through a shell, so timeouts and shutdown reach the real process. On macOS, it
-also loads the login shell’s CLI paths and authentication settings (including
-`CLAUDE_CODE_OAUTH_TOKEN` and `CLAUDE_CONFIG_DIR`). These values stay in memory,
-are shared by status checks and generation, and are never written to Trellis
-settings or returned to the UI. **Check again** refreshes the shell settings. Expand **Executable
-path** to save an absolute path (paths containing spaces are supported).
-Checks only run version and authentication-status commands; they do not make
-model calls. Login credentials stay managed by the CLI. Offline fixtures are
-the initial desktop default, so you can explore the app before connecting.
-A successful sign-in check confirms local credentials; model access and expired
-credentials can still cause an actual operation to fail.
-
-Desktop data lives in `~/Library/Application Support/com.trellis.desktop/` on
-macOS and `%APPDATA%\com.trellis.desktop\` on Windows: `trellis.db` holds the
-graph and `settings.json` holds executable paths and the selected
-provider/model. These survive app upgrades and changing local ports.
-Browser development continues to use `data/`. To bring an existing development
-graph into desktop, stop both apps and use SQLite's backup command to copy it
-to the desktop data directory before launching; preserve any existing desktop
-database first. Never copy a live database without its WAL or a SQLite backup.
-Appearance and panel sizes currently use webview local storage, so they can
-reset when the desktop server receives a different port.
-
-The backend binds only to `127.0.0.1` on an OS-assigned port and requires a
-random per-launch HttpOnly session cookie. It rejects foreign origins and
-stops when the desktop process exits. External links open in the default
-browser. No general-purpose Tauri shell commands are exposed to the page.
-
-```sh
-npm run check
-npm test
-npm run test:desktop     # Build + localhost boot/auth/persistence/shutdown check
-```
-
-GitHub Actions runs `check` and `test` on every push and pull request
-(`.github/workflows/ci.yml`). Commits landing on `main` also build the desktop
-app on macOS and Windows runners (`.github/workflows/desktop.yml`), which run
-`test` and `test:desktop` on the platform itself — CLI discovery and process
-launching differ there — and then upload the `.dmg` and the NSIS `.exe` as run
-artifacts, kept for 14 days. Both workflows can also
-be started by hand from the Actions tab. The Node version pinned there is the
-one the app ships, so change it deliberately.
-
-The packaging script copies the current Node executable and installed native
-addons, so build on the target OS and architecture using a self-contained Node
-installation (the official Node distribution is suitable). Its LICENSE file
-is included; set `TRELLIS_NODE_LICENSE` if it lives outside the Node installation.
-Cross-compilation and Linux packaging are not configured. The default artifacts
-are for local use; distribution requires Apple notarization or a Windows
-signing certificate, covering the bundled Node executable and native addons.
-
-References: [Tauri Node sidecars](https://v2.tauri.app/learn/sidecar-nodejs/),
-[SvelteKit Node adapter](https://svelte.dev/docs/kit/adapter-node),
-[Codex login](https://developers.openai.com/codex/cli/reference/#codex-login),
-[Claude CLI authentication](https://code.claude.com/docs/en/cli-reference).
+- [docs/design.md](docs/design.md) — the full design
+- [docs/overview.md](docs/overview.md) — project overview
+- [docs/garden-publishing.md](docs/garden-publishing.md) — publishing a garden

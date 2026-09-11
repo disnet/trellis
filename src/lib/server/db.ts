@@ -515,13 +515,13 @@ function seedIfEmpty(db: Database.Database) {
 	if (count.n > 0) return;
 
 	const insertThought = db.prepare(
-		`INSERT INTO thoughts (id, type, status, title, statement, graph_id, created_at, updated_at)
-		 VALUES (@id, @type, @status, @title, @statement, 'g-main', @createdAt, @updatedAt)`
+		`INSERT INTO thoughts (id, type, status, title, statement, confidence, graph_id, created_at, updated_at)
+		 VALUES (@id, @type, @status, @title, @statement, @confidence, 'g-main', @createdAt, @updatedAt)`
 	);
 	const insertRevision = db.prepare(
 		`INSERT INTO thought_revisions
-		   (id, thought_id, title, statement, status, actor_type, source_change_set_id, edited_from_proposal, created_at)
-		 VALUES (@id, @thoughtId, @title, @statement, @status, @actorType, NULL, 0, @createdAt)`
+		   (id, thought_id, title, statement, status, confidence, actor_type, source_change_set_id, edited_from_proposal, created_at)
+		 VALUES (@id, @thoughtId, @title, @statement, @status, @confidence, @actorType, NULL, 0, @createdAt)`
 	);
 	const insertRelation = db.prepare(
 		`INSERT INTO relations (id, from_thought_id, to_thought_id, type, created_by, source_change_set_id, graph_id, created_at)
@@ -532,12 +532,17 @@ function seedIfEmpty(db: Database.Database) {
 	);
 
 	db.transaction(() => {
-		db.prepare("INSERT INTO graphs (id, name, created_at) VALUES ('g-main', 'Main', ?)").run(
-			Date.now()
-		);
+		db.prepare(
+			"INSERT INTO graphs (id, name, created_at) VALUES ('g-main', 'Welcome to Trellis', ?)"
+		).run(Date.now());
 		for (const t of seedThoughts) {
-			insertThought.run(t);
-			for (const rev of t.revisions) insertRevision.run({ ...rev, thoughtId: t.id });
+			insertThought.run({ ...t, confidence: t.confidence ? JSON.stringify(t.confidence) : null });
+			for (const rev of t.revisions)
+				insertRevision.run({
+					...rev,
+					thoughtId: t.id,
+					confidence: rev.confidence ? JSON.stringify(rev.confidence) : null
+				});
 		}
 		for (const r of seedRelations) insertRelation.run(r);
 		db.prepare(
