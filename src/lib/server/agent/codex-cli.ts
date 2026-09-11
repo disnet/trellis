@@ -1,4 +1,4 @@
-import { resolveCli, cliEnvironment, trackCli, prepareCliEnvironment } from '../local-agents';
+import { resolveCli, cliCommand, cliEnvironment, trackCli, prepareCliEnvironment } from '../local-agents';
 import { spawn } from 'node:child_process';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -14,7 +14,8 @@ const MAX_OUTPUT = 2 * 1024 * 1024;
 
 function runCodex(bin: string, args: string[], cwd: string, prompt: string): Promise<string> {
 	return new Promise((resolve, reject) => {
-		const child = trackCli(spawn(bin, args, { cwd, env: cliEnvironment(), stdio: ['pipe', 'pipe', 'pipe'] }));
+		const command = cliCommand(bin, args);
+		const child = trackCli(spawn(command.file, command.args, { cwd, env: cliEnvironment(), stdio: ['pipe', 'pipe', 'pipe'], ...command.options }));
 		let stdout = '';
 		let stderr = '';
 		const timer = setTimeout(() => {

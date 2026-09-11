@@ -12,7 +12,7 @@ test('packaged backend boots, protects its API, persists data, and exits with it
   const runtime = resolve('src-tauri/runtime');
   let child;
   async function launch() {
-    child = spawn(join(runtime, 'node'), [join(runtime, 'server.mjs')], {
+    child = spawn(join(runtime, process.platform === 'win32' ? 'node.exe' : 'node'), [join(runtime, 'server.mjs')], {
       cwd: directory, env: { ...process.env, TRELLIS_DB: join(directory, 'trellis.db'), TRELLIS_SETTINGS: join(directory, 'settings.json'), TRELLIS_DESKTOP: '1' },
       stdio: ['pipe', 'pipe', 'pipe']
     });

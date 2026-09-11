@@ -150,24 +150,29 @@ history.
 
 `npm run check` type-checks the project.
 
-## Desktop (Tauri 2, macOS 13.5+)
+## Desktop (Tauri 2, macOS 13.5+ and Windows 10+)
 
 The desktop app bundles the SvelteKit server, Node runtime, and native SQLite
 addon. End users do not need Node, npm, Rust, or a separately running server.
 Claude Code and Codex remain optional, separately installed CLIs.
 
-To develop or package on a Mac, install Rust and Xcode Command Line Tools, then:
+To develop or package, install Rust and the platform's C toolchain — Xcode
+Command Line Tools on a Mac, the Visual Studio Build Tools "Desktop development
+with C++" workload on Windows — then:
 
 ```sh
 npm install
 npm run desktop:dev      # Build the frontend and open the desktop app
-npm run desktop:build    # Create the .app and .dmg for this Mac's architecture
-npm run desktop:build -- --bundles app  # App bundle only
+npm run desktop:build    # Package for this machine's OS and architecture
+npm run desktop:build -- --bundles app  # macOS app bundle only
 ```
 
-Artifacts land in `src-tauri/target/release/bundle/`. Desktop development uses
-a production frontend build; restart `desktop:dev` to pick up frontend changes.
-Use `npm run dev` for browser development with hot reload.
+`desktop:build` produces a `.app` and `.dmg` on macOS and an NSIS `.exe`
+installer on Windows, which installs per user and needs no administrator
+rights. It also installs WebView2 if the machine lacks it; Windows 11 ships
+with it. Artifacts land in `src-tauri/target/release/bundle/`. Desktop
+development uses a production frontend build; restart `desktop:dev` to pick up
+frontend changes. Use `npm run dev` for browser development with hot reload.
 
 On first launch, the model menu opens local agent setup. You can reopen it at
 **model menu → Set up local Claude / Codex**:
@@ -178,8 +183,11 @@ On first launch, the model menu opens local agent setup. You can reopen it at
 4. Choose a model in the same menu, or keep the provider default.
 
 Setup discovers CLIs on PATH and in common local, Homebrew, Volta, npm-global,
-and nvm locations, including when launched from Finder. On macOS, it also
-loads the login shell’s CLI paths and authentication settings (including
+and nvm locations, including when launched from Finder. On Windows it applies
+`PATHEXT` and also looks in `%APPDATA%\npm` and `%USERPROFILE%\.local\bin`,
+and it runs an npm `.cmd` shim's entry point on the bundled Node rather than
+through a shell, so timeouts and shutdown reach the real process. On macOS, it
+also loads the login shell’s CLI paths and authentication settings (including
 `CLAUDE_CODE_OAUTH_TOKEN` and `CLAUDE_CONFIG_DIR`). These values stay in memory,
 are shared by status checks and generation, and are never written to Trellis
 settings or returned to the UI. **Check again** refreshes the shell settings. Expand **Executable
@@ -190,9 +198,10 @@ the initial desktop default, so you can explore the app before connecting.
 A successful sign-in check confirms local credentials; model access and expired
 credentials can still cause an actual operation to fail.
 
-Desktop data lives in `~/Library/Application Support/com.trellis.desktop/`:
-`trellis.db` holds the graph and `settings.json` holds executable paths and the
-selected provider/model. These survive app upgrades and changing local ports.
+Desktop data lives in `~/Library/Application Support/com.trellis.desktop/` on
+macOS and `%APPDATA%\com.trellis.desktop\` on Windows: `trellis.db` holds the
+graph and `settings.json` holds executable paths and the selected
+provider/model. These survive app upgrades and changing local ports.
 Browser development continues to use `data/`. To bring an existing development
 graph into desktop, stop both apps and use SQLite's backup command to copy it
 to the desktop data directory before launching; preserve any existing desktop
@@ -211,14 +220,21 @@ npm test
 npm run test:desktop     # Build + localhost boot/auth/persistence/shutdown check
 ```
 
+GitHub Actions runs `check` and `test` on every push and pull request
+(`.github/workflows/ci.yml`). Commits landing on `main` also build the desktop
+app on macOS and Windows runners (`.github/workflows/desktop.yml`), which run
+`test:desktop` against the runtime they just packaged and then upload the `.dmg`
+and the NSIS `.exe` as run artifacts, kept for 14 days. Both workflows can also
+be started by hand from the Actions tab. The Node version pinned there is the
+one the app ships, so change it deliberately.
+
 The packaging script copies the current Node executable and installed native
-addons, so build on the target architecture using a self-contained Node
+addons, so build on the target OS and architecture using a self-contained Node
 installation (the official Node distribution is suitable). Its LICENSE file
 is included; set `TRELLIS_NODE_LICENSE` if it lives outside the Node installation.
-Cross-compilation
-and Windows/Linux installers are not configured. The default macOS artifacts
-are for local use; distribution requires Apple signing and notarization,
-including the bundled Node executable and native addons.
+Cross-compilation and Linux packaging are not configured. The default artifacts
+are for local use; distribution requires Apple notarization or a Windows
+signing certificate, covering the bundled Node executable and native addons.
 
 References: [Tauri Node sidecars](https://v2.tauri.app/learn/sidecar-nodejs/),
 [SvelteKit Node adapter](https://svelte.dev/docs/kit/adapter-node),

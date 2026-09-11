@@ -1,4 +1,4 @@
-import { resolveCli, cliEnvironment, trackCli, prepareCliEnvironment } from '../local-agents';
+import { resolveCli, cliCommand, cliEnvironment, trackCli, prepareCliEnvironment } from '../local-agents';
 // Subscription-billed adapter: shells out to the local Claude Code CLI in
 // headless print mode (`claude -p`) instead of calling the Messages API.
 // Select with TRELLIS_AGENT=claude-cli. Auth is whatever `claude` itself is
@@ -39,7 +39,8 @@ interface CliEnvelope {
 function runClaude(bin: string, args: string[], stdin: string): Promise<string> {
 	return new Promise((resolve, reject) => {
 		// Neutral cwd: the call must not pick up this (or any) project's context.
-		const child = trackCli(spawn(bin, args, { cwd: os.tmpdir(), env: cliEnvironment(), stdio: ['pipe', 'pipe', 'pipe'] }));
+		const command = cliCommand(bin, args);
+		const child = trackCli(spawn(command.file, command.args, { cwd: os.tmpdir(), env: cliEnvironment(), stdio: ['pipe', 'pipe', 'pipe'], ...command.options }));
 		let stdout = '';
 		let stderr = '';
 		const timer = setTimeout(() => {

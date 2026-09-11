@@ -15,6 +15,8 @@ export function trackCli<T extends ChildProcess>(child: T): T {
   return child;
 }
 
+const isWindows = () => process.platform === 'win32';
+
 export type LocalProvider = 'claude-cli' | 'codex-cli';
 interface LocalSettings { paths: Partial<Record<LocalProvider, string>>; selection?: ModelSelection }
 const settingsPath = () => process.env.TRELLIS_SETTINGS ?? resolve('data/settings.json');
@@ -40,10 +42,19 @@ export function cliEnvironment(): NodeJS.ProcessEnv {
   const environment = { ...process.env, ...(process.env.TRELLIS_DESKTOP ? getShellEnvironment() : {}) };
   const dirs = [dirname(process.execPath), ...(environment.PATH ?? '').split(delimiter),
     join(home, '.local/bin'), join(home, '.npm-global/bin'), join(home, '.volta/bin'),
-    '/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin'];
+    ...(isWindows() ? [join(environment.APPDATA ?? home, 'npm')]
+      : ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin'])];
   const nvm = join(home, '.nvm/versions/node');
   if (existsSync(nvm)) for (const version of readdirSync(nvm).sort().reverse()) dirs.push(join(nvm, version, 'bin'));
   return { ...environment, PATH: [...new Set(dirs.filter(Boolean))].join(delimiter) };
+}
+// Windows resolves a bare command name through PATHEXT, and npm installs an
+// extensionless shell script beside its .cmd shim, so only extension matches
+// are executable there.
+function executableNames(name: string): string[] {
+  if (!isWindows()) return [name];
+  const extensions = (process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean);
+  return extensions.some(ext => name.toLowerCase().endsWith(ext.toLowerCase())) ? [name] : extensions.map(ext => name + ext);
 }
 export function resolveCli(provider: LocalProvider, override?: string): string {
   const command = provider === 'claude-cli' ? 'claude' : 'codex';
@@ -52,16 +63,55 @@ export function resolveCli(provider: LocalProvider, override?: string): string {
     ? (readLocalSettings().paths[provider] ?? env ?? '')
     : (override || env || '');
   const bin = configured.startsWith('~/') ? join(homedir(), configured.slice(2)) : configured;
-  if (bin && (isAbsolute(bin) || bin.includes('/'))) return bin;
+  if (bin && (isAbsolute(bin) || bin.includes('/') || (isWindows() && bin.includes('\\')))) return bin;
   for (const directory of cliEnvironment().PATH!.split(delimiter)) {
-    const candidate = join(directory, bin || command);
-    try { accessSync(candidate, constants.X_OK); if (statSync(candidate).isFile()) return candidate; } catch { /* Continue discovery. */ }
+    for (const name of executableNames(bin || command)) {
+      const candidate = join(directory, name);
+      try { accessSync(candidate, constants.X_OK); if (statSync(candidate).isFile()) return candidate; } catch { /* Continue discovery. */ }
+    }
   }
   return bin || command;
 }
+
+/** The JS entry point an npm-generated .cmd shim hands to Node, if it is one. */
+function npmShimEntry(shim: string): string | undefined {
+  try {
+    const match = readFileSync(shim, 'utf8').match(/"%_prog%"\s+"%dp0%\\([^"]+)"/);
+    if (!match) return undefined;
+    const entry = join(dirname(shim), match[1]);
+    return statSync(entry).isFile() ? entry : undefined;
+  } catch { return undefined; }
+}
+
+export interface CliCommand {
+  file: string;
+  args: string[];
+  options: { windowsHide: boolean; windowsVerbatimArguments?: boolean };
+}
+/**
+ * How to launch a resolved CLI. Node refuses to spawn a .cmd or .bat shim
+ * directly, and npm ships its CLIs as one. Those shims are a thin wrapper
+ * around a JS entry point, so run that with our own Node — which also keeps
+ * kill and timeout handling pointed at the real process. Only when the shim is
+ * unreadable do we fall back to cmd.exe, escaping arguments as it parses them.
+ */
+export function cliCommand(bin: string, args: string[]): CliCommand {
+  if (!isWindows() || !/\.(cmd|bat)$/i.test(bin)) return { file: bin, args, options: { windowsHide: true } };
+  const entry = npmShimEntry(bin);
+  if (entry) return { file: process.execPath, args: [entry, ...args], options: { windowsHide: true } };
+  const line = [bin, ...args].map(escapeForCmd).join(' ');
+  return { file: 'cmd.exe', args: ['/d', '/s', '/c', `"${line}"`], options: { windowsHide: true, windowsVerbatimArguments: true } };
+}
+// Quote for CreateProcess, then escape what cmd.exe reads before that. %VAR%
+// still expands, so this path suits short flags rather than arbitrary prose.
+function escapeForCmd(value: string): string {
+  const quoted = `"${value.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/, '$1$1')}"`;
+  return quoted.replace(/[><!^&|]/g, '^$&');
+}
 function run(bin: string, args: string[]): Promise<{ code: number; output: string }> {
   return new Promise((resolve, reject) => {
-    trackCli(execFile(bin, args, { cwd: tmpdir(), env: cliEnvironment(), timeout: 10_000, killSignal: 'SIGKILL', maxBuffer: 64 * 1024 }, (error, stdout, stderr) => {
+    const command = cliCommand(bin, args);
+    trackCli(execFile(command.file, command.args, { cwd: tmpdir(), env: cliEnvironment(), timeout: 10_000, killSignal: 'SIGKILL', maxBuffer: 64 * 1024, ...command.options }, (error, stdout, stderr) => {
       if (error && (typeof error.code !== 'number' || error.killed)) return reject(error);
       resolve({ code: typeof error?.code === 'number' ? error.code : 0, output: stdout || stderr });
     }));

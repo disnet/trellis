@@ -8,6 +8,13 @@ use std::{
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_opener::OpenerExt;
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+// A release build is a Windows GUI app with no console of its own, so spawning
+// the server would otherwise open and flash a console window on screen.
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
 fn stop_backend(child: &mut Child) {
     // Let Node clean up in-flight CLI processes before falling back to a kill.
     drop(child.stdin.take());
@@ -41,19 +48,30 @@ fn main() {
             };
             let data = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data)?;
-            let mut child =
-                Command::new(runtime.join(if cfg!(windows) { "node.exe" } else { "node" }))
-                    .arg(runtime.join("server.mjs"))
-                    .current_dir(&data)
-                    .env("TRELLIS_DESKTOP", "1")
-                    .env("TRELLIS_DB", data.join("trellis.db"))
-                    .env("TRELLIS_SETTINGS", data.join("settings.json"))
-                    .env_remove("NODE_OPTIONS")
-                    .stdin(Stdio::piped())
-                    .stdout(Stdio::piped())
-                    .stderr(Stdio::inherit())
-                    .spawn()?;
+            let mut command =
+                Command::new(runtime.join(if cfg!(windows) { "node.exe" } else { "node" }));
+            command
+                .arg(runtime.join("server.mjs"))
+                .current_dir(&data)
+                .env("TRELLIS_DESKTOP", "1")
+                .env("TRELLIS_DB", data.join("trellis.db"))
+                .env("TRELLIS_SETTINGS", data.join("settings.json"))
+                .env_remove("NODE_OPTIONS")
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                // Piped, not inherited: a GUI build has no usable stderr to
+                // hand the server, and an undrained pipe would block it.
+                .stderr(Stdio::piped());
+            #[cfg(windows)]
+            command.creation_flags(CREATE_NO_WINDOW);
+            let mut child = command.spawn()?;
             let stdout = child.stdout.take().ok_or("Server output is unavailable")?;
+            let stderr = child.stderr.take().ok_or("Server output is unavailable")?;
+            std::thread::spawn(move || {
+                for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+                    eprintln!("{line}");
+                }
+            });
             let backend = Backend(Mutex::new(child));
             let (tx, rx) = mpsc::channel();
             std::thread::spawn(move || {
