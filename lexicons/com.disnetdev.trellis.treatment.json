@@ -1,0 +1,30 @@
+{
+	"lexicon": 1,
+	"id": "com.disnetdev.trellis.treatment",
+	"defs": {
+		"main": {
+			"type": "record",
+			"description": "A publication-approved prose view of the garden's thoughts. Always a derived, visibly agent-authored artifact: the author selects and approves this exact draft, and accepting its source thoughts does not approve every connective claim the model added. The private writing guidance never publishes. The body is plain text with [[thought-id]] references, never HTML.",
+			"key": "any",
+			"record": {
+				"type": "object",
+				"required": ["title", "body", "style", "agentAuthored", "model", "sourceRevisions", "generatedAt", "publishedAt"],
+				"properties": {
+					"title": { "type": "string", "maxLength": 3000, "maxGraphemes": 300 },
+					"body": { "type": "string", "maxLength": 300000, "maxGraphemes": 30000 },
+					"style": { "type": "string", "maxLength": 40 },
+					"agentAuthored": { "type": "boolean", "const": true },
+					"model": { "type": "string", "maxLength": 200 },
+					"sourceRevisions": {
+						"type": "array",
+						"maxLength": 500,
+						"items": { "type": "string", "format": "at-uri" },
+						"description": "The exact revision records this prose was written from; when a source thought's current revision moves past these, the treatment is stale."
+					},
+					"generatedAt": { "type": "string", "format": "datetime" },
+					"publishedAt": { "type": "string", "format": "datetime" }
+				}
+			}
+		}
+	}
+}

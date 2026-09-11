@@ -1,0 +1,52 @@
+{
+	"lexicon": 1,
+	"id": "com.disnetdev.trellis.revision",
+	"defs": {
+		"main": {
+			"type": "record",
+			"description": "A selected public version of a thought. Published once, then immutable; retained until deliberately withdrawn, so readers can reach the version a citation engaged with. Local revision history is not public history — only the state at each release gets a record.",
+			"key": "any",
+			"record": {
+				"type": "object",
+				"required": ["thought", "title", "statement", "status", "authorship", "createdAt", "publishedAt"],
+				"properties": {
+					"thought": { "type": "string", "format": "at-uri" },
+					"prev": {
+						"type": "string",
+						"format": "at-uri",
+						"description": "The previous public revision; absent on the first."
+					},
+					"title": { "type": "string", "maxLength": 3000, "maxGraphemes": 300 },
+					"statement": { "type": "string", "maxLength": 40000, "maxGraphemes": 4000 },
+					"status": {
+						"type": "string",
+						"enum": ["tentative", "developing", "believed", "contested", "retired"]
+					},
+					"confidence": { "type": "ref", "ref": "com.disnetdev.trellis.thought#confidence" },
+					"source": { "type": "string", "maxLength": 5000, "maxGraphemes": 500 },
+					"authorship": { "type": "ref", "ref": "#authorship" },
+					"changeNote": {
+						"type": "string",
+						"maxLength": 10000,
+						"maxGraphemes": 1000,
+						"description": "Author-reviewed explanation of what changed and why."
+					},
+					"createdAt": { "type": "string", "format": "datetime" },
+					"publishedAt": { "type": "string", "format": "datetime" }
+				}
+			}
+		},
+		"authorship": {
+			"type": "object",
+			"description": "Who wrote the words. Ratification into the workspace precedes publication and is a separate act; this is an attributed claim about the workflow, not a cryptographic proof.",
+			"required": ["actor"],
+			"properties": {
+				"actor": { "type": "string", "enum": ["human", "agent"] },
+				"editedFromProposal": {
+					"type": "boolean",
+					"description": "The human edited the agent's proposal before accepting it."
+				}
+			}
+		}
+	}
+}

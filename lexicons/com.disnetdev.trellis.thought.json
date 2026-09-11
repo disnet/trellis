@@ -1,0 +1,52 @@
+{
+	"lexicon": 1,
+	"id": "com.disnetdev.trellis.thought",
+	"defs": {
+		"main": {
+			"type": "record",
+			"description": "A thought's current public state. The record key is the thought's stable local id, so identity survives releases and prose references resolve unchanged. Publication attests the author's deliberate inclusion; status expresses their stance — it does not certify truth or careful review.",
+			"key": "any",
+			"record": {
+				"type": "object",
+				"required": ["thoughtType", "status", "title", "statement", "currentRevision", "createdAt", "firstPublishedAt"],
+				"properties": {
+					"thoughtType": {
+						"type": "string",
+						"enum": ["claim", "question", "concept", "example", "prediction", "evidence"]
+					},
+					"status": {
+						"type": "string",
+						"enum": ["tentative", "developing", "believed", "contested", "retired"]
+					},
+					"title": { "type": "string", "maxLength": 3000, "maxGraphemes": 300 },
+					"statement": { "type": "string", "maxLength": 40000, "maxGraphemes": 4000 },
+					"confidence": { "type": "ref", "ref": "#confidence" },
+					"source": {
+						"type": "string",
+						"maxLength": 5000,
+						"maxGraphemes": 500,
+						"description": "Evidence only: citation, URL, or dataset."
+					},
+					"currentRevision": {
+						"type": "string",
+						"format": "at-uri",
+						"description": "The com.disnetdev.trellis.revision record holding this exact content."
+					},
+					"createdAt": { "type": "string", "format": "datetime" },
+					"firstPublishedAt": { "type": "string", "format": "datetime" }
+				}
+			}
+		},
+		"confidence": {
+			"type": "object",
+			"description": "Calibrated confidence on a prediction: a probability, or a low/high interval in `unit`, optionally resolvable by a date. Numeric values are decimal strings because the atproto data model has no float type.",
+			"properties": {
+				"probability": { "type": "string", "maxLength": 30, "description": "Decimal string, 0–1." },
+				"low": { "type": "string", "maxLength": 30 },
+				"high": { "type": "string", "maxLength": 30 },
+				"unit": { "type": "string", "maxLength": 100 },
+				"resolveBy": { "type": "string", "maxLength": 10, "description": "ISO date (YYYY-MM-DD)." }
+			}
+		}
+	}
+}

@@ -1,0 +1,47 @@
+{
+	"lexicon": 1,
+	"id": "com.disnetdev.trellis.garden",
+	"defs": {
+		"main": {
+			"type": "record",
+			"description": "The garden's front door and release manifest. There is one per repository (record key 'self'). The manifest identifies the coherent set of live records: renderers must show manifest members only, so readers never see a half-published release. It is always written last in a release.",
+			"key": "literal:self",
+			"record": {
+				"type": "object",
+				"required": ["title", "pinned", "release", "createdAt"],
+				"properties": {
+					"title": { "type": "string", "maxLength": 1200, "maxGraphemes": 120 },
+					"summary": {
+						"type": "string",
+						"maxLength": 30000,
+						"maxGraphemes": 3000,
+						"description": "Author-written introduction, plain text."
+					},
+					"pinned": {
+						"type": "array",
+						"maxLength": 100,
+						"items": { "type": "string", "format": "at-uri" },
+						"description": "Pinned thoughts — direct entry points into the structure."
+					},
+					"treatment": {
+						"type": "string",
+						"format": "at-uri",
+						"description": "The approved treatment shown as the front-door essay."
+					},
+					"release": { "type": "ref", "ref": "#release" },
+					"createdAt": { "type": "string", "format": "datetime" }
+				}
+			}
+		},
+		"release": {
+			"type": "object",
+			"required": ["publishedAt", "thoughts", "revisions", "relations"],
+			"properties": {
+				"publishedAt": { "type": "string", "format": "datetime" },
+				"thoughts": { "type": "array", "maxLength": 5000, "items": { "type": "string", "format": "at-uri" } },
+				"revisions": { "type": "array", "maxLength": 20000, "items": { "type": "string", "format": "at-uri" } },
+				"relations": { "type": "array", "maxLength": 20000, "items": { "type": "string", "format": "at-uri" } }
+			}
+		}
+	}
+}

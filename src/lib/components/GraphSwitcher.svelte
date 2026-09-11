@@ -58,6 +58,7 @@
 			<button class="action" onclick={() => { close(); create(); }}><Icon name="plus" /> New graph…</button>
 			<button class="action" onclick={() => { close(); rename(); }}><Icon name="pencil" /> Rename graph…</button>
 			<a class="action" href="/api/export" download onclick={close}><Icon name="download" /> Export graph</a>
+			<a class="action" href="/publish" onclick={close}><Icon name="upload" /> Publish garden…</a>
 		{/snippet}
 	</ControlPopover>
 </div>

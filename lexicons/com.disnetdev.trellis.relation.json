@@ -1,0 +1,28 @@
+{
+	"lexicon": 1,
+	"id": "com.disnetdev.trellis.relation",
+	"defs": {
+		"main": {
+			"type": "record",
+			"description": "A typed connection between two published thoughts. Pins the revisions that were current when the relation was first published, so readers can see the versions the link engaged with. The data keeps the precise type; reading surfaces may soften the label (e.g. 'contradicts' renders as 'in tension with').",
+			"key": "any",
+			"record": {
+				"type": "object",
+				"required": ["from", "to", "fromRevision", "toRevision", "relationType", "createdBy", "createdAt", "publishedAt"],
+				"properties": {
+					"from": { "type": "string", "format": "at-uri" },
+					"to": { "type": "string", "format": "at-uri" },
+					"fromRevision": { "type": "string", "format": "at-uri" },
+					"toRevision": { "type": "string", "format": "at-uri" },
+					"relationType": {
+						"type": "string",
+						"enum": ["supports", "contradicts", "depends_on", "example_of", "supersedes", "related_to"]
+					},
+					"createdBy": { "type": "string", "enum": ["human", "agent"] },
+					"createdAt": { "type": "string", "format": "datetime" },
+					"publishedAt": { "type": "string", "format": "datetime" }
+				}
+			}
+		}
+	}
+}

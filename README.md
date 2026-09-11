@@ -83,6 +83,17 @@ They are agent-authored reading artifacts; generating one does not create or
 revise thoughts, relations, or proposals. Offline fixtures also support this
 flow for testing without a model call.
 
+## Publish a garden
+
+Open **Publish garden…** in the graph menu to put a reviewed selection of the
+graph into your own atproto repository and render it as a public website at
+`/garden/<handle>`: an essay backed by thought permalinks with visible status,
+sources, provenance, and public revision history. Sign in with OAuth through
+your own PDS (an app password remains the fallback). Publication is a separate,
+deliberate act on a reviewed diff — conversations, notes, proposals, writing
+guidance, and unpublished history stay local. See
+[docs/garden-publishing.md](docs/garden-publishing.md).
+
 ## Run
 
 ```sh

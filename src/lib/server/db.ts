@@ -188,6 +188,23 @@ CREATE TABLE IF NOT EXISTS prose_treatments (
 );
 CREATE INDEX IF NOT EXISTS idx_prose_slot ON prose_treatments(graph_id, working_set_id, style);
 
+-- What is live in the atproto repo: one row per published record, holding the
+-- exact record JSON last written. Publishing state, not knowledge — undo never
+-- touches it, and the diff between these rows and current local state is the
+-- publication preview. Deliberately no FK to thoughts: a locally deleted
+-- thought stays visibly live until the withdrawal is published.
+CREATE TABLE IF NOT EXISTS published_records (
+  graph_id TEXT NOT NULL REFERENCES graphs(id),
+  collection TEXT NOT NULL,
+  rkey TEXT NOT NULL,
+  uri TEXT NOT NULL,
+  cid TEXT,
+  record TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  published_at INTEGER NOT NULL,
+  PRIMARY KEY (graph_id, collection, rkey)
+);
+
 -- Side conversations survive graph undo. Target ids deliberately have no FK:
 -- a proposed thought can return to staging, retaining its discussion.
 CREATE TABLE IF NOT EXISTS conversations (
