@@ -84,15 +84,35 @@ export function resolveCli(provider: LocalProvider, override?: string): string {
   return bin || command;
 }
 
-/** The JS entry point an npm-generated .cmd shim hands to Node, if it is one. */
-function npmShimEntry(shim: string): string | undefined {
+/**
+ * What an npm-generated .cmd shim actually launches, if we can read it out.
+ * npm writes one of two shapes: a CLI written in JavaScript arrives as Node
+ * plus an entry point, and a CLI shipping a native binary — which is how Claude
+ * Code installs now — arrives as a direct call to that .exe. Both name their
+ * target relative to the shim's own directory (%dp0%).
+ */
+function shimTarget(shim: string): { file: string; args: string[] } | undefined {
   try {
-    const match = readFileSync(shim, 'utf8').match(/"%_prog%"\s+"%dp0%\\([^"]+)"/);
-    if (!match) return undefined;
-    const entry = join(dirname(shim), match[1]);
-    return statSync(entry).isFile() ? entry : undefined;
+    const text = readFileSync(shim, 'utf8');
+    const beside = (relative: string) => {
+      const target = join(dirname(shim), relative);
+      return statSync(target).isFile() ? target : undefined;
+    };
+    const node = text.match(/"%_prog%"\s+"%~?dp0%?\\+([^"]+)"/);
+    const entry = node && beside(node[1]);
+    if (entry) return { file: process.execPath, args: [entry] };
+    const native = text.match(/"%~?dp0%?\\+([^"]+\.exe)"/i);
+    const binary = native && beside(native[1]);
+    if (binary) return { file: binary, args: [] };
+    return undefined;
   } catch { return undefined; }
 }
+
+// cmd.exe truncates at 8191 characters and says only "The command line is too
+// long", which names neither the argument that overran nor the shell it came
+// from. Launching the real executable lifts the ceiling to CreateProcess's
+// 32767; this bound belongs to the last resort below.
+const CMD_LINE_LIMIT = 8191;
 
 export interface CliCommand {
   file: string;
@@ -102,15 +122,18 @@ export interface CliCommand {
 /**
  * How to launch a resolved CLI. Node refuses to spawn a .cmd or .bat shim
  * directly, and npm ships its CLIs as one. Those shims are a thin wrapper
- * around a JS entry point, so run that with our own Node — which also keeps
- * kill and timeout handling pointed at the real process. Only when the shim is
- * unreadable do we fall back to cmd.exe, escaping arguments as it parses them.
+ * around the real program, so run that instead — which also keeps kill and
+ * timeout handling pointed at the real process, and keeps whole prompts off a
+ * shell command line. Only when the shim is unreadable do we fall back to
+ * cmd.exe, escaping arguments as it parses them.
  */
 export function cliCommand(bin: string, args: string[]): CliCommand {
   if (!isWindows() || !/\.(cmd|bat)$/i.test(bin)) return { file: bin, args, options: { windowsHide: true } };
-  const entry = npmShimEntry(bin);
-  if (entry) return { file: process.execPath, args: [entry, ...args], options: { windowsHide: true } };
+  const target = shimTarget(bin);
+  if (target) return { file: target.file, args: [...target.args, ...args], options: { windowsHide: true } };
   const line = [bin, ...args].map(escapeForCmd).join(' ');
+  if (line.length + 'cmd.exe /d /s /c ""'.length > CMD_LINE_LIMIT)
+    throw new Error(`This request is too long to pass through ${bin}, a shim Trellis could not read to launch the CLI directly. Set the CLI's own executable as its path in settings.`);
   return { file: 'cmd.exe', args: ['/d', '/s', '/c', `"${line}"`], options: { windowsHide: true, windowsVerbatimArguments: true } };
 }
 // Quote for CreateProcess, then escape what cmd.exe reads before that. %VAR%
