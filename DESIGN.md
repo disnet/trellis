@@ -173,7 +173,7 @@ Every font-size in the app is a `--fs-*` token (`--fs-9` … `--fs-17`, base px 
 - **Title** (800, 16px/--fs-16, 0.02em): the wordmark and top-level identity only.
 - **Card Title** (600, 13px/--fs-13, lh 1.25): thought titles, op labels — the workhorse emphasis.
 - **Body** (400, 12–13px/--fs-12–13, lh 1.4): statements, rationale (italic), hints.
-- **Section Label** (uppercase, 0.08em, 11–13px/--fs-11–13, ink-muted): panel headers ("Proposals", "Library").
+- **Section Label** (uppercase, 0.08em, 11–13px/--fs-11–13, ink-muted): panel headers ("Proposals", "Inspector").
 - **Micro Label** (700, uppercase, 0.06em, 10px/--fs-10): type chips, action tags, badges, statuses.
 
 ### Named Rules
@@ -181,13 +181,15 @@ Every font-size in the app is a `--fs-*` token (`--fs-9` … `--fs-17`, base px 
 
 ## Layout
 
-A continuous, full-window canvas is the base surface. Navigation floats at the top in three distinct clusters: graph and group scope; Canvas, Outline, Browse, and Prose views; and Library, Proposals, Inspector, Activity, and Appearance. The graph's menu holds creation, rename, and export. The searchable group picker lists groups vertically, shows membership counts and the current group, and keeps rename, empty, and delete beside the group they affect. Deleting a group uses an explicit label and confirmation, never a tab-close icon.
+A continuous, full-window canvas is the base surface. Navigation floats at the top in three distinct clusters: graph and group scope; Canvas, Outline, Browse, and Prose views; and Search, Proposals, Inspector, Activity, and Appearance. The graph's menu holds creation, rename, and export. The searchable group picker lists groups vertically, shows membership counts and the current group, and keeps rename, empty, and delete beside the group they affect. Deleting a group uses an explicit label and confirmation, never a tab-close icon.
 
 The bottom dock is for work on thoughts: New note and Undo; agent operations with visible selection and group context; and the model choice. The canvas's own controls — arrangement, radial focus, search, display options (card detail, connections, group colors), and camera zoom — form a single bar centered directly above the dock, with the camera set off by a hairline as its own segment. The bottom is two deliberate stacked rows, never clusters scattered into the corners. Outline and Browse retain their own thought-detail control beside view navigation. Menu positions stay within the viewport and support outside-click dismissal, Escape, and keyboard focus return.
 
 Activity is a tool, not one of the four thought views: it is reached from the workspace-bar tools, takes over the center, and must give the center back. It names itself in a header and carries a labelled return to the view it covered; its toolbar button toggles back to that same view.
 
-Library occupies a collapsible left panel; Proposals and Inspector share a collapsible right panel. Both retain independent resize controls. Opening a panel never resizes or shifts the canvas. Panels begin closed, with new pending change sets opening Proposals for explicit review. On narrow windows, opening one panel closes the other. Drafts and inspector edits survive hiding their panels. Panels and alternate views follow the measured navigation and dock heights as controls wrap or text scales.
+Graph-wide search is a modal, not a panel: ⌘K (or the workspace-bar Search button) opens a centered quick-search dialog over the canvas. With no query it is a launcher — pinned landmarks first, then recent thoughts; with a query it searches titles and statements. Under a group lens, Enter adds the highlighted thought to the group and keeps the dialog open so several can be gathered in one pass; ⌘Enter (or no lens) jumps to the thought instead and closes. Pinned rows keep their neighborhood-focus action, and a footer states the active key verbs and offers Browse for open-ended discovery.
+
+Proposals and Inspector share a collapsible right panel with a resize control. Opening the panel never resizes or shifts the canvas. It begins closed, with new pending change sets opening Proposals for explicit review. Drafts and inspector edits survive hiding the panel. The panel and alternate views follow the measured navigation and dock heights as controls wrap or text scales.
 
 Keep the existing small, scalable system typography, warm paper palette, and semantic proposal styling. Floating chrome uses restrained warm shadows and 12–14px corners, with air between each surface and the window edge. Outline and Browse retain reading space below the workspace controls and above the dock.
 

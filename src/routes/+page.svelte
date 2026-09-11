@@ -9,8 +9,8 @@
 	import Canvas from '$lib/components/Canvas.svelte';
 	import Inspector from '$lib/components/Inspector.svelte';
 	import Outline from '$lib/components/Outline.svelte';
-	import Library from '$lib/components/Library.svelte';
 	import PaneResizer from '$lib/components/PaneResizer.svelte';
+	import QuickSearch from '$lib/components/QuickSearch.svelte';
 	import ProposalTray from '$lib/components/ProposalTray.svelte';
 	import ReentryPanel from '$lib/components/ReentryPanel.svelte';
 	import Toolbar from '$lib/components/Toolbar.svelte';
@@ -22,15 +22,12 @@
 	const ws = workspace;
 	let workspaceBarHeight = $state(48);
 	let dockHeight = $state(80);
-	let leftPanel = $state<'library' | null>(null);
 	let rightPanel = $state<'proposals' | 'inspector' | null>(null);
+	let quickSearchOpen = $state(false);
 	let previousPending = 0;
 	$effect(() => {
 		const count = ws.pendingChangeSets.length;
-		if (count > previousPending) {
-			rightPanel = 'proposals';
-			if (viewportWidth < 800) leftPanel = null;
-		}
+		if (count > previousPending) rightPanel = 'proposals';
 		previousPending = count;
 	});
 	// The inspector follows a single selection: selecting one thought brings up
@@ -43,7 +40,6 @@
 		if (ids !== previousSelection) {
 			if (ids.length === 1) {
 				rightPanel = 'inspector';
-				if (viewportWidth < 800) leftPanel = null;
 			} else if (rightPanel === 'inspector') {
 				rightPanel = null;
 			}
@@ -54,10 +50,7 @@
 	// the front, and the tray scrolls itself to that operation.
 	let previousReveal = 0;
 	$effect(() => {
-		if (ws.proposalReveal !== previousReveal && ws.selectedProposalId) {
-			rightPanel = 'proposals';
-			if (viewportWidth < 800) leftPanel = null;
-		}
+		if (ws.proposalReveal !== previousReveal && ws.selectedProposalId) rightPanel = 'proposals';
 		previousReveal = ws.proposalReveal;
 	});
 	// The other direction — following a thought out of the tray to its place on
@@ -67,10 +60,7 @@
 	let previousCanvasReveal = 0;
 	$effect(() => {
 		const n = ws.canvasReveal?.n ?? 0;
-		if (n !== previousCanvasReveal) {
-			rightPanel = 'proposals';
-			if (viewportWidth < 800) leftPanel = null;
-		}
+		if (n !== previousCanvasReveal) rightPanel = 'proposals';
 		previousCanvasReveal = n;
 	});
 	// Activity is a tool, not a view you navigate between: it takes over the
@@ -85,54 +75,40 @@
 	function closeActivity() { ws.view = lastThoughtView; }
 	function toggleActivity() { ws.view = ws.view === 'log' ? lastThoughtView : 'log'; }
 
-	function toggleLeft(panel: 'library') {
-		leftPanel = leftPanel === panel ? null : panel;
-		if (viewportWidth < 800) rightPanel = null;
-	}
 	function toggleRight(panel: 'proposals' | 'inspector') {
 		rightPanel = rightPanel === panel ? null : panel;
-		if (viewportWidth < 800) leftPanel = null;
 	}
 
-	// --- sidebar widths (view-only, per-browser) ---
-	const LEFT_DEFAULT = 270;
+	// --- sidebar width (view-only, per-browser) ---
 	const RIGHT_DEFAULT = 400;
-	const LEFT_MIN = 190;
 	const RIGHT_MIN = 260;
 	const CENTER_MIN = 360;
 	const STORAGE_KEY = 'trellis:sidebar-widths';
 
-	function restored(): { left: number; right: number } {
-		if (!browser) return { left: LEFT_DEFAULT, right: RIGHT_DEFAULT };
+	function restored(): { right: number } {
+		if (!browser) return { right: RIGHT_DEFAULT };
 		try {
 			const raw = localStorage.getItem(STORAGE_KEY);
 			if (!raw) throw new Error('none');
 			const saved = JSON.parse(raw);
-			return {
-				left: typeof saved.left === 'number' ? saved.left : LEFT_DEFAULT,
-				right: typeof saved.right === 'number' ? saved.right : RIGHT_DEFAULT
-			};
+			return { right: typeof saved.right === 'number' ? saved.right : RIGHT_DEFAULT };
 		} catch {
-			return { left: LEFT_DEFAULT, right: RIGHT_DEFAULT };
+			return { right: RIGHT_DEFAULT };
 		}
 	}
 
-	const initial = restored();
-	let leftWidth = $state(initial.left);
-	let rightWidth = $state(initial.right);
+	let rightWidth = $state(restored().right);
 	let viewportWidth = $state(browser ? window.innerWidth : 1440);
 
-	// Limit floating panels so a useful strip of canvas remains between them.
+	// Limit the floating panel so a useful strip of canvas remains beside it.
 	const clamp = (w: number, min: number, max: number) => Math.min(Math.max(w, min), max);
-	const leftMax = $derived(Math.max(LEFT_MIN, viewportWidth - RIGHT_MIN - CENTER_MIN));
-	const left = $derived(clamp(leftWidth, LEFT_MIN, leftMax));
-	const rightMax = $derived(Math.max(RIGHT_MIN, viewportWidth - left - CENTER_MIN));
+	const rightMax = $derived(Math.max(RIGHT_MIN, viewportWidth - CENTER_MIN));
 	const right = $derived(clamp(rightWidth, RIGHT_MIN, rightMax));
 
 	// Persist what was actually dragged, not the window-clamped value — a stint in
 	// a narrow window shouldn't forget the layout chosen in a wide one.
 	$effect(() => {
-		const widths = JSON.stringify({ left: leftWidth, right: rightWidth });
+		const widths = JSON.stringify({ right: rightWidth });
 		try {
 			localStorage.setItem(STORAGE_KEY, widths);
 		} catch {
@@ -153,9 +129,20 @@
 	<title>Trellis</title>
 </svelte:head>
 
-<svelte:window bind:innerWidth={viewportWidth} />
+<svelte:window
+	bind:innerWidth={viewportWidth}
+	onkeydown={(e) => {
+		if (
+			(e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k' &&
+			!ws.loading && !ws.loadError
+		) {
+			e.preventDefault();
+			quickSearchOpen = !quickSearchOpen;
+		}
+	}}
+/>
 
-<div class="app" style="--left-w: {left}px; --right-w: {right}px; --workspace-top: {workspaceBarHeight + 32}px; --dock-space: {dockHeight + 32}px">
+<div class="app" style="--right-w: {right}px; --workspace-top: {workspaceBarHeight + 32}px; --dock-space: {dockHeight + 32}px">
 	<div class="workspace-bar" bind:clientHeight={workspaceBarHeight}>
 		<div class="workspace-identity">
 			<span class="wordmark">Trellis</span>
@@ -167,7 +154,7 @@
 		</div>
 		<div class="view-navigation"><ViewSwitcher /></div>
 		<nav class="panel-switcher" aria-label="Workspace panels and settings">
-			<button class:active={leftPanel === 'library'} aria-expanded={leftPanel === 'library'} aria-controls="library-panel" onclick={() => toggleLeft('library')}><Icon name="browse" /> Library</button>
+			<button aria-haspopup="dialog" title="Search the graph (⌘K)" onclick={() => (quickSearchOpen = true)}><Icon name="search" /> Search</button>
 			<button class:active={rightPanel === 'proposals'} class:pending={ws.pendingChangeSets.length > 0} aria-expanded={rightPanel === 'proposals'} aria-controls="review-panel" onclick={() => toggleRight('proposals')}>◇ Proposals{#if ws.pendingChangeSets.length} <span class="badge">{ws.pendingChangeSets.length}</span>{/if}</button>
 			<button class:active={rightPanel === 'inspector'} aria-expanded={rightPanel === 'inspector'} aria-controls="review-panel" onclick={() => toggleRight('inspector')}><Icon name="outline" /> Inspector{#if ws.selectedIds.length} <span class="badge">{ws.selectedIds.length}</span>{/if}</button>
 			<div class="app-tools">
@@ -177,11 +164,6 @@
 		</nav>
 	</div>
 	<div class="tool-dock" bind:clientHeight={dockHeight}><Toolbar /></div>
-	<aside id="library-panel" class="floating-panel left" hidden={!leftPanel} aria-label="Library">
-		<button class="close-panel" aria-label="Close library" onclick={() => leftPanel = null}><Icon name="x" /></button>
-		<div class="panel-content" hidden={leftPanel !== 'library'}><Library /></div>
-		<PaneResizer bind:width={leftWidth} min={LEFT_MIN} max={leftMax} side="left" reset={LEFT_DEFAULT} label="Resize the library panel" />
-	</aside>
 	<main class="center">
 		{#if ws.loading}
 			<div class="load-state">Loading the graph…</div>
@@ -191,7 +173,7 @@
 				<button onclick={() => ws.load()}>Retry</button>
 			</div>
 		{:else}
-			<div class="canvas-pane" class:alternate={ws.view !== 'canvas'} class:panel-left={leftPanel !== null} class:panel-right={rightPanel !== null}>
+			<div class="canvas-pane" class:alternate={ws.view !== 'canvas'} class:panel-right={rightPanel !== null}>
 				{#if ws.view === 'canvas'}
 					<Canvas />
 				{:else if ws.view === 'outline'}
@@ -214,6 +196,7 @@
 	</aside>
 
 	<ReentryPanel />
+	<QuickSearch bind:open={quickSearchOpen} />
 	<AppDialog />
 
 	{#if ws.notice}
@@ -279,12 +262,11 @@
 	}
 	.center { position: absolute; inset: 0; display: flex; flex-direction: column; min-width: 0; }
 	.canvas-pane { flex: 1; min-height: 0; --focus-left: 16px; --focus-right: 16px; }
-	.canvas-pane.panel-left { --focus-left: calc(var(--left-w) + 32px); }
 	.canvas-pane.panel-right { --focus-right: calc(var(--right-w) + 32px); }
 	/* Outline and Browse float over the canvas ground as a centered sheet,
-	   matching the side panels' chrome instead of filling edge to edge. Unlike
-	   the canvas, the sheet has content a panel would occlude, so open panels
-	   claim their strip and the sheet re-centers in what remains: 50% - 550px
+	   matching the side panel's chrome instead of filling edge to edge. Unlike
+	   the canvas, the sheet has content a panel would occlude, so an open panel
+	   claims its strip and the sheet re-centers in what remains: 50% - 550px
 	   centers the 1100px cap, and the inset difference re-biases that center;
 	   the max() stops the sheet at the panel edge once space runs out. */
 	.canvas-pane.alternate {
@@ -298,11 +280,9 @@
 		box-shadow: var(--shadow-menu);
 		overflow: hidden;
 	}
-	.canvas-pane.alternate.panel-left { --sheet-left: calc(var(--left-w) + 32px); }
 	.canvas-pane.alternate.panel-right { --sheet-right: calc(var(--right-w) + 32px); }
 	/* The canvas owns the viewport; panels never change its geometry. */
 	.floating-panel { position: absolute; top: var(--workspace-top); bottom: calc(var(--dock-space) + 64px); z-index: 25; background: var(--paper-panel); border: 1px solid var(--hairline); border-radius: 12px; box-shadow: var(--shadow-menu); }
-	.left { left: 16px; width: var(--left-w); }
 	.right-panel { right: 16px; width: var(--right-w); }
 	.panel-content { height: 100%; overflow: auto; border-radius: inherit; }
 	.panel-content[hidden], .floating-panel[hidden] { display: none; }
@@ -318,9 +298,9 @@
 		.workspace-identity, .panel-switcher { max-width: 100%; }
 		.panel-switcher { width: 100%; justify-content: space-between; }
 		.panel-switcher button { padding: 8px 6px; font-size: var(--fs-11); }
-		.left, .right-panel { left: 8px; right: 8px; width: auto; }
-		/* Panels are full-width overlays here; yielding would crush the sheet. */
-		.canvas-pane.alternate.panel-left, .canvas-pane.alternate.panel-right { --sheet-left: 16px; --sheet-right: 16px; }
+		.right-panel { left: 8px; right: 8px; width: auto; }
+		/* The panel is a full-width overlay here; yielding would crush the sheet. */
+		.canvas-pane.alternate.panel-right { --sheet-left: 16px; --sheet-right: 16px; }
 		.tool-dock { bottom: 8px; left: 8px; right: 8px; max-width: calc(100% - 16px); }
 	}
 	.toast {

@@ -205,7 +205,7 @@
 		color: var(--ink-faded);
 		white-space: nowrap;
 	}
-	/* The bound specimen-tag pairings, same as cards and the library. */
+	/* The bound specimen-tag pairings, same as cards and search. */
 	.chip.type-claim { background: var(--moss); color: var(--moss-ink); }
 	.chip.type-question { background: var(--violet); color: var(--violet-ink); }
 	.chip.type-concept { background: var(--slate); color: var(--slate-ink); }

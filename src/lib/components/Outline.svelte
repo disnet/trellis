@@ -218,7 +218,7 @@
 	{#if entries.length === 0}
 		<div class="empty">
 			{ws.lensActive
-				? 'The group is empty — add thoughts from the library or browse.'
+				? 'The group is empty — add thoughts with search (⌘K) or from Browse.'
 				: 'The graph is empty — write a thought or decompose scratch text to begin.'}
 		</div>
 	{:else}

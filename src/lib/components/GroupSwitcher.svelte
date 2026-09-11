@@ -22,7 +22,7 @@
 	}
 	async function create(close: () => void) {
 		close();
-		const name = await dialogs.prompt('Give this group a name. Add thoughts to it from the canvas or library.', '', 'New group', 40);
+		const name = await dialogs.prompt('Give this group a name. Add thoughts to it from the canvas or with search (⌘K).', '', 'New group', 40);
 		if (name?.trim()) await run(() => ws.createSet(name.trim()), close);
 	}
 	async function manage(action: 'rename' | 'empty' | 'delete', close: () => void) {
