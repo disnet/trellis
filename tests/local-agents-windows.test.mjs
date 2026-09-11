@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { delimiter, dirname, join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createServer } from 'vite';
@@ -11,15 +11,20 @@ import { mockCli } from './mock-cli.mjs';
 const directory = await mkdtemp(join(tmpdir(), 'trellis-windows-test-'));
 process.env.TRELLIS_SETTINGS = join(directory, 'settings.json');
 const server = await createServer({ server: { middlewareMode: true, hmr: false, ws: false }, appType: 'custom' });
-const { cliCommand, resolveCli } = await server.ssrLoadModule('/src/lib/server/local-agents.ts');
+const { cliCommand, cliEnvironment, resolveCli } = await server.ssrLoadModule('/src/lib/server/local-agents.ts');
 
 // Windows CLI discovery and launching are checked from any host: the module
 // reads process.platform when called, so load it first and then claim Windows.
 // Its path helpers stay bound to this host, so expectations stay host-shaped.
 const platform = Object.getOwnPropertyDescriptor(process, 'platform');
 Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+const path = process.env.PATH;
+const pathext = process.env.PATHEXT;
 after(async () => {
   Object.defineProperty(process, 'platform', platform);
+  delete process.env.Path;
+  process.env.PATH = path;
+  if (pathext === undefined) delete process.env.PATHEXT; else process.env.PATHEXT = pathext;
   await server.close();
   await rm(directory, { recursive: true, force: true });
 });
@@ -65,9 +70,26 @@ test('PATH discovery skips npm\'s extensionless shell script for the shim Window
   await writeFile(join(home, 'codex'), '#!/bin/sh\n', { mode: 0o755 });
   await writeFile(join(home, 'codex.cmd'), '@echo off\r\n', { mode: 0o755 });
   process.env.PATH = home;
-  // PATHEXT supplies the extension, so its casing rides along; Windows does
-  // not care, and the launcher matches the extension case-insensitively.
+  // PATHEXT is spelled in capitals and npm writes its shims in lower case.
+  // Windows does not care, so the launcher must not either.
+  process.env.PATHEXT = '.COM;.EXE;.BAT;.CMD';
+  assert.equal(resolveCli('codex-cli'), join(home, 'codex.cmd'));
+  await rm(home, { recursive: true, force: true });
+});
+
+// Windows spells the variable "Path", and a copy of process.env keeps that
+// spelling even though the OS looks it up case-insensitively, so discovery has
+// to accept it. Here the lower-case name really is a separate variable, which
+// is exactly the shape the copy has on Windows.
+test('discovery reads the search path under the spelling Windows gives it', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'trellis-windows-path-'));
+  await writeFile(join(home, 'codex.cmd'), '@echo off\r\n', { mode: 0o755 });
+  delete process.env.PATH;
+  process.env.Path = home;
+  assert.ok(cliEnvironment().PATH.split(delimiter).includes(home));
   assert.equal(resolveCli('codex-cli').toLowerCase(), join(home, 'codex.cmd').toLowerCase());
+  // One spelling goes out to the CLI, so it cannot inherit a stale search path.
+  assert.equal(Object.keys(cliEnvironment()).filter(name => name.toLowerCase() === 'path').length, 1);
   await rm(home, { recursive: true, force: true });
 });
 

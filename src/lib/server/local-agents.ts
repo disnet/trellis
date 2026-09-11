@@ -37,16 +37,24 @@ export function saveLocalSettings(value: LocalSettings) {
   writeFileSync(`${file}.tmp`, JSON.stringify(value, null, 2), { mode: 0o600 });
   renameSync(`${file}.tmp`, file);
 }
+// Windows environment names are case-insensitive, but a copy of process.env
+// keeps the casing the OS gave them, so PATH usually arrives spelled "Path".
+// Read whichever spelling is there and hand back a single PATH.
+function pathEntries(environment: NodeJS.ProcessEnv): [string, string | undefined][] {
+  return Object.entries(environment).filter(([name]) => name.toLowerCase() === 'path');
+}
 export function cliEnvironment(): NodeJS.ProcessEnv {
   const home = homedir();
   const environment = { ...process.env, ...(process.env.TRELLIS_DESKTOP ? getShellEnvironment() : {}) };
-  const dirs = [dirname(process.execPath), ...(environment.PATH ?? '').split(delimiter),
+  const current = pathEntries(environment).pop()?.[1] ?? '';
+  const dirs = [dirname(process.execPath), ...current.split(delimiter),
     join(home, '.local/bin'), join(home, '.npm-global/bin'), join(home, '.volta/bin'),
     ...(isWindows() ? [join(environment.APPDATA ?? home, 'npm')]
       : ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin'])];
   const nvm = join(home, '.nvm/versions/node');
   if (existsSync(nvm)) for (const version of readdirSync(nvm).sort().reverse()) dirs.push(join(nvm, version, 'bin'));
-  return { ...environment, PATH: [...new Set(dirs.filter(Boolean))].join(delimiter) };
+  const withoutPath = Object.fromEntries(Object.entries(environment).filter(([name]) => name.toLowerCase() !== 'path'));
+  return { ...withoutPath, PATH: [...new Set(dirs.filter(Boolean))].join(delimiter) };
 }
 // Windows resolves a bare command name through PATHEXT, and npm installs an
 // extensionless shell script beside its .cmd shim, so only extension matches
@@ -54,7 +62,10 @@ export function cliEnvironment(): NodeJS.ProcessEnv {
 function executableNames(name: string): string[] {
   if (!isWindows()) return [name];
   const extensions = (process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean);
-  return extensions.some(ext => name.toLowerCase().endsWith(ext.toLowerCase())) ? [name] : extensions.map(ext => name + ext);
+  if (extensions.some(ext => name.toLowerCase().endsWith(ext.toLowerCase()))) return [name];
+  // PATHEXT is spelled in capitals while npm writes its shims in lower case,
+  // which Windows itself ignores but a case-sensitive volume does not.
+  return [...new Set(extensions.flatMap(ext => [name + ext.toLowerCase(), name + ext]))];
 }
 export function resolveCli(provider: LocalProvider, override?: string): string {
   const command = provider === 'claude-cli' ? 'claude' : 'codex';
