@@ -35,6 +35,7 @@ import {
 	type ProposedThoughtFields,
 	type ReentrySummary,
 	type Relation,
+	type RelationType,
 	type ScratchNote,
 	type Thought,
 	type ThoughtRevision,
@@ -1054,6 +1055,98 @@ export function reviseThought(
 			 VALUES (?, ?, ?, ?, ?, ?, ?, 'human', NULL, 0, ?)`
 		).run(id('rev'), thoughtId, fields.title, fields.statement, fields.status, confidence, source, now);
 	})();
+	return null;
+}
+
+// --- manual relations (from the inspector) ---
+// Relations the person draws by hand: direct and immediate, like every other
+// human edit — never through the proposal tray. created_by 'human' keeps them
+// distinguishable from agent-proposed connections.
+
+export function createRelation(fields: {
+	fromThoughtId: string;
+	toThoughtId: string;
+	type: RelationType;
+}): string | null {
+	const { fromThoughtId: from, toThoughtId: to, type } = fields;
+	if (typeof from !== 'string' || typeof to !== 'string') return 'Invalid thought ids.';
+	if (!RELATION_TYPES.includes(type)) return 'Invalid relation type.';
+	if (from === to) return 'A relation needs two different thoughts.';
+	const graphId = activeGraphId();
+	const exists = db.prepare('SELECT 1 FROM thoughts WHERE id = ? AND graph_id = ?');
+	if (!exists.get(from, graphId) || !exists.get(to, graphId)) return 'Unknown thought.';
+	if (
+		db
+			.prepare(
+				'SELECT 1 FROM relations WHERE graph_id = ? AND from_thought_id = ? AND to_thought_id = ? AND type = ?'
+			)
+			.get(graphId, from, to, type)
+	)
+		return 'These thoughts are already related this way.';
+	const activeSet = activeWorkingSetId(graphId);
+	db.transaction(() => {
+		db.prepare(
+			`INSERT INTO relations (id, from_thought_id, to_thought_id, type, created_by, source_change_set_id, graph_id, created_at)
+			 VALUES (?, ?, ?, ?, 'human', NULL, ?, ?)`
+		).run(id('r'), from, to, type, graphId, Date.now());
+		// Same as the agent path: pull both endpoints into the active lens so the
+		// new relation lands in focus.
+		if (activeSet)
+			for (const end of [from, to])
+				db.prepare(
+					'INSERT INTO working_set_items (working_set_id, thought_id) VALUES (?, ?) ON CONFLICT DO NOTHING'
+				).run(activeSet, end);
+	})();
+	return null;
+}
+
+/** Change a relation's type or flip its direction. The edited form is
+ *  human-authored, so created_by becomes 'human'; source_change_set_id keeps
+ *  the agent origin when there was one. */
+export function updateRelation(
+	relationId: string,
+	fields: { type?: RelationType; reverse?: boolean }
+): string | null {
+	if (typeof relationId !== 'string') return 'Invalid relation id.';
+	const graphId = activeGraphId();
+	const row = db
+		.prepare('SELECT * FROM relations WHERE id = ? AND graph_id = ?')
+		.get(relationId, graphId) as any;
+	if (!row) return 'Unknown relation.';
+	const type = fields.type === undefined ? (row.type as RelationType) : fields.type;
+	if (!RELATION_TYPES.includes(type)) return 'Invalid relation type.';
+	const reverse = fields.reverse === true;
+	if (type === row.type && !reverse) return null;
+	const from = reverse ? row.to_thought_id : row.from_thought_id;
+	const to = reverse ? row.from_thought_id : row.to_thought_id;
+	if (
+		db
+			.prepare(
+				'SELECT 1 FROM relations WHERE graph_id = ? AND from_thought_id = ? AND to_thought_id = ? AND type = ? AND id != ?'
+			)
+			.get(graphId, from, to, type, relationId)
+	)
+		return 'These thoughts are already related this way.';
+	db.prepare(
+		`UPDATE relations SET from_thought_id = ?, to_thought_id = ?, type = ?, created_by = 'human' WHERE id = ?`
+	).run(from, to, type, relationId);
+	return null;
+}
+
+/** Remove a relation outright. Like deleting a thought, it snapshots the
+ *  graph first, so the one Undo covers it. */
+export function deleteRelation(relationId: string): string | null {
+	if (typeof relationId !== 'string') return 'Invalid relation id.';
+	const graphId = activeGraphId();
+	const row = db
+		.prepare('SELECT * FROM relations WHERE id = ? AND graph_id = ?')
+		.get(relationId, graphId) as any;
+	if (!row) return 'Unknown relation.';
+	const snapshot = JSON.stringify(exportState(graphId, { includeProse: false }));
+	db.prepare('DELETE FROM relations WHERE id = ?').run(relationId);
+	setMeta(`undo_snapshot:${graphId}`, snapshot);
+	setMeta(`undo_label:${graphId}`, `Removed a ${(row.type as string).replace('_', ' ')} relation`);
+	setMeta(`undo_kind:${graphId}`, 'delete');
 	return null;
 }
 

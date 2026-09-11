@@ -19,6 +19,7 @@ import {
 	type ProposedOperation,
 	type ReentrySummary,
 	type Relation,
+	type RelationType,
 	type ScratchNote,
 	type Thought,
 	type ThoughtStatus,
@@ -1214,6 +1215,31 @@ class Workspace {
 		)
 			return null;
 		return this.post(`/api/thoughts/${id}/revise`, fields);
+	}
+
+	// --- manual relations (from the inspector) ---
+
+	/** Draw a relation by hand — direct and human-authored, never through the
+	 *  proposal tray. */
+	async createRelation(
+		fromThoughtId: string,
+		toThoughtId: string,
+		type: RelationType
+	): Promise<string | null> {
+		return this.post('/api/relations', { fromThoughtId, toThoughtId, type });
+	}
+
+	/** Change a relation's type, or flip its direction with `reverse`. */
+	async updateRelation(
+		relationId: string,
+		fields: { type?: RelationType; reverse?: boolean }
+	): Promise<string | null> {
+		return this.post('/api/relations', { action: 'update', relationId, ...fields });
+	}
+
+	/** Remove a relation. The server snapshots first, so Undo covers it. */
+	async deleteRelation(relationId: string): Promise<string | null> {
+		return this.post('/api/relations', { action: 'delete', relationId });
 	}
 
 	// --- deletion ---

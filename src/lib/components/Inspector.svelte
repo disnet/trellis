@@ -2,7 +2,12 @@
 	import { workspace } from '$lib/workspace.svelte';
 	import { dialogs } from '$lib/dialogs.svelte';
 	import SideConversation from './SideConversation.svelte';
-	import { formatConfidence, type Confidence, type ThoughtStatus } from '$lib/types';
+	import {
+		formatConfidence,
+		type Confidence,
+		type RelationType,
+		type ThoughtStatus
+	} from '$lib/types';
 
 	const ws = workspace;
 
@@ -22,11 +27,99 @@
 	let editResolveBy = $state('');
 	let editSource = $state('');
 
+	// Leaving edit mode whenever the selection changes — but only then: every
+	// applied edit refreshes state and replaces the thought object, and that
+	// must not kick the person out of an open editor.
+	let lastInspectedId: string | undefined;
 	$effect(() => {
-		// Leaving edit mode whenever the selection changes.
-		void thought?.id;
+		const tid = thought?.id;
+		if (tid === lastInspectedId) return;
+		lastInspectedId = tid;
 		editing = false;
+		addingRelation = false;
+		editingRelationId = null;
 	});
+
+	// --- manual relations ---
+	// Drawing or fixing a connection by hand: a direct human edit, instant like
+	// revision — never routed through the proposal tray.
+
+	const relationTypes: RelationType[] = [
+		'supports',
+		'contradicts',
+		'depends_on',
+		'example_of',
+		'supersedes',
+		'related_to'
+	];
+
+	let addingRelation = $state(false);
+	let relType = $state<RelationType>('related_to');
+	let relOutgoing = $state(true);
+	let relQuery = $state('');
+	let relTargetId = $state<string | null>(null);
+	let editingRelationId = $state<string | null>(null);
+
+	const relTarget = $derived(relTargetId ? ws.thoughts[relTargetId] : undefined);
+	const relCandidates = $derived.by(() => {
+		if (!thought) return [];
+		const q = relQuery.trim().toLowerCase();
+		return Object.values(ws.thoughts)
+			.filter(
+				(t) =>
+					t.id !== thought.id &&
+					(q === '' ||
+						t.title.toLowerCase().includes(q) ||
+						t.statement.toLowerCase().includes(q))
+			)
+			.sort((a, b) => a.title.localeCompare(b.title))
+			.slice(0, 6);
+	});
+
+	function startAddRelation() {
+		relType = 'related_to';
+		relOutgoing = true;
+		relQuery = '';
+		relTargetId = null;
+		addingRelation = true;
+	}
+
+	async function addRelation() {
+		if (!thought || !relTargetId) return;
+		const from = relOutgoing ? thought.id : relTargetId;
+		const to = relOutgoing ? relTargetId : thought.id;
+		const err = await ws.createRelation(from, to, relType);
+		if (err) {
+			ws.notice = err;
+			return;
+		}
+		addingRelation = false;
+	}
+
+	async function removeRelation(relationId: string) {
+		const err = await ws.deleteRelation(relationId);
+		ws.notice = err ?? 'Removed the relation. Undo brings it back.';
+		if (!err) editingRelationId = null;
+	}
+
+	// Connecting the two selected thoughts straight from the canvas selection.
+	const pair = $derived(
+		ws.selectedIds.length === 2
+			? ws.selectedIds.map((sid) => ws.thoughts[sid]).filter(Boolean)
+			: []
+	);
+	let pairForward = $state(true);
+
+	async function connectPair() {
+		if (pair.length !== 2) return;
+		const [a, b] = pairForward ? [pair[0], pair[1]] : [pair[1], pair[0]];
+		const err = await ws.createRelation(a.id, b.id, relType);
+		if (err) {
+			ws.notice = err;
+			return;
+		}
+		ws.notice = 'Connected.';
+	}
 
 	function startEdit() {
 		if (!thought) return;
@@ -124,6 +217,23 @@
 				? `${ws.selectedIds.length} thoughts selected.`
 				: 'Select a thought to inspect it.'}
 		</p>
+		{#if pair.length === 2}
+			<div class="rel-form">
+				<span class="endpoint">{pairForward ? pair[0].title : pair[1].title}</span>
+				<div class="row">
+					<select bind:value={relType} aria-label="Relation type">
+						{#each relationTypes as rt (rt)}
+							<option value={rt}>{rt.replace('_', ' ')}</option>
+						{/each}
+					</select>
+					<button title="Reverse direction" onclick={() => (pairForward = !pairForward)}>⇄</button>
+				</div>
+				<span class="endpoint">{pairForward ? pair[1].title : pair[0].title}</span>
+				<div class="row">
+					<button class="primary" onclick={connectPair}>Connect</button>
+				</div>
+			</div>
+		{/if}
 	{:else}
 		{#if editing}
 			<div class="edit-form">
@@ -249,18 +359,95 @@
 		{/if}
 
 		<SideConversation thoughtId={thought.id} />
-		<h4>Relations</h4>
+		<div class="rel-head">
+			<h4>Relations</h4>
+			{#if !addingRelation}
+				<button class="quiet" title="Draw a relation by hand" onclick={startAddRelation}>
+					+ Add
+				</button>
+			{/if}
+		</div>
+		{#if addingRelation}
+			<div class="rel-form">
+				<div class="row rel-sentence">
+					<span class="endpoint">{relOutgoing ? 'This thought' : (relTarget?.title ?? '…')}</span>
+					<select bind:value={relType} aria-label="Relation type">
+						{#each relationTypes as rt (rt)}
+							<option value={rt}>{rt.replace('_', ' ')}</option>
+						{/each}
+					</select>
+					<span class="endpoint">{relOutgoing ? (relTarget?.title ?? '…') : 'This thought'}</span>
+					<button title="Reverse direction" onclick={() => (relOutgoing = !relOutgoing)}>⇄</button>
+				</div>
+				{#if relTarget}
+					<div class="row">
+						<button class="link" onclick={() => (relTargetId = null)}>Change thought…</button>
+					</div>
+				{:else}
+					<input placeholder="Find a thought…" bind:value={relQuery} />
+					<ul class="plain candidates">
+						{#each relCandidates as c (c.id)}
+							<li>
+								<button class="link" onclick={() => (relTargetId = c.id)}>{c.title}</button>
+							</li>
+						{:else}
+							<li class="hint">No matching thoughts.</li>
+						{/each}
+					</ul>
+				{/if}
+				<div class="row">
+					<button class="primary" disabled={!relTargetId} onclick={addRelation}>
+						Add relation
+					</button>
+					<button onclick={() => (addingRelation = false)}>Cancel</button>
+				</div>
+			</div>
+		{/if}
 		{#if relations.length === 0}
-			<p class="hint">No relations yet.</p>
+			{#if !addingRelation}<p class="hint">No relations yet.</p>{/if}
 		{:else}
 			<ul class="plain">
 				{#each relations as r (r.id)}
 					{@const outgoing = r.fromThoughtId === thought.id}
 					{@const other = ws.thoughts[outgoing ? r.toThoughtId : r.fromThoughtId]}
 					<li class="relation">
-						<span class="rel-type">{outgoing ? '→' : '←'} {r.type.replace('_', ' ')}</span>
-						<button class="link" onclick={() => ws.select(other.id)}>{other?.title}</button>
-						<span class="meta">{r.createdBy === 'agent' ? '✳ agent' : '✎ you'}</span>
+						{#if editingRelationId === r.id}
+							<select
+								value={r.type}
+								aria-label="Relation type"
+								onchange={(e) =>
+									run(() =>
+										ws.updateRelation(r.id, {
+											type: e.currentTarget.value as RelationType
+										})
+									)}
+							>
+								{#each relationTypes as rt (rt)}
+									<option value={rt}>{rt.replace('_', ' ')}</option>
+								{/each}
+							</select>
+							<span class="rel-type">{outgoing ? '→' : '←'}</span>
+							<button class="link" onclick={() => ws.select(other.id)}>{other?.title}</button>
+							<button
+								title="Reverse direction"
+								onclick={() => run(() => ws.updateRelation(r.id, { reverse: true }))}
+							>
+								⇄
+							</button>
+							<button class="delete-rel" onclick={() => removeRelation(r.id)}>Remove</button>
+							<button onclick={() => (editingRelationId = null)}>Done</button>
+						{:else}
+							<span class="rel-type">{outgoing ? '→' : '←'} {r.type.replace('_', ' ')}</span>
+							<button class="link" onclick={() => ws.select(other.id)}>{other?.title}</button>
+							<span class="meta">{r.createdBy === 'agent' ? '✳ agent' : '✎ you'}</span>
+							<button
+								class="quiet"
+								title="Change the type or direction, or remove it"
+								onclick={() => (editingRelationId = r.id)}
+							>
+								Edit
+							</button>
+						{/if}
 					</li>
 				{/each}
 			</ul>
@@ -465,6 +652,84 @@
 		color: var(--ink-faded);
 		font-weight: 600;
 		white-space: nowrap;
+	}
+	.rel-head {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		margin-top: 16px;
+	}
+	.rel-head h4 {
+		margin: 0;
+	}
+	/* Quiet affordances (add / edit a relation): present but not clamoring,
+	   like the delete button — the graph's relations are mostly read. */
+	button.quiet {
+		border-color: transparent;
+		color: var(--ink-quiet);
+		padding: 2px 6px;
+		font-size: var(--fs-11);
+	}
+	button.quiet:hover {
+		border-color: var(--blue);
+		color: var(--blue);
+	}
+	.rel-form {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		margin: 6px 0 10px;
+		font-size: var(--fs-12);
+	}
+	.rel-form select,
+	.rel-form input {
+		font: inherit;
+		font-size: var(--fs-12);
+		border: 1px solid var(--control-border);
+		border-radius: 6px;
+		padding: 4px 6px;
+		background: var(--paper-raised);
+		color: var(--ink);
+		min-width: 0;
+	}
+	.rel-sentence {
+		align-items: center;
+		flex-wrap: wrap;
+	}
+	.endpoint {
+		font-weight: 600;
+		color: var(--ink-soft);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		max-width: 100%;
+	}
+	.candidates {
+		gap: 4px;
+		max-height: 160px;
+		overflow-y: auto;
+	}
+	.relation select {
+		font: inherit;
+		font-size: var(--fs-11);
+		border: 1px solid var(--control-border);
+		border-radius: 6px;
+		padding: 2px 4px;
+		background: var(--paper-raised);
+		color: var(--ink);
+	}
+	.relation button:not(.link) {
+		padding: 2px 6px;
+		font-size: var(--fs-11);
+	}
+	.relation button.delete-rel {
+		border-color: transparent;
+		color: var(--ink-quiet);
+	}
+	.relation button.delete-rel:hover {
+		border-color: var(--rust);
+		background: var(--rust-wash);
+		color: var(--rust);
 	}
 	.meta {
 		font-size: var(--fs-11);
