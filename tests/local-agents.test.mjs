@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
-import { mkdtemp, writeFile, rm, readFile } from 'node:fs/promises';
+import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'vite';
+import { mockCli } from './mock-cli.mjs';
 const directory = await mkdtemp(join(tmpdir(), 'trellis-setup-test-'));
 process.env.TRELLIS_SETTINGS = join(directory, 'settings.json');
 const server = await createServer({ server: { middlewareMode: true, hmr: false, ws: false }, appType: 'custom' });
@@ -15,11 +16,7 @@ function request(body, origin = 'http://localhost', contentType = 'application/j
   const url = new URL('http://localhost/api/local-agents');
   return POST({ url, request: new Request(url, { method: 'POST', headers: { origin, 'content-type': contentType }, body: JSON.stringify(body) }) });
 }
-async function mock(name, code) {
-  const bin = join(directory, name);
-  await writeFile(bin, `#!${process.execPath}\n${code}`, { mode: 0o755 });
-  return bin;
-}
+const mock = (name, code) => mockCli(directory, name, code);
 test('settings endpoint rejects cross-origin requests and invalid paths without running executables', async () => {
   assert.equal((await request({ action: 'load' }, 'https://example.com')).status, 403);
   assert.equal((await request({ action: 'load' }, 'http://localhost', 'text/plain')).status, 403);
@@ -83,7 +80,7 @@ else if (process.argv[2] === 'auth') {
     const { makeClaudeCliAdapter } = await server.ssrLoadModule('/src/lib/server/agent/claude-cli.ts');
     const generated = await makeClaudeCliAdapter().generate({ action: 'decompose', context: { thoughts: [], relations: [], selectedIds: [], scratch: { id: 's1', body: 'Test.' } } });
     assert.equal(generated.proposal.summary, 'Authenticated');
-    await writeFile(shell, `#!${process.execPath}\nprocess.stdout.write('\\0CLAUDE_CODE_OAUTH_TOKEN=changed\\0');`);
+    await mock('mock-login-shell', `process.stdout.write('\\0CLAUDE_CODE_OAUTH_TOKEN=changed\\0');`);
     assert.equal((await inspectCli('claude-cli', bin)).status, 'signed-out');
   } finally {
     for (const [key, value] of [['SHELL', previous.shell], ['TRELLIS_DESKTOP', previous.desktop], ['CLAUDE_CODE_OAUTH_TOKEN', previous.token]]) {
@@ -92,7 +89,7 @@ else if (process.argv[2] === 'auth') {
   }
 });
 
-test('shell startup failures never expose captured credentials', async () => {
+test('shell startup failures never expose captured credentials', { skip: process.platform === 'win32' && 'the login shell import is macOS-only' }, async () => {
   const { readShellEnvironment } = await server.ssrLoadModule('/src/lib/server/shell-environment.ts');
   const shell = await mock('broken-shell', `console.error('private-token-value'); process.exit(1);`);
   await assert.rejects(readShellEnvironment(shell), error => {

@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
-import { mkdtemp, writeFile, rm, access } from 'node:fs/promises';
+import { mkdtemp, rm, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'vite';
+import { mockCli } from './mock-cli.mjs';
 
 process.env.TRELLIS_DB = ':memory:';
 const server = await createServer({ server: { middlewareMode: true, hmr: false, ws: false }, appType: 'custom' });
@@ -50,9 +51,7 @@ test('reasoning effort reaches each provider, and only models that accept it', a
 	// setting is dropped rather than allowed to fail the call.
 	assert.deepEqual(sent.map((r) => r.output_config.effort), ['xhigh', undefined, undefined]);
 
-	const bin = join(directory, 'effort-codex');
-	await writeFile(bin, `#!/usr/bin/env node
-const fs = require('node:fs');
+	const bin = await mockCli(directory, 'effort-codex', `const fs = require('node:fs');
 const args = process.argv.slice(2);
 const configs = args.flatMap((a, i) => a === '-c' ? [args[i + 1]] : []);
 process.stdin.resume();
@@ -60,22 +59,20 @@ process.stdin.on('end', () => {
   fs.writeFileSync(args[args.indexOf('--output-last-message') + 1],
     JSON.stringify({ summary: configs.join('|'), operations: [] }));
 });
-`, { mode: 0o755 });
+`);
 	process.env.TRELLIS_CODEX_BIN = bin;
 	const codex = (effort) => selectAdapter(deps, { provider: 'codex-cli', model: '', effort })
 		.generate({ action: 'decompose', context });
 	assert.match((await codex('low')).proposal.summary, /model_reasoning_effort="low"/);
 	assert.doesNotMatch((await codex(undefined)).proposal.summary, /model_reasoning_effort/);
 
-	const claudeBin = join(directory, 'effort-claude');
-	await writeFile(claudeBin, `#!/usr/bin/env node
-const args = process.argv.slice(2);
+	const claudeBin = await mockCli(directory, 'effort-claude', `const args = process.argv.slice(2);
 const effort = args.includes('--effort') ? args[args.indexOf('--effort') + 1] : 'unset';
 process.stdin.resume();
 process.stdin.on('end', () => {
   console.log(JSON.stringify({ structured_output: { summary: effort, operations: [] } }));
 });
-`, { mode: 0o755 });
+`);
 	process.env.TRELLIS_CLAUDE_BIN = claudeBin;
 	const claude = (effort) => selectAdapter(deps, { provider: 'claude-cli', model: 'sonnet', effort })
 		.generate({ action: 'decompose', context });
@@ -92,15 +89,13 @@ test('the activity log records the effort actually sent, not the one requested',
 		op: 'revise_thought', client_ref: 'r1', depends_on: [], evidence_refs: [thoughtId], rationale: 'Clarify.',
 		thought_id: thoughtId, thought: { title: 'Clearer title', type: null, status: null, statement: null, confidence: null, source: null }
 	}] };
-	const bin = join(directory, 'logged-codex');
-	await writeFile(bin, `#!/usr/bin/env node
-const fs = require('node:fs');
+	const bin = await mockCli(directory, 'logged-codex', `const fs = require('node:fs');
 const args = process.argv.slice(2);
 process.stdin.resume();
 process.stdin.on('end', () => {
   fs.writeFileSync(args[args.indexOf('--output-last-message') + 1], ${JSON.stringify(JSON.stringify(valid))});
 });
-`, { mode: 0o755 });
+`);
 	process.env.TRELLIS_CODEX_BIN = bin;
 	const effortOf = (model) =>
 		db.prepare('SELECT effort FROM agent_calls WHERE model = ? ORDER BY rowid DESC').get(model)?.effort;
@@ -120,9 +115,7 @@ process.stdin.on('end', () => {
 });
 
 test('Codex uses isolated structured output, normalizes nullable revisions, and cleans up', async () => {
-	const bin = join(directory, 'mock-codex');
-	await writeFile(bin, `#!/usr/bin/env node
-const fs = require('node:fs');
+	const bin = await mockCli(directory, 'mock-codex', `const fs = require('node:fs');
 const assert = require('node:assert/strict');
 const args = process.argv.slice(2);
 const flag = (name) => args[args.indexOf(name) + 1];
@@ -152,7 +145,7 @@ process.stdin.on('end', () => {
     thought_id: 't1', thought: { title: 'Better title', type: null, status: null, statement: null, confidence: null, source: null }
   }] }));
 });
-`, { mode: 0o755 });
+`);
 	process.env.TRELLIS_CODEX_BIN = bin;
 	const adapter = selectAdapter(deps, { provider: 'codex-cli', model: 'test-model' });
 	const result = await adapter.generate({ action: 'develop', context, feedback: { raw: '{}', errors: ['Fix the title'] } });
@@ -182,14 +175,12 @@ test('malformed Codex output gets corrective retry and logs selected model witho
 	const before = getState();
 	const thoughtId = Object.keys(before.thoughts)[0];
 	assert(thoughtId);
-	const bin = join(directory, 'retry-codex');
 	const counter = join(directory, 'attempt');
 	const valid = { summary: 'Refined the claim.', operations: [{
 		op: 'revise_thought', client_ref: 'r1', depends_on: [], evidence_refs: [thoughtId], rationale: 'Clarify.',
 		thought_id: thoughtId, thought: { title: 'Clearer title', type: null, status: null, statement: null, confidence: null, source: null }
 	}] };
-	await writeFile(bin, `#!/usr/bin/env node
-const fs = require('node:fs');
+	const bin = await mockCli(directory, 'retry-codex', `const fs = require('node:fs');
 const args = process.argv.slice(2);
 const counter = ${JSON.stringify(counter)};
 let input = '';
@@ -200,7 +191,7 @@ process.stdin.on('end', () => {
   fs.writeFileSync(counter, '1');
   fs.writeFileSync(args[args.indexOf('--output-last-message') + 1], retry ? ${JSON.stringify(JSON.stringify(valid))} : 'not JSON');
 });
-`, { mode: 0o755 });
+`);
 	process.env.TRELLIS_CODEX_BIN = bin;
 	const result = await generateProposal('develop', [thoughtId], undefined, { provider: 'codex-cli', model: 'retry-model' });
 	assert.equal(result.ok, true);
@@ -213,14 +204,12 @@ process.stdin.on('end', () => {
 });
 
 test('Codex nonzero exit is surfaced even if it wrote output', async () => {
-	const bin = join(directory, 'failed-codex');
-	await writeFile(bin, `#!/usr/bin/env node
-const fs = require('node:fs');
+	const bin = await mockCli(directory, 'failed-codex', `const fs = require('node:fs');
 const args = process.argv.slice(2);
 fs.writeFileSync(args[args.indexOf('--output-last-message') + 1], '{}');
 console.error('Please run codex login');
 process.exit(1);
-`, { mode: 0o755 });
+`);
 	process.env.TRELLIS_CODEX_BIN = bin;
 	await assert.rejects(selectAdapter(deps, { provider: 'codex-cli', model: '' }).generate({ action: 'decompose', context }), /code 1.*codex login/);
 });

@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
-import { mkdtemp, writeFile, readFile, rm, access } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'vite';
+import { mockCli } from './mock-cli.mjs';
 
 process.env.TRELLIS_DB = ':memory:';
 const server = await createServer({ server: { middlewareMode: true, hmr: false, ws: false }, appType: 'custom' });
@@ -52,10 +53,8 @@ test('Anthropic prose uses structured output without tools and retries invalid c
 });
 
 test('Claude prose captures structured stdout, disables tools, and retries malformed output', async () => {
-	const bin = join(directory, 'claude');
 	const counter = join(directory, 'claude-attempt');
-	await writeFile(bin, `#!/usr/bin/env node
-const fs = require('node:fs');
+	const bin = await mockCli(directory, 'claude', `const fs = require('node:fs');
 const args = process.argv.slice(2);
 if (args[args.indexOf('--tools') + 1] !== '' || args[args.indexOf('--allowed-tools') + 1] !== '') process.exit(9);
 if (!args.includes('--strict-mcp-config') || !args.includes('--no-session-persistence')) process.exit(10);
@@ -69,7 +68,7 @@ process.stdin.on('end', () => {
  if (retry && !request.includes('Corrective retry')) process.exit(12);
  console.log(retry ? JSON.stringify({ structured_output: ${JSON.stringify(valid)} }) : 'malformed JSON');
 });
-`, { mode: 0o755 });
+`);
 	process.env.TRELLIS_CLAUDE_BIN = bin;
 	const result = await generateTreatment(input, { provider: 'claude-cli', model: 'prose-test-claude' });
 	assert.equal(result.body, valid.body);
@@ -78,10 +77,8 @@ process.stdin.on('end', () => {
 });
 
 test('Codex prose keeps isolation, disables shell/web, validates schema and cleans temporary workspace', async () => {
-	const bin = join(directory, 'codex');
 	const cwdFile = join(directory, 'codex-cwd');
-	await writeFile(bin, `#!/usr/bin/env node
-const fs = require('node:fs');
+	const bin = await mockCli(directory, 'codex', `const fs = require('node:fs');
 const args = process.argv.slice(2);
 for (const flag of ['--ignore-user-config', '--ephemeral', 'features.shell_tool=false', 'web_search="disabled"', 'approval_policy="never"']) if (!args.includes(flag)) process.exit(9);
 if (args[args.indexOf('--sandbox') + 1] !== 'read-only') process.exit(10);
@@ -90,7 +87,7 @@ if (schema.additionalProperties !== false || !schema.required.includes('body')) 
 fs.writeFileSync(${JSON.stringify(cwdFile)}, process.cwd());
 process.stdin.resume();
 process.stdin.on('end', () => fs.writeFileSync(args[args.indexOf('--output-last-message') + 1], ${JSON.stringify(JSON.stringify(valid))}));
-`, { mode: 0o755 });
+`);
 	process.env.TRELLIS_CODEX_BIN = bin;
 	const result = await generateTreatment(input, { provider: 'codex-cli', model: '' });
 	assert.equal(result.model, 'default');

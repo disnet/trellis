@@ -223,8 +223,9 @@ npm run test:desktop     # Build + localhost boot/auth/persistence/shutdown chec
 GitHub Actions runs `check` and `test` on every push and pull request
 (`.github/workflows/ci.yml`). Commits landing on `main` also build the desktop
 app on macOS and Windows runners (`.github/workflows/desktop.yml`), which run
-`test:desktop` against the runtime they just packaged and then upload the `.dmg`
-and the NSIS `.exe` as run artifacts, kept for 14 days. Both workflows can also
+`test` and `test:desktop` on the platform itself — CLI discovery and process
+launching differ there — and then upload the `.dmg` and the NSIS `.exe` as run
+artifacts, kept for 14 days. Both workflows can also
 be started by hand from the Actions tab. The Node version pinned there is the
 one the app ships, so change it deliberately.
 

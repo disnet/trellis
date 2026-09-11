@@ -49,6 +49,9 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
       - run: npm ci
+      # The suite covers CLI discovery and process launching, which differ per
+      # platform, so run it on the platform rather than trusting Linux for it.
+      - run: npm test
       # Packages this OS's runtime and boots it, so a broken bundled server or
       # native addon fails here rather than inside an installer someone ran.
       - run: npm run test:desktop

@@ -1,4 +1,5 @@
 import { json } from '@sveltejs/kit';
+import { isAbsolute } from 'node:path';
 import { isModelSelection } from '$lib/models';
 import { inspectCli, readLocalSettings, saveLocalSettings } from '$lib/server/local-agents';
 import type { RequestHandler } from './$types';
@@ -25,7 +26,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
     }
     if (!['claude-cli', 'codex-cli'].includes(body.provider) || typeof body.path !== 'string' ||
         body.path.length > 4096 || /[\x00-\x1f]/.test(body.path) ||
-        (body.path && !body.path.startsWith('/') && !body.path.startsWith('~/'))) {
+        (body.path && !body.path.startsWith('~/') && !isAbsolute(body.path))) {
       return json({ error: 'Enter an absolute executable path, or leave it blank for automatic detection.' }, { status: 400 });
     }
     const provider = body.provider as 'claude-cli' | 'codex-cli';

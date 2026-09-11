@@ -3,7 +3,10 @@ import { after, test } from 'node:test';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { createServer } from 'vite';
+import { mockCli } from './mock-cli.mjs';
 
 const directory = await mkdtemp(join(tmpdir(), 'trellis-windows-test-'));
 process.env.TRELLIS_SETTINGS = join(directory, 'settings.json');
@@ -27,15 +30,23 @@ test('a native executable is launched directly, without a console window', () =>
 });
 
 test('an npm .cmd shim runs its entry point on our own Node, not through a shell', async () => {
-  const entry = join(directory, 'cli.js');
-  await writeFile(entry, '');
-  const shim = join(directory, 'claude.cmd');
-  await writeFile(shim, ['@ECHO off', 'SETLOCAL', 'CALL :find_dp0',
-    'endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\cli.js" %*'].join('\r\n'));
+  // Via the shared mock, so the shim the other suites install stays one the
+  // launcher can still take apart.
+  const shim = await mockCli(directory, 'claude', "console.log('mock');");
   const command = cliCommand(shim, ['--version']);
   assert.equal(command.file, process.execPath);
-  assert.deepEqual(command.args, [entry, '--version']);
+  assert.deepEqual(command.args, [join(directory, 'claude.js'), '--version']);
   assert.equal(command.options.windowsVerbatimArguments, undefined);
+});
+
+// The unwrapped form is a plain Node invocation, so it runs anywhere: this
+// covers the whole chain the other suites lean on under Windows, short of
+// cmd.exe itself — shim written, parsed, and arguments delivered intact.
+test('launching the unwrapped shim reaches the CLI with its arguments whole', async () => {
+  const shim = await mockCli(directory, 'runnable', 'console.log(JSON.stringify(process.argv.slice(2)));');
+  const command = cliCommand(shim, ['--version', 'two words', 'quote"and\\slash']);
+  const { stdout } = await promisify(execFile)(command.file, command.args, command.options);
+  assert.deepEqual(JSON.parse(stdout), ['--version', 'two words', 'quote"and\\slash']);
 });
 
 test('an unreadable shim falls back to cmd.exe with quoting it cannot misread', async () => {
