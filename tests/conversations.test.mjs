@@ -160,9 +160,10 @@ test('live replies use a closed reply schema, reject proposal output, retry once
 	const reply = await generateReply({ state: 'proposed', thought: { title: 'An undecided idea' } }, thread, { provider: 'live', model: 'chat-test' }, { anthropicClient: client });
 	assert.equal(reply.body, 'We can clarify the boundary before changing anything.');
 	assert.equal(requests.length, 2);
-	assert.equal('tools' in requests[0], false);
+	assert.deepEqual(requests[0].tools.map(tool => tool.name), ['web_search', 'web_fetch']);
 	assert.equal(requests[0].output_config.format.schema.additionalProperties, false);
 	assert.match(requests[0].system, /cannot create, edit, accept, or reject/);
+	assert.match(requests[0].system, /Web search and web fetch tools may be available/);
 	assert.match(requests[1].messages[0].content, /Previous invalid output/);
 	assert.deepEqual(store.getState(), before);
 	const logs = db.prepare("SELECT * FROM agent_calls WHERE model = 'chat-test' ORDER BY rowid").all();
