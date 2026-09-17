@@ -36,6 +36,9 @@ export const GET: RequestHandler = () => {
 		// Several graphs can be published into one repository side by side.
 		gardens: liveGardens(),
 		lastRelease: lastReleaseOutcome(graphId),
-		gardenIdent: credentials.handle ?? credentials.did ?? null
+		gardenIdent: credentials.handle ?? credentials.did ?? null,
+		// The desktop app authorizes in the system browser, so its sign-in
+		// finishes out of the window's sight and has to be waited for.
+		desktop: !!process.env.TRELLIS_DESKTOP
 	});
 };

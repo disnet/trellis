@@ -23,11 +23,22 @@ truth; publishing is a deliberate act on a reviewed diff.
    The client_id embeds the app's port, so the sign-in origin is stored and
    reused for refresh; running on a new port just means signing in again.
    Because the redirect targets `127.0.0.1`, OAuth works only for the local
-   app — and the loopback flow is untested in the desktop webview. The dev
-   server is bound to `127.0.0.1` in `vite.config.ts` for this reason: Vite's
-   default `localhost` binds IPv6 `[::1]` only, so the redirect back to the
-   IPv4 literal would hit a closed port. Browse the app at
+   app. The dev server is bound to `127.0.0.1` in `vite.config.ts` for this
+   reason: Vite's default `localhost` binds IPv6 `[::1]` only, so the redirect
+   back to the IPv4 literal would hit a closed port. Browse the app at
    `http://127.0.0.1:5173`, not `localhost`.
+
+   In the desktop app the authorization page cannot open in the window: the
+   webview refuses any URL off the app's own origin and hands it to the system
+   browser, which is where it belongs — the user has their PDS session and a
+   URL bar there. The redirect therefore lands on the local server from *that*
+   browser, carrying neither the launch cookie nor an `Origin` header, so
+   `scripts/desktop-server.mjs` lets `GET /oauth/callback` through its gate and
+   nothing else; what guards the path is OAuth's own single-use `state` and
+   PKCE. The callback answers that browser with a plain "you can close this
+   tab" page rather than redirecting it to `/publish`, which it cannot load,
+   and the app window — which has been polling `/api/publish` since it started
+   the sign-in — picks the connection up within a second.
 
    The fallback for a PDS without OAuth is an app password, verified with
    `com.atproto.server.createSession`. Either way the resolved DID is stored

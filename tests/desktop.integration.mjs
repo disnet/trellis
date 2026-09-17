@@ -45,6 +45,15 @@ test('packaged backend boots, protects its API, persists data, and exits with it
   try {
     let { origin, headers } = await launch();
     assert.equal((await fetch(`${origin}/api/state`, { headers: { ...headers, origin: 'https://example.com' } })).status, 403);
+    // The OAuth redirect arrives from the system browser that showed the
+    // authorization page: no cookie, and no Origin, since it is a cross-site
+    // GET navigation. It has to reach the app, or the sign-in dies on the
+    // doorstep with its authorization code already spent. Nothing else does.
+    const callback = await fetch(`${origin}/oauth/callback?code=nope&state=nope`, { redirect: 'manual' });
+    assert.notEqual(callback.status, 403, 'the OAuth redirect is not turned away');
+    assert.match(await callback.text(), /Sign-in failed/, 'a bogus code is refused by OAuth itself');
+    assert.equal((await fetch(`${origin}/oauth/callback`, { method: 'POST' })).status, 403);
+    assert.equal((await fetch(`${origin}/publish`)).status, 403);
     const state = await (await fetch(`${origin}/api/state`, { headers })).json();
     assert.equal(state.desktop, true);
     assert(Object.keys(state.state.thoughts).length > 0);

@@ -69,6 +69,7 @@
 		};
 		lastRelease: OutcomeDto | null;
 		gardenIdent: string | null;
+		desktop: boolean;
 	}
 
 	let status = $state<StatusDto | null>(null);
@@ -77,6 +78,8 @@
 
 	// Account forms — OAuth first, app password as the fallback.
 	let oauthHandle = $state('');
+	/** Set while a desktop sign-in is being authorized in the system browser. */
+	let awaitingSignIn = $state(false);
 	let service = $state('https://bsky.social');
 	let identifier = $state('');
 	let appPassword = $state('');
@@ -159,8 +162,43 @@
 			notice = data.error;
 			return;
 		}
-		// Off to the PDS authorization page; it redirects back to /publish.
+		// In the desktop app the authorization page cannot open in this window:
+		// the webview refuses to leave the app's own origin and hands the URL to
+		// the system browser instead, where the user has their PDS session and a
+		// URL bar to check. The redirect then lands on the local server from
+		// *that* browser, so this window learns the outcome by watching for it.
+		if (status?.desktop) awaitingSignIn = true;
+		// Off to the PDS authorization page. On the web it redirects back here.
 		window.location.href = data.url;
+		if (status?.desktop) void waitForSignIn();
+	}
+
+	/** Poll until the callback stores the connected identity, the user gives
+	 *  up, or the authorization goes stale. */
+	async function waitForSignIn() {
+		const deadline = Date.now() + 5 * 60 * 1000;
+		while (awaitingSignIn && Date.now() < deadline) {
+			await new Promise((resolve) => setTimeout(resolve, 1000));
+			if (!awaitingSignIn) return;
+			const next = (await (await fetch('/api/publish')).json()) as StatusDto;
+			if (next.credentials.method === 'oauth' && next.credentials.did) {
+				awaitingSignIn = false;
+				busy = '';
+				notice = `Connected as ${next.credentials.handle ?? next.credentials.did}.`;
+				await load();
+				return;
+			}
+		}
+		if (!awaitingSignIn) return;
+		awaitingSignIn = false;
+		busy = '';
+		notice = 'The sign-in timed out. Start it again when you are ready.';
+	}
+
+	function cancelSignIn() {
+		awaitingSignIn = false;
+		busy = '';
+		notice = 'Sign-in cancelled. Any browser tab it opened can be closed.';
 	}
 
 	async function disconnect() {
@@ -343,7 +381,15 @@
 					{/if}
 				</div>
 			{/if}
-			{#if !connected || status.credentials.method !== 'oauth'}
+			{#if awaitingSignIn}
+				<div class="row oauth-row waiting">
+					<span class="grow"
+						>Waiting for you to authorize Trellis in your browser. This window updates as
+						soon as you do.</span
+					>
+					<button onclick={cancelSignIn}>Cancel</button>
+				</div>
+			{:else if !connected || status.credentials.method !== 'oauth'}
 				<div class="row oauth-row">
 					<label class="grow"
 						>Handle
@@ -664,6 +710,13 @@
 		font-weight: 600;
 	}
 	.hint-inline {
+		color: var(--ink-quiet);
+		font-size: var(--fs-11);
+	}
+	.oauth-row.waiting {
+		align-items: center;
+	}
+	.oauth-row.waiting .grow {
 		color: var(--ink-quiet);
 		font-size: var(--fs-11);
 	}
