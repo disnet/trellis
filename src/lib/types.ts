@@ -297,7 +297,23 @@ export interface ConversationMessage {
 	body: string;
 	createdAt: number;
 	model?: string;
+	/** Brief replies only: every thought id the agent was shown for this turn
+	 *  (working set, pins, and relevance-search hits). Disclosed in the UI so
+	 *  retrieval is never invisible. */
+	consulted?: string[];
 }
+/** What a brief conversation hands to the proposal pipeline: the operation,
+ *  the thoughts it focuses on, and the person's own direction. The agent
+ *  drafts it; the person edits and confirms it; running it is the only way a
+ *  brief touches the graph, and even then only by staging a change set. */
+export interface Brief {
+	action: AgentAction;
+	thoughtIds: string[];
+	instruction: string;
+	/** The agent believes it has enough to run. Advisory: the person decides. */
+	ready: boolean;
+}
+export const BRIEF_INSTRUCTION_LIMIT = 2000;
 export interface Conversation {
 	id: string;
 	graphId: string;
@@ -307,7 +323,12 @@ export interface Conversation {
 	/** Wording at the latest user message, including its provisional status. */
 	subject?: { title: string; statement: string; proposed: boolean };
 	messages: ConversationMessage[];
+	/** Brief conversations (no thought, no operation) carry the latest brief
+	 *  and, once run, the change set it staged. */
+	brief?: Brief | null;
+	changeSetId?: string | null;
 }
+export const isBriefConversation = (c: Pick<Conversation, 'thoughtId' | 'operationId'>) => !c.thoughtId && !c.operationId;
 export interface ConversationTarget { thoughtId?: string; operationId?: string }
 export type ProseDraftSummary = Pick<
 	ProseTreatment,

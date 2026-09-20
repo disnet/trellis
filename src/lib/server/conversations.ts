@@ -4,8 +4,12 @@ import { CHAT_MESSAGE_LIMIT, type Conversation, type ConversationTarget, type Op
 import type { ModelSelection } from '$lib/models';
 import { generateReply } from './agent/chat';
 
-interface Row { id: string; graph_id: string; thought_id: string | null; operation_id: string | null; title: string; messages: string; subject: string | null }
-const map = (r: Row): Conversation => ({ id: r.id, graphId: r.graph_id, thoughtId: r.thought_id, operationId: r.operation_id, title: r.title, messages: JSON.parse(r.messages), subject: r.subject ? JSON.parse(r.subject) : undefined });
+interface Row { id: string; graph_id: string; thought_id: string | null; operation_id: string | null; title: string; messages: string; subject: string | null; brief: string | null; change_set_id: string | null }
+const map = (r: Row): Conversation => ({
+	id: r.id, graphId: r.graph_id, thoughtId: r.thought_id, operationId: r.operation_id, title: r.title, messages: JSON.parse(r.messages),
+	subject: r.subject ? JSON.parse(r.subject) : undefined,
+	...(!r.thought_id && !r.operation_id ? { brief: r.brief ? JSON.parse(r.brief) : null, changeSetId: r.change_set_id } : {})
+});
 
 export function conversationsForGraph(graphId = activeGraphId()): Conversation[] {
 	return (db.prepare('SELECT * FROM conversations WHERE graph_id = ? ORDER BY created_at, rowid').all(graphId) as Row[]).map(map);
@@ -45,9 +49,36 @@ export function conversationExcerpt(c: Conversation): Conversation {
 	return { ...c, title: c.title + (messages.length < c.messages.length ? ' (older messages omitted)' : ''), messages };
 }
 
-const busy = new Set<string>();
-export async function sendMessage(target: ConversationTarget, body: string, messageId: string, selection: ModelSelection, reply = generateReply) {
+export function checkMessage(body: string) {
 	if (!body.trim() || body.length > CHAT_MESSAGE_LIMIT) throw new Error(`Write a message of at most ${CHAT_MESSAGE_LIMIT} characters.`);
+}
+
+/**
+ * Idempotently appends the person's message. A retried request for a message
+ * that already has its reply returns false (nothing to do); a retry of an
+ * unanswered message returns true without appending it twice.
+ */
+export function appendUserMessage(conversation: Conversation, messageId: string, body: string): { needsReply: boolean; appended: boolean } {
+	const existing = conversation.messages.findIndex(m => m.id === messageId);
+	if (existing >= 0) {
+		if (conversation.messages[existing].body !== body.trim()) throw new Error('This message was already saved with different text.');
+		return { needsReply: conversation.messages[existing + 1]?.role !== 'assistant', appended: false };
+	}
+	if (conversation.messages.at(-1)?.role === 'user') throw new Error('Retry the unanswered message before sending another.');
+	conversation.messages.push({ id: messageId, role: 'user', body: body.trim(), createdAt: Date.now() });
+	return { needsReply: true, appended: true };
+}
+
+const busy = new Set<string>();
+/** One reply in flight per conversation. */
+export async function withConversationLock<T>(key: string, message: string, work: () => Promise<T>): Promise<T> {
+	if (busy.has(key)) throw new Error(message);
+	busy.add(key);
+	try { return await work(); } finally { busy.delete(key); }
+}
+
+export async function sendMessage(target: ConversationTarget, body: string, messageId: string, selection: ModelSelection, reply = generateReply) {
+	checkMessage(body);
 	const graphId = activeGraphId();
 	const subject = resolveTarget(target, graphId);
 	let conversation = getConversations(target, graphId).at(-1);
@@ -55,27 +86,21 @@ export async function sendMessage(target: ConversationTarget, body: string, mess
 		conversation = { id: crypto.randomUUID(), graphId, thoughtId: subject.thoughtId, operationId: target.operationId ?? subject.operationId ?? null, title: subject.title, messages: [] };
 		db.prepare('INSERT INTO conversations (id, graph_id, thought_id, operation_id, title, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(conversation.id, graphId, conversation.thoughtId, conversation.operationId, conversation.title, Date.now());
 	}
-	const key = conversation.id;
-	if (busy.has(key)) throw new Error('A reply is already in progress for this thought.');
-	busy.add(key);
-	try {
-		const existing = conversation.messages.findIndex(m => m.id === messageId);
-		if (existing >= 0) {
-			if (conversation.messages[existing].body !== body.trim()) throw new Error('This message was already saved with different text.');
-			if (conversation.messages[existing + 1]?.role === 'assistant') return conversation;
-		} else {
-			if (conversation.messages.at(-1)?.role === 'user') throw new Error('Retry the unanswered message before sending another.');
-			conversation.messages.push({ id: messageId, role: 'user', body: body.trim(), createdAt: Date.now() });
-			conversation.subject = subject.subject;
-			db.prepare('UPDATE conversations SET messages = ?, subject = ? WHERE id = ?').run(JSON.stringify(conversation.messages), JSON.stringify(conversation.subject), conversation.id);
+	const active = conversation;
+	return withConversationLock(active.id, 'A reply is already in progress for this thought.', async () => {
+		const { needsReply, appended } = appendUserMessage(active, messageId, body);
+		if (!needsReply) return active;
+		if (appended) {
+			active.subject = subject.subject;
+			db.prepare('UPDATE conversations SET messages = ?, subject = ? WHERE id = ?').run(JSON.stringify(active.messages), JSON.stringify(active.subject), active.id);
 		}
 		const relatedDiscussions = subject.thoughtId
-			? conversationsForGraph(graphId).filter(c => c.thoughtId === subject.thoughtId && c.id !== conversation.id && c.messages.length).map(conversationExcerpt)
+			? conversationsForGraph(graphId).filter(c => c.thoughtId === subject.thoughtId && c.id !== active.id && c.messages.length).map(conversationExcerpt)
 			: [];
-		const response = await reply({ subject: subject.material, relatedDiscussions }, conversationExcerpt(conversation), selection);
-		conversation.messages.push({ id: crypto.randomUUID(), role: 'assistant', body: response.body, createdAt: Date.now(), model: response.model });
+		const response = await reply({ subject: subject.material, relatedDiscussions }, conversationExcerpt(active), selection);
+		active.messages.push({ id: crypto.randomUUID(), role: 'assistant', body: response.body, createdAt: Date.now(), model: response.model });
 		// Update only messages: ratification may have attached the target while awaiting a reply.
-		db.prepare('UPDATE conversations SET messages = ? WHERE id = ?').run(JSON.stringify(conversation.messages), conversation.id);
-		return conversation;
-	} finally { busy.delete(key); }
+		db.prepare('UPDATE conversations SET messages = ? WHERE id = ?').run(JSON.stringify(active.messages), active.id);
+		return active;
+	});
 }

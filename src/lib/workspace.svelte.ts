@@ -10,9 +10,11 @@ import { isModelSelection, type ModelSelection } from './models';
 import {
 	effectivePayload,
 	type AgentAction,
+	type Brief,
 	type CanvasNote,
 	type ChangeSet,
 	type Confidence,
+	type Conversation,
 	type GraphInfo,
 	type OperationDecision,
 	type OperationPayload,
@@ -269,6 +271,10 @@ class Workspace {
 	private applyState(s: WorkspaceState) {
 		this.layoutPreview = null;
 		if (s.activeGraphId !== this.activeGraphId) {
+			this.brief = null;
+			this.briefLoaded = false;
+			this.briefDraft = '';
+			this.briefError = '';
 			this.cardSizes = {};
 			this.ghostPositions = {};
 			this.handPlaced.clear();
@@ -970,6 +976,134 @@ class Workspace {
 	/** Drafts are keyed by graph and subject so closing a panel never loses text. */
 	conversationDrafts = $state<Record<string, string>>({});
 	conversationRequests = $state<Record<string, boolean>>({});
+	// --- briefs ---
+	// The one graph-scoped conversation that may be open: a briefing stage in
+	// front of the proposal pipeline. It lives in the search palette, and the
+	// only thing it can do to the graph is run, which stages a change set.
+
+	/** The open brief for the active graph; null once run, discarded, or absent. */
+	brief = $state<Conversation | null>(null);
+	briefLoaded = $state(false);
+	/** Unsent composer text; survives closing the palette. */
+	briefDraft = $state('');
+	briefBusy = $state(false);
+	briefRunning = $state(false);
+	briefError = $state('');
+	private briefSerial = 0;
+
+	async loadBrief(): Promise<void> {
+		const request = ++this.briefSerial;
+		const graphId = this.activeGraphId;
+		try {
+			const res = await fetch('/api/brief');
+			const data = await res.json();
+			if (request !== this.briefSerial || data.graphId !== graphId) return;
+			if (!res.ok) throw new Error(data.error || 'Could not load the brief.');
+			this.brief = data.brief ?? null;
+			this.briefLoaded = true;
+		} catch (e) {
+			if (request === this.briefSerial) this.briefError = (e as Error).message;
+		}
+	}
+
+	/** The person's last message, when it never got a reply (retry it). */
+	get briefUnanswered() {
+		const last = this.brief?.messages.at(-1);
+		return last?.role === 'user' ? last : undefined;
+	}
+
+	/** Sends one message to the brief agent. With no body, retries the unanswered message. */
+	async sendBriefMessage(body?: string): Promise<string | null> {
+		if (this.briefBusy) return 'A reply is already in progress.';
+		const unanswered = this.briefUnanswered;
+		const text = unanswered?.body ?? body?.trim() ?? '';
+		if (!text) return 'Write a message first.';
+		const messageId = unanswered?.id ?? crypto.randomUUID();
+		const graphId = this.activeGraphId;
+		this.briefBusy = true;
+		this.briefError = '';
+		// Show the message at once; the server copy replaces it when the reply lands.
+		if (!unanswered) {
+			const local = this.brief ?? { id: 'sending', graphId, thoughtId: null, operationId: null, title: text, messages: [], brief: null, changeSetId: null };
+			local.messages.push({ id: messageId, role: 'user', body: text, createdAt: Date.now() });
+			this.brief = local;
+		}
+		try {
+			const res = await fetch('/api/brief', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ graphId, body: text, messageId, selection: { ...this.modelSelection } })
+			});
+			const data = await res.json().catch(() => ({}));
+			if (graphId !== this.activeGraphId) return null;
+			if (!res.ok) throw new Error(data.error || 'Could not get a reply.');
+			this.brief = data.brief ?? null;
+			this.briefLoaded = true;
+			if (this.briefDraft.trim() === text) this.briefDraft = '';
+			return null;
+		} catch (e) {
+			const message = (e as Error).message || 'Could not reach the Trellis server.';
+			if (graphId === this.activeGraphId) this.briefError = message;
+			return message;
+		} finally {
+			this.briefBusy = false;
+		}
+	}
+
+	/** Runs the brief as the person confirmed it on the card. On success the
+	 *  change set is staged for review and the brief retires. */
+	async runBrief(confirmed: Brief): Promise<string | null> {
+		if (this.invoking || this.briefRunning) return 'An operation is already in progress.';
+		const graphId = this.activeGraphId;
+		this.briefRunning = true;
+		this.invoking = confirmed.action;
+		this.briefError = '';
+		try {
+			await this.flushMoves();
+			const res = await fetch('/api/brief/run', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ graphId, brief: confirmed, selection: { ...this.modelSelection } })
+			});
+			const data = await res.json().catch(() => ({}));
+			if (graphId !== this.activeGraphId) return null;
+			if (!res.ok) {
+				this.briefError = data.error ?? `Request failed (${res.status}).`;
+				return this.briefError;
+			}
+			if (data.state) this.applyState(data.state);
+			this.brief = data.brief ?? null;
+			return null;
+		} catch {
+			this.briefError = 'Could not reach the Trellis server.';
+			return this.briefError;
+		} finally {
+			this.briefRunning = false;
+			this.invoking = null;
+		}
+	}
+
+	async discardBrief(): Promise<string | null> {
+		const graphId = this.activeGraphId;
+		try {
+			const res = await fetch('/api/brief', {
+				method: 'DELETE',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ graphId })
+			});
+			const data = await res.json().catch(() => ({}));
+			if (!res.ok) return data.error ?? `Request failed (${res.status}).`;
+			if (graphId === this.activeGraphId) {
+				this.brief = null;
+				this.briefDraft = '';
+				this.briefError = '';
+			}
+			return null;
+		} catch {
+			return 'Could not reach the Trellis server.';
+		}
+	}
+
 	async proposeFromConversation(conversationId: string): Promise<string | null> {
 		if (this.invoking) return 'An operation is already in progress.';
 		this.invoking = 'decompose';

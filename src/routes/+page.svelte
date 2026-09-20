@@ -154,7 +154,7 @@
 		</div>
 		<div class="view-navigation"><ViewSwitcher /></div>
 		<nav class="panel-switcher" aria-label="Workspace panels and settings">
-			<button aria-haspopup="dialog" title="Search the graph (⌘K)" onclick={() => (quickSearchOpen = true)}><Icon name="search" /> Search</button>
+			<button aria-haspopup="dialog" title="Search the graph or brief the agent (⌘K)" onclick={() => (quickSearchOpen = true)}><Icon name="search" /> Search</button>
 			<button class:active={rightPanel === 'proposals'} class:pending={ws.pendingChangeSets.length > 0} aria-expanded={rightPanel === 'proposals'} aria-controls="review-panel" onclick={() => toggleRight('proposals')}>◇ Proposals{#if ws.pendingChangeSets.length} <span class="badge">{ws.pendingChangeSets.length}</span>{/if}</button>
 			<button class:active={rightPanel === 'inspector'} aria-expanded={rightPanel === 'inspector'} aria-controls="review-panel" onclick={() => toggleRight('inspector')}><Icon name="outline" /> Inspector{#if ws.selectedIds.length} <span class="badge">{ws.selectedIds.length}</span>{/if}</button>
 			<div class="app-tools">

@@ -76,7 +76,8 @@ export async function generateProposal(
 	selectedIds: string[],
 	scratch?: { id: string; body: string },
 	selection?: ModelSelection,
-	conversation?: Conversation
+	conversation?: Conversation,
+	instruction?: string
 ): Promise<GenerateOutcome> {
 	// Validation predicates are graph-scoped: an id from another graph is
 	// "unknown" here, so a proposal can never link across the boundary.
@@ -93,6 +94,7 @@ export async function generateProposal(
 
 	const adapter = selectAdapter({ thoughtExists: validationDeps.thoughtExists }, selection);
 	const context = buildContext(action, selectedIds, scratch);
+	if (instruction?.trim()) context.instruction = instruction.trim();
 	if (conversation && !context.conversations?.some(c => c.id === conversation.id))
 		context.conversations = [...(context.conversations ?? []), conversation];
 	// Read the links the agent's own fetch tool cannot (see links.ts). Never fatal:
@@ -110,7 +112,7 @@ export async function generateProposal(
 			`${context.relations.length} relations, ${selectedIds.length} selected` +
 			`${context.retrievedIds.length ? `, ${context.retrievedIds.length} retrieved by graph search` : ''}` +
 			`${context.links?.length ? `, ${context.links.length} link${context.links.length === 1 ? '' : 's'} resolved${unreadable ? ` (${unreadable} unreadable)` : ''}` : ''}` +
-			`${scratch ? ', scratch input' : ''}`
+			`${scratch ? ', scratch input' : ''}${context.instruction ? ', brief' : ''}`
 	);
 
 	// Attempt, validate; model-backed adapters get one corrective retry with

@@ -230,6 +230,13 @@ function open(): Database.Database {
 	const conversationCols = db.pragma('table_info(conversations)') as { name: string }[];
 	if (!conversationCols.some((c) => c.name === 'subject'))
 		db.exec('ALTER TABLE conversations ADD COLUMN subject TEXT');
+	// Briefs: graph-scoped conversations (no thought, no operation) that end in
+	// a change set. The brief itself is the agent's latest draft; change_set_id
+	// is set when the person runs it and retires the brief.
+	if (!conversationCols.some((c) => c.name === 'brief'))
+		db.exec('ALTER TABLE conversations ADD COLUMN brief TEXT');
+	if (!conversationCols.some((c) => c.name === 'change_set_id'))
+		db.exec('ALTER TABLE conversations ADD COLUMN change_set_id TEXT');
 	const operationCols = db.pragma('table_info(proposed_operations)') as { name: string }[];
 	if (!operationCols.some((c) => c.name === 'applied_thought_id'))
 		db.exec('ALTER TABLE proposed_operations ADD COLUMN applied_thought_id TEXT');

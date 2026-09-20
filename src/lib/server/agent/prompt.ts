@@ -47,6 +47,15 @@ export function buildUserPrompt(action: AgentAction, context: AgentContext): str
 	const lines: string[] = [];
 
 	lines.push(ACTION_INSTRUCTIONS[action]);
+	if (context.instruction) {
+		lines.push('');
+		lines.push(
+			"Brief from the person (agreed in conversation before this operation; it narrows and directs the operation above, and is the person's own direction, not evidence):"
+		);
+		lines.push('"""');
+		lines.push(context.instruction);
+		lines.push('"""');
+	}
 	lines.push('');
 	lines.push('## Context');
 	lines.push('');

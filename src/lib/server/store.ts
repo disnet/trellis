@@ -9,6 +9,7 @@ import { generateProposal, linkCallToChangeSet } from './agent';
 import { generateTreatment, type ProseInput } from './agent/prose';
 import { defaultSelection } from './agent/settings';
 import { conversationsForGraph, conversationExcerpt, resolveTarget } from './conversations';
+import { openBrief, parseBrief } from './briefs';
 import type { ModelSelection } from '$lib/models';
 import {
 	RELATION_TYPES,
@@ -24,8 +25,10 @@ import {
 } from './agent/wire';
 import {
 	effectivePayload,
+	isBriefConversation,
 	validateConfidence,
 	type ActorType,
+	type Brief,
 	type Confidence,
 	type AgentAction,
 	type ChangeSet,
@@ -409,7 +412,20 @@ export async function invoke(
 	conversationId?: string
 ): Promise<{ error: string; generationFailed?: boolean } | { changeSetId: string }> {
 	const conversation = conversationId ? conversationsForGraph().find(c => c.id === conversationId) : undefined;
-	if (conversationId) {
+	let instruction: string | undefined;
+	if (conversationId && conversation && isBriefConversation(conversation)) {
+		// A brief runs exactly what its card showed: the stored (person-edited)
+		// brief is the truth, not the caller's action. With no target thoughts,
+		// decompose seeds from the conversation itself, as Propose thoughts does.
+		if (!conversation.messages.length) return { error: 'Unknown or empty brief.' };
+		if (conversation.changeSetId) return { error: 'This brief has already run.' };
+		if (!conversation.brief) return { error: 'The brief has not been drafted yet.' };
+		action = conversation.brief.action;
+		selectedIds = conversation.brief.thoughtIds;
+		instruction = conversation.brief.instruction;
+		if (action === 'decompose' && selectedIds.length === 0)
+			scratchBody = `Seed the graph from this brief conversation. Distill what the person has said into a small change set of atomic thoughts and the relations between them. Preserve authorship and uncertainty; the agent's suggestions in the discussion are not accepted beliefs.\nBrief: ${instruction}\nDiscussion: ${JSON.stringify(conversationExcerpt(conversation))}`;
+	} else if (conversationId) {
 		if (!conversation?.messages.length) return { error: 'Unknown or empty discussion.' };
 		if (action !== 'decompose') return { error: 'Use Propose thoughts to distill a discussion.' };
 		try {
@@ -462,7 +478,7 @@ export async function invoke(
 		}
 	}
 
-	const outcome = await generateProposal(action, selectedIds, scratch, selection, conversation ? conversationExcerpt(conversation) : undefined);
+	const outcome = await generateProposal(action, selectedIds, scratch, selection, conversation ? conversationExcerpt(conversation) : undefined, instruction);
 	if (!outcome.ok) return { error: outcome.error, generationFailed: true };
 
 	const now = Date.now();
@@ -509,10 +525,26 @@ export async function invoke(
 		}
 		linkCallToChangeSet(outcome.callId, changeSetId);
 		db.prepare('UPDATE change_sets SET conversation_context = ? WHERE id = ?').run(JSON.stringify(outcome.conversationContext), changeSetId);
+		// Running retires the brief; the transcript stays as the change set's provenance.
+		if (conversation && isBriefConversation(conversation))
+			db.prepare('UPDATE conversations SET change_set_id = ? WHERE id = ?').run(changeSetId, conversation.id);
 		return changeSetId;
 	})();
 
 	return { changeSetId: csId };
+}
+
+/** Runs the open brief as the person confirmed it: their edits to the card are
+ *  saved onto the brief first, so what ran is exactly what they saw. */
+export async function runBrief(edited: unknown, selection?: ModelSelection) {
+	const brief = openBrief();
+	if (!brief) return { error: 'No brief is open.' };
+	let confirmed: Brief;
+	try { confirmed = parseBrief(edited); } catch (e) { return { error: (e as Error).message }; }
+	if (confirmed.action !== 'decompose' && confirmed.thoughtIds.length === 0)
+		return { error: `Choose at least one thought to ${confirmed.action}, or ask the agent to name some.` };
+	db.prepare('UPDATE conversations SET brief = ? WHERE id = ?').run(JSON.stringify(confirmed), brief.id);
+	return invoke(confirmed.action, confirmed.thoughtIds, undefined, selection, undefined, brief.id);
 }
 
 // --- review decisions ---

@@ -49,6 +49,11 @@ export interface AgentContext {
 	 * synchronous and network-free.
 	 */
 	links?: ResolvedLink[];
+	/**
+	 * The person's own direction for this operation, agreed in a brief
+	 * conversation before it ran. Refines the action; never a source of facts.
+	 */
+	instruction?: string;
 }
 
 /** How many graph-wide search results may join the context. */
@@ -68,7 +73,7 @@ const STOPWORDS = new Set([
 	'will', 'with', 'without', 'would', 'your'
 ]);
 
-function terms(text: string): Set<string> {
+export function terms(text: string): Set<string> {
 	const out = new Set<string>();
 	for (const word of text.toLowerCase().match(/[a-z][a-z0-9'-]{3,}/g) ?? []) {
 		if (!STOPWORDS.has(word)) out.add(word);
